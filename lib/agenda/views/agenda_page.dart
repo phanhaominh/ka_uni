@@ -56,6 +56,7 @@ class _AgendaPageState extends State<AgendaPage> {
   static const _icsCacheKey = "DATA_webcalIcsCache";
   static const _changesKey = "DATA_webcalChanges";
   static const _fetchedAtKey = "DATA_webcalFetchedAt";
+  static const _iliasCacheKey = "DATA_iliasCardCache";
 
   _AgendaLoad _load = _AgendaLoad();
   bool _loading = true;
@@ -93,6 +94,10 @@ class _AgendaPageState extends State<AgendaPage> {
     // registration urgency must ignore catalogue exams of later semesters
     vm.campusManager.rememberEnrolledTitles(feed);
     final changes = IcsChange.decode(prefs.getString(_changesKey) ?? "");
+    // cached ILIAS card content: the live fetch hides behind SSO + two
+    // dashboard round-trips (tens of seconds), so the previous snapshot
+    // renders with the local data and gets replaced when the fetch lands
+    final iliasCached = decodeIliasCard(prefs.getString(_iliasCacheKey));
     if (!mounted) return;
     setState(() {
       // "have we ever cached a timetable" must be judged on the RAW cache,
@@ -106,8 +111,11 @@ class _AgendaPageState extends State<AgendaPage> {
           tomorrow: _onDay(feed, now.add(const Duration(days: 1))),
           changes: changes,
           upcoming: _upcoming(feed, now),
-          unread: _load.unread,
-          announcements: _load.announcements,
+          unread: iliasCached?.$1 ?? _load.unread,
+          announcements:
+              iliasCached != null && iliasCached.$2.isNotEmpty
+                  ? iliasCached.$2
+                  : _load.announcements,
           iliasError: _load.iliasError,
           fetchedAt: DateTime.tryParse(prefs.getString(_fetchedAtKey) ?? ""));
       _loading = false;
@@ -121,8 +129,16 @@ class _AgendaPageState extends State<AgendaPage> {
       await vm.iliasAuth; // don't race the auto-login SSO
       unread = await vm.iliasManager.fetchUnread();
       announcements = await vm.iliasManager.fetchAnnouncements();
+      final prefs3 = await SharedPreferences.getInstance();
+      await prefs3.setString(
+          _iliasCacheKey, encodeIliasCard(unread, announcements));
     } catch (_) {
-      iliasError = L10n.t("agenda.iliasUnreachable");
+      // a cached card stays visible instead of degrading to an error line;
+      // the error only surfaces when there is nothing cached to show
+      iliasError = (iliasCached == null ||
+              (iliasCached.$1 == null && iliasCached.$2.isEmpty))
+          ? L10n.t("agenda.iliasUnreachable")
+          : null;
     }
     if (!mounted) return;
     setState(() {
@@ -132,8 +148,9 @@ class _AgendaPageState extends State<AgendaPage> {
           tomorrow: _load.tomorrow,
           changes: _load.changes,
           upcoming: _load.upcoming,
-          unread: unread,
-          announcements: announcements,
+          unread: unread ?? _load.unread,
+          announcements:
+              announcements.isNotEmpty ? announcements : _load.announcements,
           iliasError: iliasError,
           fetchedAt: _load.fetchedAt);
     });
@@ -623,7 +640,11 @@ class _AgendaPageState extends State<AgendaPage> {
               if (_load.unread != null && _load.unread!.notifications > 0)
                 _badge(L10n.t("agenda.nNew", [_load.unread!.notifications]), scheme),
             ]),
-            if (_iliasLoading)
+            if (_iliasLoading &&
+                _load.unread == null &&
+                _load.announcements.isEmpty)
+              // fresh-install-only spinner: with a cached snapshot the card
+              // shows it and swaps in the live data when the fetch lands
               _pendingRow(context, L10n.t("agenda.iliasLoading"))
             else if (_load.iliasError != null)
               Padding(

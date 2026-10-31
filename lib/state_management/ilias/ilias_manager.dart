@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:kit_mobile/state_management/kit_login_manager.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 
@@ -139,5 +140,10 @@ class IliasManager extends KITLoginManager {
 
   Future<void> logout() async {
     _phpsessid = "";
+    // the agenda card cache holds this student's course titles and message
+    // previews; the login screen renders before any refetch, so a shared
+    // device must not show them to the next account
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove("DATA_iliasCardCache");
   }
 }
