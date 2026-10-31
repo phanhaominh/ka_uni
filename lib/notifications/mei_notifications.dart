@@ -369,7 +369,10 @@ Future<void> registerBackgroundPolling() async {
   await Workmanager().registerPeriodicTask(
     "mei-webcal-poll",
     "webcal-diff",
-    frequency: const Duration(hours: 2),
+    // 30 min floor: KIT sometimes publishes room swaps under 2 h before a
+    // lecture; Android treats this as a hint and may batch, battery cost is
+    // one conditional GET per window
+    frequency: const Duration(minutes: 30),
     constraints: Constraints(
       networkType: NetworkType.connected,
       requiresBatteryNotLow: false,
