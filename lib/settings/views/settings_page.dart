@@ -102,6 +102,15 @@ class _SettingsPageState extends State<SettingsPage> {
                         title: L10n.t("settings.language"),
                         trailing: LanguageDropdown(
                             languageSetting: settingsVM.language)),
+                    SettingRow(
+                        title: L10n.t("settings.appearance"),
+                        trailing: MultipleChoiceSettingDropdown(
+                            multipleChoiceSetting: settingsVM.theme,
+                            labels: {
+                              "system": L10n.t("settings.themeSystem"),
+                              "light": L10n.t("settings.themeLight"),
+                              "dark": L10n.t("settings.themeDark"),
+                            })),
                   ],
                 ),
               ),

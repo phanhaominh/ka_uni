@@ -143,6 +143,13 @@ class MyApp extends StatelessWidget {
               title: "KA.Uni",
               theme: themeData,
               darkTheme: darkThemeData,
+              // in-app override next to Language; "system" keeps following
+              // the device light/dark schedule
+              themeMode: switch (settings.theme.value) {
+                "light" => ThemeMode.light,
+                "dark" => ThemeMode.dark,
+                _ => ThemeMode.system,
+              },
               locale: L10n.locale,
               supportedLocales: const [Locale("de"), Locale("en")],
               localizationsDelegates: GlobalMaterialLocalizations.delegates,

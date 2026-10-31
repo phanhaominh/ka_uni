@@ -11,6 +11,7 @@ const showingAvgMarkKey = "PREF_showingAvgMark";
 const showingProfileKey = "PREF_showingProfile";
 const defaultIliasPageKey  = "PREF_defaultIliasPage";
 const languageKey = "PREF_language";
+const themeModeKey = "PREF_themeMode";
 
 class SettingsProvider extends ChangeNotifier {
   static SettingsProvider? _instance;
@@ -54,13 +55,21 @@ class SettingsProvider extends ChangeNotifier {
       _instance?.notifyListeners();
     },
   );
-  
+
+  /// App theme; "system" follows the device light/dark setting.
+  MultipleChoiceSetting<String> theme = MultipleChoiceSetting(
+    valueKey: themeModeKey,
+    choices: ["system", "light", "dark"],
+    notifyCallback: () => _instance?.notifyListeners(),
+  );
+
   List<Setting> get settings => [
     liquidAssEverywhere,
     showingAvgMark,
     showingProfile,
     defaultIliasPage,
-    language
+    language,
+    theme
   ];
   
   Future<void> prepare() async {

@@ -23,7 +23,12 @@ class Setting<T> {
 
     // Ensure type safety before casting
     if (stored is T) {
+      final changed = stored != _value;
       _value = stored as T;
+      // a restored non-default value must notify: MaterialApp renders its
+      // FIRST frame with the default, and without this the persisted
+      // theme/language arrived silently without any rebuild
+      if (changed) notifyCallback?.call();
     } else {
       await set(_value); // fallback to default if type mismatch
     }
