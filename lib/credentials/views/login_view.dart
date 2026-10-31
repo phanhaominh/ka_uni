@@ -194,10 +194,12 @@ class LoginPageState extends State<LoginPage> {
                                   tag: "greeting",
                                   child: Text(
                                     L10n.t("settings.helloName", [credsVM.displayName]),
+                                    // theme default (dark ink on light, white
+                                    // on dark): the glass has blur 0, so a
+                                    // hardcoded white vanished in light mode
                                     style: theme.textTheme.headlineLarge
                                         ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white),
+                                            fontWeight: FontWeight.bold),
                                     maxLines: 2,
                                   ),
                                 ),
@@ -209,7 +211,7 @@ class LoginPageState extends State<LoginPage> {
                           height: 25,
                         ),
                         KITProgressIndicator(
-                          color: Colors.white,
+                          color: theme.colorScheme.primary,
                         ),
                       ],
                     ),

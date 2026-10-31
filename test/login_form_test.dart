@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/credentials/data/credentials_provider.dart';
 import 'package:kit_mobile/credentials/models/auth_result.dart';
 import 'package:kit_mobile/credentials/models/kit_credentials.dart';
@@ -82,5 +83,33 @@ void main() {
 
     expect(got[0], "uxfake"); // prefilled username is submitted
     expect(got[1], isEmpty); // but the stored secret never enters the field
+  });
+
+  testWidgets('logging-in overlay stays readable in light theme', (tester) async {
+    final creds = ProbeProvider((u, p) {})
+      ..credentials = KITCredentials(username: "uxfake", password: "stored-secret")
+      ..credentialsLoaded = true
+      ..displayName = "Testo"
+      ..loggingIn = true;
+
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<CredentialsProvider>.value(value: creds),
+        ChangeNotifierProvider<KITProvider>.value(value: KITProvider()),
+      ],
+      child: MaterialApp(theme: ThemeData.light(), home: const LoginPage()),
+    ));
+    await tester.pump(const Duration(milliseconds: 600));
+
+    // the overlay greeting + spinner sat on the light scaffold with
+    // hardcoded white: invisible in light mode
+    final greeting = tester.widget<Text>(find.text("Hallo, Testo"));
+    expect(greeting.style?.color, isNot(Colors.white));
+    final spinner = tester.widgetList<KITProgressIndicator>(
+            find.descendant(
+                of: find.byType(LoginPage),
+                matching: find.byType(KITProgressIndicator)))
+        .last;
+    expect(spinner.color, isNot(Colors.white));
   });
 }

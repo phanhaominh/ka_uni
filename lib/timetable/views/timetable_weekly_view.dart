@@ -34,10 +34,6 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
 
   @override
   Widget build(BuildContext context) {
-    // final theme = Theme.of(context);
-
-    // final emptyDay = TimetableDaily();
-
     return Column(
       children: [
         CarouselSlider.builder(

@@ -792,7 +792,7 @@ class _AgendaPageState extends State<AgendaPage> {
                         style: TextStyle(
                             fontSize: 12,
                             color: scheme.onTertiaryContainer
-                                .withOpacity(0.75))),
+                                .withValues(alpha: 0.75))),
                   ],
                 ),
               ),

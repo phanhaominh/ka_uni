@@ -59,9 +59,22 @@ password in **single quotes** — `$` and `?` get eaten by the shell otherwise.
 | `DATA_webcalIcsCache` | last good ICS body (feeds agenda + diff base) |
 | `DATA_webcalFingerprint` | occurrence-set fingerprint |
 | `DATA_webcalChanges` | JSON of pending timetable deltas (CHANGED band) |
+| `DATA_webcalFeedSource` | URL the cache/fingerprint belong to (baseline reseeds on switch) |
+| `DATA_webcalIcsCache` + `DATA_personalIcs`/`Url` | merged cache embeds the personal VEVENT block; URL is re-fetched quietly ≤1×/30 min per session |
+| `DATA_iliasCardCache` | last ILIAS unread/announcement snapshot (agenda card paints instantly; wiped at logout) |
 
 Killing everything: app settings → clear storage, or log out (credentials are
 in secure storage; ILIAS/campus sessions are cookie-only).
+
+## Personal ICS feed (laptop side)
+
+`systemctl --user cat kit-ics` serves `~/.local/share/kit-ics/` on
+`127.0.0.1:8080` (enabled at login). The phone reaches it **only** while the
+USB cable is attached, via `adb reverse tcp:8080 tcp:8080` — re-run that
+after every reconnect (adb drops reverses). The app survives any of this
+dying: personal events live in the merged ICS cache; the URL fetch only
+topps up. Update the calendar = overwrite the file in the served dir (same
+name keeps the phone URL working).
 
 ## Live dev probes
 

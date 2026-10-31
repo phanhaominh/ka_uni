@@ -262,6 +262,8 @@ class CredentialsProvider extends ChangeNotifier {
 
   IOSOptions get _iOSOptions => const IOSOptions(accountName: "kit-student");
 
-  AndroidOptions get _androidOptions =>
-      const AndroidOptions(encryptedSharedPreferences: true);
+  // encryptedSharedPreferences deliberately gone: deprecated upstream,
+  // ignored by the plugin, which migrates storage to custom ciphers on
+  // first access by itself
+  AndroidOptions get _androidOptions => const AndroidOptions();
 }

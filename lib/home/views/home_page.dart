@@ -35,8 +35,6 @@ class KITHomePage extends StatefulWidget {
 class _KITHomePageState extends State<KITHomePage> {
   final _relevantModulesTitleKey = GlobalKey();
 
-  // bool _showProfile = true;
-
   @override
   Widget build(BuildContext context) {
     final vm = Provider.of<KITProvider>(context);
@@ -127,13 +125,10 @@ class _KITHomePageState extends State<KITHomePage> {
             ),
             CupertinoButton(
               onPressed: () {
-                // Navigator.of(context).push(MaterialPageRoute(builder: (context) => InfoView()));
                 setState(() {
-                  // _showProfile = !_showProfile;
                   settingsVM.showingProfile.toggle();
                 });
               },
-              // child: const Icon(CupertinoIcons.info),
               child: Semantics(
                 button: true,
                 label: L10n.t("settings.showProfile"),

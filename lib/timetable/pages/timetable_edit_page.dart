@@ -252,7 +252,6 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
       barrierDismissible: true,
       barrierColor: theme.scaffoldBackgroundColor.withAlpha(175),
       builder: (dialogContext) {
-        // final theme = Theme.of(dialogContext);
         return LayoutBuilder(
           builder: (context, constraints) {
             final mediaWidth = MediaQuery.of(dialogContext).size.width;

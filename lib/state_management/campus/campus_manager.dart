@@ -566,7 +566,6 @@ class CampusManager extends KITLoginManager {
       }
     }
 
-    // rowsToFetch = rowsToFetch + lessImportantRows;
 
     if (rowsToFetch.isEmpty) {
       rowsToFetch = lessImportantRows;
@@ -684,13 +683,6 @@ class CampusManager extends KITLoginManager {
       return readyModule;
     }
 
-    // module = await _loadModuleFromCache(row);
-    // if (_isModuleReady(module)) {
-    //   final cachedModule = module!;
-    //   _addRelevantModuleRow(row);
-    //   _triggerBackgroundRefreshIfStale(row, cachedModule);
-    //   return cachedModule;
-    // }
 
     final fetchedModule = await fetchModule(row,
         recursiveRetry: retryIfFailed, userInitiated: userInitiated);
@@ -971,6 +963,41 @@ class CampusManager extends KITLoginManager {
       await prefs.setString(_personalIcsUrlKey, trimmed);
     }
     return err;
+  }
+
+  static DateTime? _lastPersonalIcsRefresh;
+
+  /// An ICS imported from a URL is a snapshot; this quietly re-fetches it
+  /// (bounded, at most once per 30 min) so calendars on reachable hosts
+  /// pick up new events without a manual re-import. Errors are swallowed:
+  /// the previous copy always stays in force.
+  Future<void> refreshPersonalIcsFromUrl() async {
+    final url = personalIcsUrl;
+    if (url.isEmpty) return;
+    final last = _lastPersonalIcsRefresh;
+    if (last != null &&
+        DateTime.now().difference(last) < const Duration(minutes: 30)) {
+      return;
+    }
+    _lastPersonalIcsRefresh = DateTime.now();
+    try {
+      final response =
+          await netGet(Uri.parse(url)).timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200 ||
+          !response.body.contains("BEGIN:VEVENT")) {
+        return;
+      }
+      final blocks = RegExp("BEGIN:VEVENT.*?END:VEVENT", dotAll: true)
+          .allMatches(response.body)
+          .map((m) => m.group(0)!);
+      var block = blocks.join("\r\n");
+      if (!block.endsWith("\r\n")) block = "$block\r\n";
+      if (block.isEmpty || block == personalIcs) return;
+      final err = await setPersonalIcsFromRaw(response.body);
+      if (err != null && kDebugMode) {
+        print("Personal ICS refresh rejected: $err");
+      }
+    } catch (_) {}
   }
 
   Future<void> clearPersonalIcs() async {
@@ -1274,6 +1301,9 @@ class CampusManager extends KITLoginManager {
       unawaited(MeiNotifications.scheduleLectureReminders(merged ?? feed));
       unawaited(MeiNotifications.scheduleMorningDigest(merged ?? feed));
 
+      // the subscription is fresh; give the personal calendar its quiet
+      // top-up (throttled internally, keeps the old copy on any failure)
+      unawaited(refreshPersonalIcsFromUrl());
       if (kDebugMode) {
         print("Timetable from WebCal: ${feed.occurrences.length} occurrences");
       }
