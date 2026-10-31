@@ -137,7 +137,7 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                                         tag:
                                             "appointmentTitle_${widget.appointment.title}_${widget.appointment.id}",
                                         child: Text(
-                                          widget.appointment.title,
+                                          widget.appointment.displayTitle,
                                           style: theme.textTheme.titleLarge
                                               ?.copyWith(
                                                   fontWeight: FontWeight.bold),
@@ -147,7 +147,7 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                                     placeDetail(
                                         "ID:", widget.appointment.id, theme),
                                     placeDetail("Ort:",
-                                        widget.appointment.place.title, theme),
+                                        widget.appointment.displayPlace, theme),
                                     SizedBox(height: 20),
                                     SizedBox(height: 500),
                                   ],

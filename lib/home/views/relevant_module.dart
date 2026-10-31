@@ -50,6 +50,10 @@ class RelevantModuleView extends StatelessWidget {
                       onPressed: () async {
                         // await vm.iliasManager.authorize();
                         final moduleToShow = await _getModuleToShow(vm);
+                        // module lookup is a network round-trip; the card
+                        // can be gone (tab switch rebuild) by the time it
+                        // completes -> pushing on a dead context throws
+                        if (!context.mounted) return;
                         Navigator.of(context).push(MaterialPageRoute(builder: (BuildContext context) => IliasPageView(moduleToShow, PHPSESSID_Future: vm.iliasManager.getPHPSESSID())));
                       },
 

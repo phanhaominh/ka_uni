@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/constants/view_constants.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/module/models/module.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:kit_mobile/timetable/models/timetable_appointment.dart';
@@ -65,6 +66,24 @@ class TimetableDailyView extends StatelessWidget {
             //   isTut = false;
             // }
 
+            final empty = appointment.isEmpty &&
+                appointment.type != TimetableAppointmentType.lunchBreak;
+            if (empty) {
+              // A free block must read as empty: the placeholder dash and
+              // its time badge used to render like a lecture called "—".
+              return Container(
+                decoration: BoxDecoration(
+                  border: appointment.begin.hour < 17
+                      ? Border(
+                          bottom: BorderSide(
+                              color: theme.brightness == Brightness.light
+                                  ? Colors.black12
+                                  : Colors.white.withValues(alpha: 0.15)))
+                      : null,
+                ),
+                child: SizedBox(height: appointment.duration * 0.9),
+              );
+            }
             return Container(
               decoration: BoxDecoration(
                 border: appointment.begin.hour < 17
@@ -110,20 +129,17 @@ class TimetableDailyView extends StatelessWidget {
                                           "appointmentTitle_${appointment.title}_${appointment.id}",
                                       child: Text(
                                         isTut
-                                            ? "Tutorium: " +
-                                                appointment
-                                                    .abbreviatedTitleIfLongerThan(
-                                                        30)
-                                            : appointment
-                                                .abbreviatedTitleIfLongerThan(
-                                                    50),
+                                            ? L10n.t(
+                                                "timetable.tutorialPrefix",
+                                                [appointment.displayTitle])
+                                            : appointment.displayTitle,
                                         style: theme.textTheme.titleSmall
                                             ?.copyWith(
                                                 fontWeight: FontWeight.bold),
                                         maxLines: 2,
                                       ))
                                   : Text(
-                                      appointment.title,
+                                      appointment.displayTitle,
                                       style: theme.textTheme.titleSmall
                                           ?.copyWith(
                                               fontWeight: FontWeight.bold),
@@ -135,19 +151,21 @@ class TimetableDailyView extends StatelessWidget {
                                       tag:
                                           "appointmentPlace_${appointment.title}_${appointment.id}",
                                       child: Text(
-                                        appointment.place.title,
+                                        appointment.displayPlace,
                                         maxLines: 2,
                                       ))
                                   : SizedBox(
                                       height: 0,
                                     ),
 
-                              isTut && (appointment.notes ?? "").isNotEmpty
+                              isTut &&
+                                      appointment is Tutorial &&
+                                      (appointment.notes ?? "").isNotEmpty
                                   ? Text(
-                                      appointment.notes,
+                                      appointment.notes!,
                                       maxLines: 2,
                                     )
-                                  : SizedBox.shrink(),
+                                  : const SizedBox.shrink(),
 
                               appointment.type ==
                                       TimetableAppointmentType.lunchBreak
@@ -199,200 +217,6 @@ class TimetableDailyView extends StatelessWidget {
           }).toList(),
         )
       ],
-    );
-  }
-}
-
-class _BlockContent extends StatelessWidget {
-  final TimetableAppointment appointment;
-  final List<Tutorial> tutorials;
-  final double deviceWidth;
-
-  const _BlockContent({
-    required this.appointment,
-    required this.tutorials,
-    required this.deviceWidth,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final children = <Widget>[];
-    final isLunchBreak =
-        appointment.type == TimetableAppointmentType.lunchBreak;
-
-    if (isLunchBreak) {
-      children.add(_LunchBreakTile(appointment: appointment));
-    } else if (!appointment.isEmpty) {
-      children.add(
-        _AppointmentTile(
-          appointment: appointment,
-          deviceWidth: deviceWidth,
-        ),
-      );
-    }
-
-    if (tutorials.isNotEmpty) {
-      children.addAll(
-        tutorials.map(
-          (tutorial) => _TutorialTile(
-            tutorial: tutorial,
-            deviceWidth: deviceWidth,
-          ),
-        ),
-      );
-    }
-
-    if (children.isEmpty) {
-      children.add(const SizedBox(height: 12));
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
-    );
-  }
-}
-
-class _AppointmentTile extends StatelessWidget {
-  final TimetableAppointment appointment;
-  final double deviceWidth;
-
-  const _AppointmentTile({
-    required this.appointment,
-    required this.deviceWidth,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return GestureDetector(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) =>
-                TimetableAppointmentPage(appointment: appointment),
-          ),
-        );
-      },
-      child: Container(
-        constraints: BoxConstraints(maxWidth: deviceWidth * 0.8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            appointment.id.isNotEmpty
-                ? Hero(
-                    tag:
-                        "appointmentTitle_${appointment.title}_${appointment.id}",
-                    child: Text(
-                      appointment.title,
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                      maxLines: 2,
-                    ),
-                  )
-                : Text(
-                    appointment.title,
-                    style: theme.textTheme.titleSmall
-                        ?.copyWith(fontWeight: FontWeight.bold),
-                    maxLines: 2,
-                  ),
-            if (appointment.place.title.isNotEmpty)
-              Hero(
-                tag: "appointmentPlace_${appointment.title}_${appointment.id}",
-                child: Text(
-                  appointment.place.title,
-                  maxLines: 2,
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TutorialTile extends StatelessWidget {
-  final Tutorial tutorial;
-  final double deviceWidth;
-
-  const _TutorialTile({
-    required this.tutorial,
-    required this.deviceWidth,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final background = theme.colorScheme.secondaryContainer
-        .withValues(alpha: theme.brightness == Brightness.dark ? 0.45 : 0.7);
-
-    return GestureDetector(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) =>
-                TimetableAppointmentPage(appointment: tutorial),
-          ),
-        );
-      },
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        constraints: BoxConstraints(maxWidth: deviceWidth * 0.8),
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: const BorderRadius.all(appBorderRadius),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "Tutorium",
-              style: theme.textTheme.labelSmall
-                  ?.copyWith(color: theme.colorScheme.onSecondaryContainer),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              tutorial.title,
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
-              maxLines: 2,
-            ),
-            if (tutorial.notes != null && tutorial.notes!.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  tutorial.notes!,
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LunchBreakTile extends StatelessWidget {
-  final TimetableAppointment appointment;
-
-  const _LunchBreakTile({required this.appointment});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Text(
-        appointment.title,
-        style: theme.textTheme.titleSmall
-            ?.copyWith(fontWeight: FontWeight.bold, letterSpacing: 1.2),
-      ),
     );
   }
 }

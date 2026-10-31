@@ -1,16 +1,11 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:kit_mobile/settings/providers/settings_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../../common_ui/block_container.dart';
-import '../../common_ui/cupertino_bordered_button.dart';
-import '../../credentials/data/credentials_provider.dart';
-import '../../ilias/views/ilias_page_view.dart';
-import '../../module/models/module.dart';
+import '../../l10n/l10n.dart';
 import '../../state_management/kit_provider.dart';
-import '../../timetable/pages/timetable_edit_page.dart';
 import '../../toasts/models/toasts_provider.dart';
 
 class ProfileView extends StatelessWidget {
@@ -20,7 +15,6 @@ class ProfileView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final credsVM = Provider.of<CredentialsProvider>(context);
     final vm = Provider.of<KITProvider>(context);
     final toastsProvider = Provider.of<ToastsProvider>(context);
     final settingsVM = Provider.of<SettingsProvider>(context);
@@ -73,7 +67,7 @@ class ProfileView extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("Studiengang", style: theme.textTheme.titleMedium,),
+                Text(L10n.t("settings.degreeProgram"), style: theme.textTheme.titleMedium,),
                 const Padding(padding: EdgeInsets.all(10)),
                 Expanded(
                   child: Text(
@@ -92,7 +86,7 @@ class ProfileView extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("Semester", style: theme.textTheme.titleMedium,),
+                Text(L10n.t("settings.semester"), style: theme.textTheme.titleMedium,),
                 Text(KITProvider.currentSemesterString, style: theme.textTheme.titleMedium,),
               ],
             ),
@@ -104,7 +98,7 @@ class ProfileView extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text("Leistungspunkte", style: theme.textTheme.titleMedium,),
+                  Text(L10n.t("settings.creditPoints"), style: theme.textTheme.titleMedium,),
 
                   Text(vm.student.ectsAcquired, style: theme.textTheme.titleMedium,),
                 ],
@@ -120,7 +114,7 @@ class ProfileView extends StatelessWidget {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text("Note (⌀)", style: theme.textTheme.titleMedium,),
+                      Text(L10n.t("settings.avgGrade"), style: theme.textTheme.titleMedium,),
 
                       Text(vm.student.avgMark.toString(), style: theme.textTheme.titleMedium,),
                     ],
@@ -136,7 +130,7 @@ class ProfileView extends StatelessWidget {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text("LP", style: theme.textTheme.titleMedium,),
+                      Text(L10n.t("settings.creditsShort"), style: theme.textTheme.titleMedium,),
 
                       Text(vm.student.ectsAcquired, style: theme.textTheme.titleMedium,),
                     ],
@@ -146,44 +140,8 @@ class ProfileView extends StatelessWidget {
             ],
           ),
 
-          // const Padding(padding: EdgeInsets.all(10)),
-
-          // _controlsRow(context, vm)
         ],
       ),
     );
   }
-
-  Widget _controlsRow(BuildContext context, KITProvider vm) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        CupertinoBorderedButton(
-            title: "Module",
-            icon: CupertinoIcons.arrow_turn_left_down,
-            onPressed: () {
-              Scrollable.ensureVisible(relevantModulesTitleKey.currentContext!);
-            }
-        ),
-
-        CupertinoBorderedButton(
-            title: "Stundenplan",
-            icon: CupertinoIcons.pencil_circle,
-            onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(builder: (BuildContext context) => TimetableEditPage()));
-            }
-        ),
-
-        CupertinoBorderedButton(
-            title: "ILIAS",
-            icon: CupertinoIcons.globe,
-            onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(builder: (BuildContext context) => IliasPageView(KITModule(), PHPSESSID_Future: vm.iliasManager.getPHPSESSID())));
-            }
-        ),
-      ],
-    );
-  }
-
 }

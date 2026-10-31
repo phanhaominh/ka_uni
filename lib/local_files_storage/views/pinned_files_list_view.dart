@@ -1,8 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/local_files_storage/files_manager.dart';
 import 'package:kit_mobile/local_files_storage/views/file_viewer.dart';
-import 'package:kit_mobile/module/models/module.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:provider/provider.dart';
 
@@ -30,12 +30,12 @@ class _PinnedFilesListViewState extends State<PinnedFilesListView> {
         }
 
         if (snapshot.hasError) {
-          return Center(child: Text('Fehler: ${snapshot.error}'));
+          return Center(child: Text(L10n.t('files.errorWithReason', [snapshot.error!])));
         }
 
         final files = snapshot.data ?? const [];
         if (files.isEmpty) {
-          return const Center(child: Text('Keine Dateien gefunden.'));
+          return Center(child: Text(L10n.t('files.noneFound')));
         }
 
         return ListView.separated(
@@ -80,9 +80,6 @@ class _PinnedFilesListViewState extends State<PinnedFilesListView> {
   }
 
   void _openFile(BuildContext context, KITProvider vm, PinnedFile file) {
-    final module = KITModule()
-      ..iliasLink = file.urlString
-      ..title = file.customName;
 
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -106,7 +103,7 @@ class _PinnedFilesListViewState extends State<PinnedFilesListView> {
       context: context,
       builder: (dialogContext) {
         return CupertinoAlertDialog(
-          title: const Text('Datei umbenennen'),
+          title: Text(L10n.t('files.renameFile')),
           content: SizedBox(
             height: 75, // MediaQuery.of(context).devicePixelRatio,
             child: Padding(
@@ -114,20 +111,20 @@ class _PinnedFilesListViewState extends State<PinnedFilesListView> {
               child: CupertinoTextField(
                 controller: controller,
                 autofocus: true,
-                placeholder: 'Neuer Name',
+                placeholder: L10n.t('files.newName'),
               ),
             ),
           ),
           actions: [
             CupertinoDialogAction(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Abbrechen'),
+              child: Text(L10n.t('files.cancel')),
             ),
             CupertinoDialogAction(
               isDefaultAction: true,
               onPressed: () =>
                   Navigator.of(dialogContext).pop(controller.text.trim()),
-              child: const Text('Speichern'),
+              child: Text(L10n.t('files.save')),
             ),
           ],
         );
@@ -154,18 +151,18 @@ class _PinnedFilesListViewState extends State<PinnedFilesListView> {
       context: context,
       builder: (dialogContext) {
         return CupertinoAlertDialog(
-          title: const Text('Datei entfernen'),
+          title: Text(L10n.t('files.removeFile')),
           content: Text(
-              'Möchtest du "${file.customName}" wirklich aus deinen angehefteten Dateien entfernen?'),
+              L10n.t('files.removeFileConfirm', [file.customName])),
           actions: [
             CupertinoDialogAction(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Abbrechen'),
+              child: Text(L10n.t('files.cancel')),
             ),
             CupertinoDialogAction(
               isDestructiveAction: true,
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Löschen'),
+              child: Text(L10n.t('files.delete')),
             ),
           ],
         );

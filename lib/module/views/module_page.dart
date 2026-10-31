@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/module_info_table/views/module_info_table_view.dart';
 import 'package:kit_mobile/utils/date_time_utils.dart';
 import 'package:provider/provider.dart';
@@ -34,7 +35,7 @@ class _ModuleViewState extends State<ModuleView> {
         if (!moduleSnapshot.hasData || moduleSnapshot.data == null) {
           return Scaffold(
             appBar: AppBar(
-              title: Text("Modul", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.normal),),
+              title: Text(L10n.t("module.title"), style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.normal),),
             ),
             body: const Center(
               child: KITProgressIndicator(),
@@ -50,7 +51,7 @@ class _ModuleViewState extends State<ModuleView> {
 
         return Scaffold(
           appBar: AppBar(
-            title: Text("Modul", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.normal),),
+            title: Text(L10n.t("module.title"), style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.normal),),
             actions: [
               (module.iliasLink != null && module.iliasLink!.isNotEmpty) ? CupertinoButton(child: Text("ILIAS"), onPressed: () {
                 Navigator.of(context).push(MaterialPageRoute(builder: (BuildContext context) => IliasPageView(module, PHPSESSID_Future: vm.iliasManager.getPHPSESSID())));
@@ -91,7 +92,7 @@ class _ModuleViewState extends State<ModuleView> {
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
-                            "Zuletzt aktualisiert: ${formatHumanReadableTimestamp(module.lastUpdated)}",
+                            L10n.t("module.lastUpdated", [formatHumanReadableTimestamp(module.lastUpdated)]),
                             style: theme.textTheme.bodySmall
                                 ?.copyWith(color: theme.colorScheme.outline),
                           ),
@@ -156,7 +157,7 @@ class _ModuleViewState extends State<ModuleView> {
                             children: [
                               Icon(CupertinoIcons.book_circle, color: theme.colorScheme.primary,),
                               Padding(padding: EdgeInsets.all(iconDescriptionPadding),),
-                              Text("${module.pointsAcquired} / ${module.pointsAvailable} LP",)
+                              Text(L10n.t("module.credits", [module.pointsAcquired, module.pointsAvailable]),)
                             ],
                           )
                         ],

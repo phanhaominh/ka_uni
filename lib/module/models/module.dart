@@ -1,6 +1,7 @@
 import 'package:html/parser.dart';
 import 'package:kit_mobile/parsing/models/hierarchic_table_row.dart';
 
+import '../../l10n/l10n.dart';
 import '../../module_info_table/models/module_info_table.dart';
 
 class KITModule {
@@ -38,7 +39,7 @@ class KITModule {
     // get title
     elements = document.getElementById("cabr_name-field")?.getElementsByClassName("element");
     if (elements != null && elements.isNotEmpty) {
-      title = elements.first.innerHtml;
+      title = elements.first.text.replaceAll(RegExp(r"\s+"), " ").trim();
     }
 
     // get assignment type
@@ -115,15 +116,15 @@ class KITModule {
 
   String get timeAxisPositionString {
     if (!examDateKnown) {
-      return "Das Prüfungsdatum ist unbekannt";
+      return L10n.t("module.examDateUnknown");
     }
     final delta = examDate.difference(DateTime.now());
 
     if (isUpcoming) {
-      return "in ${delta.inDays} Tagen";
+      return L10n.t("module.examInDays", [delta.inDays]);
     }
 
-    return "war vor ${-delta.inDays} Tagen";
+    return L10n.t("module.examDaysAgo", [-delta.inDays]);
   }
 
   bool get isUpcoming {

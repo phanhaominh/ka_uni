@@ -1,3 +1,8 @@
+// NO package:collection here on purpose: parseTr's element/td parameters are
+// untyped, so `.firstOrNull` on a returned List<Element> would compile but
+// die at RUNTIME with NoSuchMethodError (dynamic dispatch skips extension
+// methods) - which silently killed every course-tree row parse, leaving
+// rowsSorted empty ("no grade row") and login permanently broken.
 import 'dart:math';
 
 
@@ -27,8 +32,6 @@ class HierarchicTableRow  {
   }
 
   static HierarchicTableRow? parseTr(element, Map<int, List<HierarchicTableRow>> rowsSorted) {
-    HierarchicTableRow? newRow;
-
     int level = 0;
     final classes = element.attributes["class"]?.split(" ");
     if (classes == null) {
@@ -37,13 +40,21 @@ class HierarchicTableRow  {
 
     for (var rowClass in classes) {
       if (rowClass.contains("hierarchy")) {
-        level = int.parse(rowClass[rowClass.length - 1]);
+        level = int.tryParse(rowClass[rowClass.length - 1]) ?? 0;
         break;
       }
     }
 
     final cells = element.getElementsByTagName("td");
-    final firstLink = cells[1].getElementsByTagName("a").first;
+    // campus emits header/summary <tr>s with too few cells: cells[1] would
+    // throw RangeError and cells[4..7] below would throw, killing the whole
+    // course-tree parse mid-fetch
+    if (cells.length < 8) {
+      return null;
+    }
+    // .first would throw on link-less rows before the null check below
+    final links = cells[1].getElementsByTagName("a");
+    final firstLink = links.isEmpty ? null : links[0];
 
     if (firstLink == null) {
       return null;
@@ -53,23 +64,17 @@ class HierarchicTableRow  {
       child.remove();
     });
 
-    if (cells.length >= 8) {
-      newRow = HierarchicTableRow(
-        level: level,
-        title: firstLink.innerHtml,
-        href: firstLink.attributes["href"],
-        type: cells[2].innerHtml,
-        statusStr: "",
-        grade: cells[4].innerHtml,
-        pointsAcquired: cells[6].innerHtml,
-        pointsMax: cells[7].innerHtml,
-      );
-    }
-
-    if (newRow == null) {
-      return null;
-    }
-
+    final newRow = HierarchicTableRow(
+      level: level,
+      // cascampus embeds layout whitespace/entities ("Mechanical Design  A")
+      title: firstLink.text.replaceAll(RegExp(r"\s+"), " ").trim(),
+      href: firstLink.attributes["href"],
+      type: cells[2].innerHtml,
+      statusStr: "",
+      grade: cells[4].innerHtml,
+      pointsAcquired: cells[6].innerHtml,
+      pointsMax: cells[7].innerHtml,
+    );
     if (newRow.grade.contains(",")) {
       final commaIndex = newRow.grade.lastIndexOf(",");
       newRow.grade = newRow.grade.substring(max(0, commaIndex - 1), min(commaIndex + 2, newRow.grade.length));

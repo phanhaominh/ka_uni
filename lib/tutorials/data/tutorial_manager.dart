@@ -13,14 +13,25 @@ class TutorialManager extends ChangeNotifier {
     _loadSemester(KITProvider.currentSemesterString);
   }
 
+  /// Logout teardown: the logout prefs sweep deletes DATA_tutorialsFor*,
+  /// but the in-memory copy survived - the next add/edit re-persisted the
+  /// PREVIOUS account's whole tutorial list, and _doLoadSemester's
+  /// short-circuit meant the purge never re-read from disk either.
+  void clearAll() {
+    _tutorialsBySemester.clear();
+    _loadedSemesters.clear();
+    _loadingSemesters.clear();
+    _loadFutures.clear();
+    notifyListeners();
+  }
+
   bool isSemesterLoaded(String semesterString) =>
       _loadedSemesters.contains(semesterString);
 
   List<Tutorial> tutorialsForSemester(String semesterString) =>
       List.unmodifiable(_tutorialsBySemester[semesterString] ?? const []);
 
-  List<Tutorial> tutorialsForWeekday(
-      String semesterString, Weekday weekday) {
+  List<Tutorial> tutorialsForWeekday(String semesterString, Weekday weekday) {
     final tutorials = _tutorialsBySemester[semesterString];
     if (tutorials == null) {
       return const [];
@@ -39,13 +50,12 @@ class TutorialManager extends ChangeNotifier {
   }
 
   Future<void> addOrUpdateTutorial(Tutorial tutorial) async {
-    await _ensureSemestersListContains(tutorial.semesterString);
     await _loadSemester(tutorial.semesterString);
 
-    final tutorials =
-        List<Tutorial>.from(_tutorialsBySemester[tutorial.semesterString] ?? []);
-    final idx = tutorials.indexWhere(
-        (existing) => existing.tutorialId == tutorial.tutorialId);
+    final tutorials = List<Tutorial>.from(
+        _tutorialsBySemester[tutorial.semesterString] ?? []);
+    final idx = tutorials
+        .indexWhere((existing) => existing.tutorialId == tutorial.tutorialId);
 
     final sanitizedTitle = tutorial.moduleTitle.trim().isEmpty
         ? tutorial.moduleTitle
@@ -87,16 +97,26 @@ class TutorialManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _loadSemester(String semesterString) async {
-    if (_loadedSemesters.contains(semesterString) ||
-        _loadingSemesters.contains(semesterString)) {
+  final Map<String, Future<void>> _loadFutures = {};
+
+  Future<void> _loadSemester(String semesterString) {
+    // single-flight: callers during an in-flight load must AWAIT it, not
+    // return early and then persist against an empty in-memory list
+    final inFlight = _loadFutures[semesterString];
+    if (inFlight != null) return inFlight;
+    final future = _doLoadSemester(semesterString);
+    _loadFutures[semesterString] = future;
+    return future.whenComplete(() => _loadFutures.remove(semesterString));
+  }
+
+  Future<void> _doLoadSemester(String semesterString) async {
+    if (_loadedSemesters.contains(semesterString)) {
       return;
     }
-
-    _loadingSemesters.add(semesterString);
-
     final prefs = await SharedPreferences.getInstance();
-    final rawList = prefs.getStringList(_tutorialsKeyForSemester(semesterString));
+
+    final rawList =
+        prefs.getStringList(_tutorialsKeyForSemester(semesterString));
 
     if (rawList == null) {
       _tutorialsBySemester[semesterString] = [];
@@ -119,24 +139,13 @@ class TutorialManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _ensureSemestersListContains(String semesterString) async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = _semestersListKeyFor(semesterString);
-    final stored = prefs.getStringList(key) ?? <String>[];
-    if (stored.contains(semesterString)) {
-      return;
-    }
-
-    final updated = List<String>.from(stored)..add(semesterString);
-    await prefs.setStringList(key, updated);
-  }
-
   Future<void> _persistSemester(String semesterString) async {
     final prefs = await SharedPreferences.getInstance();
     final tutorials = _tutorialsBySemester[semesterString] ?? const [];
     final encoded =
         tutorials.map((tutorial) => tutorial.encode()).toList(growable: false);
-    await prefs.setStringList(_tutorialsKeyForSemester(semesterString), encoded);
+    await prefs.setStringList(
+        _tutorialsKeyForSemester(semesterString), encoded);
   }
 
   static int _tutorialComparator(Tutorial a, Tutorial b) {
@@ -148,7 +157,4 @@ class TutorialManager extends ChangeNotifier {
 
   String _tutorialsKeyForSemester(String semesterString) =>
       'DATA_tutorialsFor$semesterString';
-
-  String _semestersListKeyFor(String semesterString) =>
-      'DATA_semestersWithTutorials$semesterString';
 }

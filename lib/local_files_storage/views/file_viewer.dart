@@ -8,8 +8,10 @@ import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../l10n/l10n.dart';
 import '../../state_management/kit_provider.dart';
 import '../../toasts/models/toasts_provider.dart';
+import '../files_manager.dart';
 import '../models/pinned_file.dart';
 
 class PDFScreen extends StatefulWidget {
@@ -38,7 +40,7 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Document"),
+        title: Text(L10n.t("files.document")),
         actions: <Widget>[
           IconButton(
             icon: Icon(CupertinoIcons.pin_fill),
@@ -169,14 +171,13 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
 
   Future<void> _handlePinPressed(ToastsProvider toastsProvider) async {
     final kitProvider = Provider.of<KITProvider>(context, listen: false);
-    final settingsProvider = Provider.of<KITProvider>(context, listen: false);
 
     final moduleTitles = [
-          "Sonstiges",
+          L10n.t("files.miscModule"),
         ] +
         _collectRelevantModuleTitles(kitProvider);
     if (moduleTitles.isEmpty) {
-      toastsProvider.showTextToast("Keine Module verfügbar");
+      toastsProvider.showTextToast(L10n.t("files.noModules"));
       return;
     }
 
@@ -194,19 +195,22 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
         customName.trim().isEmpty ? selectedTitle : customName.trim();
 
     try {
-      await settingsProvider.saveIliasFile(PinnedFile(
-          semesterString: KITProvider.currentSemesterString,
-          urlString: widget.iliasFile.urlString,
-          moduleTitle: selectedTitle,
-          addedAt: DateTime.now().toUtc(),
-          customName: resolvedCustomName,
-          fileSystemPath: widget.path));
-      toastsProvider.showTextToast("Datei gespeichert");
+      // addPinnedFile notifies IliasFilesProvider itself; calling
+      // notifyListeners through an extension was a protected-member abuse
+      await Provider.of<IliasFilesProvider>(context, listen: false)
+          .addPinnedFile(PinnedFile(
+              semesterString: KITProvider.currentSemesterString,
+              urlString: widget.iliasFile.urlString,
+              moduleTitle: selectedTitle,
+              addedAt: DateTime.now().toUtc(),
+              customName: resolvedCustomName,
+              fileSystemPath: widget.path));
+      toastsProvider.showTextToast(L10n.t("files.fileSaved"));
     } catch (error) {
       if (!mounted) {
         return;
       }
-      toastsProvider.showTextToast("Speichern fehlgeschlagen");
+      toastsProvider.showTextToast(L10n.t("files.saveFailed"));
       if (kDebugMode) {
         print("Failed to save ILIAS file: $error");
       }
@@ -248,8 +252,8 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
       context: context,
       builder: (popupContext) {
         return CupertinoActionSheet(
-          title: const Text("Modul auswählen"),
-          message: const Text("Bitte wähle das Modul für die Datei aus."),
+          title: Text(L10n.t("files.selectModule")),
+          message: Text(L10n.t("files.selectModuleHint")),
           actions: moduleTitles
               .map(
                 (title) => CupertinoActionSheetAction(
@@ -261,7 +265,7 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
           cancelButton: CupertinoActionSheetAction(
             isDefaultAction: true,
             onPressed: () => Navigator.of(popupContext).pop(),
-            child: const Text("Abbrechen"),
+            child: Text(L10n.t("files.cancel")),
           ),
         );
       },
@@ -275,36 +279,29 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
       context: context,
       builder: (dialogContext) {
         return CupertinoAlertDialog(
-          title: const Text("Datei benennen"),
+          title: Text(L10n.t("files.nameFile")),
           content: Padding(
             padding: const EdgeInsets.only(top: 12),
             child: CupertinoTextField(
               controller: controller,
               autofocus: true,
-              placeholder: "Name der Datei",
+              placeholder: L10n.t("files.fileNamePlaceholder"),
             ),
           ),
           actions: [
             CupertinoDialogAction(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text("Abbrechen"),
+              child: Text(L10n.t("files.cancel")),
             ),
             CupertinoDialogAction(
               isDefaultAction: true,
               onPressed: () =>
                   Navigator.of(dialogContext).pop(controller.text.trim()),
-              child: const Text("Speichern"),
+              child: Text(L10n.t("files.save")),
             ),
           ],
         );
       },
     );
-  }
-}
-
-extension _SettingsProviderIliasFiles on KITProvider {
-  Future<void> saveIliasFile(PinnedFile file) async {
-    await iliasFileManager.addPinnedFile(file);
-    notifyListeners();
   }
 }

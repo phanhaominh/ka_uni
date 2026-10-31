@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../../l10n/l10n.dart';
+
 class PinnedFile {
   final String semesterString;
   final String urlString;
@@ -48,7 +50,7 @@ class PinnedFile {
               ? customNameRaw.trim()
               : fallbackTitle.isNotEmpty
                   ? fallbackTitle
-                  : "Unbenannte Datei";
+                  : L10n.t("files.unnamedFile");
 
       return PinnedFile(
         semesterString: semester,

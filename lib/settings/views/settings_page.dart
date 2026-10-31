@@ -1,5 +1,10 @@
+import 'dart:convert' show utf8;
+
+import 'package:file_picker/file_picker.dart';
+import 'package:kit_mobile/state_management/campus/campus_manager.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/constants/view_constants.dart';
@@ -11,7 +16,10 @@ import 'package:provider/provider.dart';
 
 import '../../credentials/data/credentials_provider.dart';
 import '../../info/views/info_page.dart';
+import '../../l10n/l10n.dart';
 import '../../local_files_storage/views/pages/files_cache_page.dart';
+import '../../tutorials/data/tutorial_manager.dart';
+import '../../toasts/models/toasts_provider.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -23,18 +31,19 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  bool _loggingOut = false;
+
   @override
   Widget build(BuildContext context) {
     final vm = Provider.of<KITProvider>(context);
     final credsVM = Provider.of<CredentialsProvider>(context);
     final settingsVM = Provider.of<SettingsProvider>(context);
-    final filesVM = Provider.of<IliasFilesProvider>(context);
 
     // final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("Einstellungen"),
+        title: Text(L10n.t("settings.title")),
         actions: [
           CupertinoButton(
               child: Icon(CupertinoIcons.info),
@@ -44,7 +53,9 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
       body: SingleChildScrollView(
         child: Container(
-          padding: defaultPagePaddingEdgeInsetsAll,
+          // extra bottom room: the floating dock pill overlays the scroll
+          // view, and the last rows (Cache/Log out) must reach above it
+          padding: defaultPagePaddingEdgeInsetsAll.copyWith(bottom: 150),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             mainAxisAlignment: MainAxisAlignment.end,
@@ -65,21 +76,32 @@ class _SettingsPageState extends State<SettingsPage> {
               //   ),
               // ),
 
-              SettingsSectionTitle(title: "Homepage"),
+              SettingsSectionTitle(title: L10n.t("settings.sectionHomepage")),
 
               BlockContainer(
                 child: Column(
                   children: [
                     SettingRow(
-                        title: "Profil anzeigen",
+                        title: L10n.t("settings.showProfile"),
                         trailing: CupertinoSwitch(
                             value: settingsVM.showingProfile.value,
                             onChanged: settingsVM.showingProfile.set)),
                     SettingRow(
-                        title: "Durchschnittsnote anzeigen",
+                        title: L10n.t("settings.showAvgGrade"),
                         trailing: CupertinoSwitch(
                             value: settingsVM.showingAvgMark.value,
                             onChanged: settingsVM.showingAvgMark.set)),
+                  ],
+                ),
+              ),
+
+              BlockContainer(
+                child: Column(
+                  children: [
+                    SettingRow(
+                        title: L10n.t("settings.language"),
+                        trailing: LanguageDropdown(
+                            languageSetting: settingsVM.language)),
                   ],
                 ),
               ),
@@ -90,34 +112,36 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: Column(
                   children: [
                     SettingRow(
-                        title: "Startseite",
+                        title: L10n.t("settings.iliasStartPage"),
                         trailing: MultipleChoiceSettingDropdown(
-                            multipleChoiceSetting: settingsVM.defaultIliasPage))
+                            multipleChoiceSetting: settingsVM.defaultIliasPage,
+                            labels: {
+                              "Dashboard": L10n.t("settings.iliasPageDashboard"),
+                              "Meine Kurse & Gruppen":
+                                  L10n.t("settings.iliasPageCourses"),
+                            })),
                   ],
                 ),
               ),
 
-              SettingsSectionTitle(title: "Dateicache"),
+              SettingsSectionTitle(
+                  title: L10n.t("settings.sectionOwnTimetable")),
+
+              BlockContainer(
+                child: const _OwnIcsSection(),
+              ),
+
+              SettingsSectionTitle(title: L10n.t("settings.sectionFileCache")),
 
               BlockContainer(
                 child: Column(
                   children: [
                     SettingRow(
-                      title: "Größe",
-                      trailing: FutureBuilder(
-                          future:
-                              filesVM.localFileStorageManager.getCacheSize(),
-                          builder: (context, snapshot) {
-                            if (snapshot.hasData && snapshot.data != null) {
-                              return Text(
-                                  "${(snapshot.data! / 1024 / 1024).toStringAsFixed(1)} MB");
-                            }
-
-                            return KITProgressIndicator();
-                          }),
+                      title: L10n.t("settings.cacheSize"),
+                      trailing: const _CacheSizeText(),
                     ),
                     CupertinoButton(
-                        child: Text("Verwalten"),
+                        child: Text(L10n.t("settings.manage")),
                         onPressed: () => Navigator.of(context).push(
                             MaterialPageRoute(
                                 builder: (BuildContext context) =>
@@ -127,8 +151,43 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
 
               CupertinoButton(
-                  child: Text("Ausloggen"),
-                  onPressed: () => credsVM.logout(vm)),
+                  child: Text(L10n.t("settings.logout")),
+                  // logout is a 5-10 s multi-vendor wipe; a second tap
+                  // mid-flight would re-enter the wipe half-done
+                  onPressed: _loggingOut
+                      ? null
+                      : () async {
+                          final toastsProvider = Provider.of<ToastsProvider>(
+                              context,
+                              listen: false);
+                          setState(() => _loggingOut = true);
+                          try {
+                            await credsVM.logout(
+                                vm, context.read<TutorialManager>());
+                            // logout is a 5-10 s multi-vendor wipe; without a
+                            // confirmation the button looks broken mid-flight
+                            if (context.mounted) {
+                              toastsProvider.showTextToast(
+                                  L10n.t("settings.loggedOut"));
+                            }
+                          } on Object catch (e) {
+                            // never leak raw exception text into a toast;
+                            // it is for the console, not the user
+                            if (kDebugMode) {
+                              print("Logout failed: $e");
+                            }
+                            if (context.mounted) {
+                              toastsProvider.showTextToast(
+                                  L10n.t("settings.logoutFailed"));
+                            }
+                          } finally {
+                            // on success logout navigates away: only touch
+                            // the element if this page is still alive
+                            if (mounted) {
+                              setState(() => _loggingOut = false);
+                            }
+                          }
+                        }),
             ],
           ),
         ),
@@ -137,6 +196,174 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   // Widget _settingRow(String title, Widget trailing) =>
+}
+
+/// Import of a faculty/personal timetable ICS (URL or file). Needed
+/// because big no-Belegung lectures (AM I etc.) never enter the CampusKIT
+/// webcal feed; the faculty distributes them as a separate ICS instead.
+class _OwnIcsSection extends StatefulWidget {
+  const _OwnIcsSection();
+
+  @override
+  State<_OwnIcsSection> createState() => _OwnIcsSectionState();
+}
+
+class _OwnIcsSectionState extends State<_OwnIcsSection> {
+  final _url = TextEditingController();
+  bool _busy = false;
+  String _status = "";
+
+  @override
+  void initState() {
+    super.initState();
+    final cm = context.read<KITProvider>().campusManager;
+    cm.ensurePersonalIcsLoaded().then((_) {
+      if (mounted) {
+        setState(() {
+          _url.text = cm.personalIcsUrl;
+          _status = _loadedStatus(cm);
+        });
+      }
+    });
+  }
+
+  String _loadedStatus(CampusManager cm) {
+    final n = RegExp("BEGIN:VEVENT", dotAll: true)
+        .allMatches(cm.personalIcs)
+        .length;
+    return n == 0 ? L10n.t("settings.ownIcsNone") : L10n.t("settings.ownIcsLoaded", [n]);
+  }
+
+  Future<void> _run(Future<String?> Function() op, {bool clear = false}) async {
+    final cm = context.read<KITProvider>().campusManager;
+    final toasts = context.read<ToastsProvider>();
+    setState(() => _busy = true);
+    String? err;
+    try {
+      if (!clear) err = await op();
+    } catch (_) {
+      // A dead link or a pick cancelled mid-flight used to leave _busy
+      // true forever, silently disabling all three buttons.
+      err = "fetch";
+    }
+    await cm.ensurePersonalIcsLoaded();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _status = _loadedStatus(cm);
+      if (clear) _url.text = cm.personalIcsUrl;
+    });
+    if (clear) {
+      toasts.showTextToast(L10n.t("settings.ownIcsCleared"));
+    } else if (err == "bad") {
+      toasts.showTextToast(L10n.t("settings.ownIcsErrorBad"));
+    } else if (err == "fetch") {
+      toasts.showTextToast(L10n.t("settings.ownIcsErrorFetch"));
+    } else if (err != "cancelled") {
+      toasts.showTextToast(L10n.t("settings.ownIcsSaved"));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_status,
+              style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _url,
+            enabled: !_busy,
+            keyboardType: TextInputType.url,
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: L10n.t("settings.ownIcsUrlHint"),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              FilledButton(
+                  onPressed: _busy
+                      ? null
+                      : () => _run(() => cm(context).setPersonalIcsFromUrl(_url.text)),
+                  child: Text(L10n.t("settings.ownIcsSave"))),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                  onPressed: _busy
+                      ? null
+                      : () => _run(() async {
+                            final picked = await FilePicker.pickFiles(
+                              type: FileType.custom,
+                              allowedExtensions: const ["ics", "txt"],
+                              withData: true,
+                            );
+                            final bytes = picked?.files.single.bytes;
+                            if (bytes == null) return "cancelled";
+                            return cm(context)
+                                .setPersonalIcsFromRaw(
+                                    utf8.decode(bytes, allowMalformed: true));
+                          }),
+                  child: Text(L10n.t("settings.ownIcsFile"))),
+              const Spacer(),
+              TextButton(
+                  onPressed: _busy
+                      ? null
+                      : () => _run(() async => null, clear: true),
+                  child: Text(L10n.t("settings.ownIcsClear"))),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  static CampusManager cm(BuildContext context) =>
+      context.read<KITProvider>().campusManager;
+}
+
+/// Cache size is walked once: an inline FutureBuilder re-created the future
+/// on every unrelated rebuild (any setting toggle notifying the providers
+/// below) and each recreation is a recursive directory walk.
+class _CacheSizeText extends StatefulWidget {
+  const _CacheSizeText();
+
+  @override
+  State<_CacheSizeText> createState() => _CacheSizeTextState();
+}
+
+class _CacheSizeTextState extends State<_CacheSizeText> {
+  late final Future<int> _sizeFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _sizeFuture = Provider.of<IliasFilesProvider>(context, listen: false)
+        .localFileStorageManager
+        .getCacheSize();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<int>(
+        future: _sizeFuture,
+        builder: (context, snapshot) {
+          if (snapshot.hasData && snapshot.data != null) {
+            return Text(
+                "${(snapshot.data! / 1024 / 1024).toStringAsFixed(1)} MB");
+          }
+          if (snapshot.hasError) {
+            // a failed directory walk must not spin forever
+            return const Text("—");
+          }
+          return KITProgressIndicator();
+        });
+  }
 }
 
 class SettingRow extends StatelessWidget {
@@ -193,8 +420,14 @@ class SettingsSectionTitle extends StatelessWidget {
 class MultipleChoiceSettingDropdown extends StatelessWidget {
   final MultipleChoiceSetting _multipleChoiceSetting;
 
+  /// Optional display labels decoupled from stored values (e.g. the ILIAS
+  /// start page pref must keep the scraped German page title as its value).
+  final Map<String, String>? labels;
+
   const MultipleChoiceSettingDropdown(
-      {super.key, required MultipleChoiceSetting multipleChoiceSetting})
+      {super.key,
+      required MultipleChoiceSetting multipleChoiceSetting,
+      this.labels})
       : _multipleChoiceSetting = multipleChoiceSetting;
 
   @override
@@ -214,12 +447,48 @@ class MultipleChoiceSettingDropdown extends StatelessWidget {
                       value: el,
                       alignment: Alignment.centerRight,
                       child: Text(
-                        "$el",
+                        labels?["$el"] ?? "$el",
                         style: theme.textTheme.bodyMedium,
                       ),
                     ))
                 .toList(),
             value: _multipleChoiceSetting.value,
             onChanged: (item) => _multipleChoiceSetting.set(item)));
+  }
+}
+
+/// Language picker with display names decoupled from stored pref values.
+class LanguageDropdown extends StatelessWidget {
+  final MultipleChoiceSetting<String> languageSetting;
+
+  const LanguageDropdown({super.key, required this.languageSetting});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final labels = {
+      "system": L10n.t("settings.languageSystem"),
+      "de": L10n.t("settings.languageDe"),
+      "en": L10n.t("settings.languageEn"),
+    };
+    return Expanded(
+        child: DropdownButton<String>(
+            underline: const SizedBox.shrink(),
+            borderRadius: BorderRadius.all(appBorderRadius),
+            dropdownColor: theme.cardColor,
+            elevation: 1,
+            alignment: Alignment.centerRight,
+            items: languageSetting.choices
+                .map((el) => DropdownMenuItem(
+                      value: el,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        labels[el] ?? el,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ))
+                .toList(),
+            value: languageSetting.value,
+            onChanged: (item) => languageSetting.set(item!)));
   }
 }

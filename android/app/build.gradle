@@ -15,12 +15,12 @@ if (localPropertiesFile.exists()) {
 
 def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
 if (flutterVersionCode == null) {
-    flutterVersionCode = '35'
+    flutterVersionCode = '60'
 }
 
 def flutterVersionName = localProperties.getProperty('flutter.versionName')
 if (flutterVersionName == null) {
-    flutterVersionName = '0.5.1'
+    flutterVersionName = '0.6.0-mei1'
 }
 
 def keystoreProperties = new Properties()
@@ -35,6 +35,7 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        coreLibraryDesugaringEnabled true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -76,4 +77,6 @@ flutter {
     source = "../.."
 }
 
-dependencies {}
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+}

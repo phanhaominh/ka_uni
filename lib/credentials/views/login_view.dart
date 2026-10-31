@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
@@ -15,6 +16,8 @@ import 'package:provider/provider.dart';
 import '../../../common_ui/kit_progress_indicator.dart';
 import '../../constants/view_constants.dart';
 import '../../info/views/info_page.dart';
+import '../../l10n/l10n.dart';
+import '../../toasts/models/toasts_provider.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -46,17 +49,10 @@ class LoginPageState extends State<LoginPage> {
         borderRadius: BorderRadius.all(cupertinoInputBorderRadius));
 
     if (credsVM.credentialsLoaded && _usernameInputController.text.isEmpty) {
+      // username only: the real KIT password must never appear in an
+      // editable, copyable field - automatic auth uses the stored value
+      // programmatically via credsVM.login(), not this text field
       _usernameInputController.text = credsVM.credentials.username;
-      _passwordInputController.text = credsVM.credentials.password;
-
-      // if (credsVM.credentials.valid &&
-      //     credsVM.credentials.isFormatValid &&
-      //     !vm.profileReady &&
-      //     !credsVM.loggingIn) {
-      //   Timer(const Duration(milliseconds: 50), () {
-      //     _submitLogin(credsVM, vm);
-      //   });
-      // }
     }
 
     return Scaffold(
@@ -79,12 +75,12 @@ class LoginPageState extends State<LoginPage> {
                               : () async {
                                   await credsVM.loadCredentials();
                                 },
-                          child: Text("Hallo",
+                          child: Text(L10n.t("settings.hello"),
                               style: theme.textTheme.headlineLarge
                                   ?.copyWith(fontWeight: FontWeight.bold)),
                         ),
                         Text(
-                          "Wilkommen in Karlsruhe",
+                          L10n.t("settings.welcomeKarlsruhe"),
                           style: theme.textTheme.headlineSmall
                               ?.copyWith(color: theme.colorScheme.primary),
                         ),
@@ -111,7 +107,7 @@ class LoginPageState extends State<LoginPage> {
                           child: CupertinoTextField(
                             controller: _passwordInputController,
                             // onChanged: (val) => _passwordInputController.text,
-                            placeholder: "Passwort",
+                            placeholder: L10n.t("settings.password"),
                             enabled: (credsVM.credentialsLoaded &&
                                 !credsVM.loggingIn),
                             keyboardType: TextInputType.visiblePassword,
@@ -129,7 +125,7 @@ class LoginPageState extends State<LoginPage> {
                                     MaterialPageRoute(
                                         builder: (context) => InfoPage()))),
                             CupertinoButton(
-                                child: Text("Einloggen"),
+                                child: Text(L10n.t("settings.login")),
                                 onPressed: () => _submitLogin(credsVM, vm))
                           ],
                         )
@@ -143,27 +139,32 @@ class LoginPageState extends State<LoginPage> {
                     : mq.size.height * 0.3,
                 curve: Curves.ease,
                 duration: const Duration(milliseconds: 750),
-                child: AnimatedOpacity(
-                  curve: Curves.ease,
-                  duration: const Duration(milliseconds: 750),
-                  opacity: _awaitingAuthentication ? 1 : 0.5,
-                  child: Container(
-                      decoration: BoxDecoration(
-                          boxShadow: [
-                            BoxShadow(
-                              color: theme.colorScheme.primary.withValues(
-                                  alpha: theme.brightness == Brightness.light
-                                      ? 0.8
-                                      : 0.5),
-                              blurRadius: 50,
-                              spreadRadius: 20,
-                            )
-                          ],
-                          color: theme.colorScheme.primary,
-                          borderRadius: BorderRadius.all(
-                              Radius.circular(mq.size.width * 7))),
-                      width: mq.size.width * 7,
-                      height: mq.size.width * 7),
+                child: IgnorePointer(
+                  // Decorative glow: its 7Wx7W bounds previously swallowed
+                  // every tap below 30% of the screen (untappable form).
+                  child: AnimatedOpacity(
+                    curve: Curves.ease,
+                    duration: const Duration(milliseconds: 750),
+                    opacity: _awaitingAuthentication ? 1 : 0.5,
+                    child: Container(
+                        decoration: BoxDecoration(
+                            boxShadow: [
+                              BoxShadow(
+                                color: theme.colorScheme.primary.withValues(
+                                    alpha: theme.brightness ==
+                                            Brightness.light
+                                        ? 0.8
+                                        : 0.5),
+                                blurRadius: 50,
+                                spreadRadius: 20,
+                              )
+                            ],
+                            color: theme.colorScheme.primary,
+                            borderRadius: BorderRadius.all(Radius.circular(
+                                mq.size.width * 7))),
+                        width: mq.size.width * 7,
+                        height: mq.size.width * 7),
+                  ),
                 )),
             AnimatedOpacity(
               opacity: _awaitingAuthentication ? 1 : 0,
@@ -192,7 +193,7 @@ class LoginPageState extends State<LoginPage> {
                                 child: Hero(
                                   tag: "greeting",
                                   child: Text(
-                                    "Hallo, ${credsVM.displayName}",
+                                    L10n.t("settings.helloName", [credsVM.displayName]),
                                     style: theme.textTheme.headlineLarge
                                         ?.copyWith(
                                             fontWeight: FontWeight.bold,
@@ -230,7 +231,7 @@ class LoginPageState extends State<LoginPage> {
                   children: [
                     CupertinoButton(
                         onPressed: vm.dismissOverlayHtml,
-                        child: const Text("Dismiss")),
+                        child: Text(L10n.t("common.dismiss"))),
                     HtmlWidget(vm.overlayHtmlData)
                   ],
                 ),
@@ -258,6 +259,7 @@ class LoginPageState extends State<LoginPage> {
         .submit(
             _usernameInputController.text, _passwordInputController.text, vm)
         .then((result) {
+      if (!mounted) return;
       if (result != AuthResult.ok) {
         if (kDebugMode) {
           print("Authentication failed: $result");
@@ -272,12 +274,17 @@ class LoginPageState extends State<LoginPage> {
         print("Successfully authenticated");
       }
 
-      vm.campusManager.fetchTimetable().then((_) => vm.campusManager.fetchAllModules());
-
-      // setState(() {
-      //   _awaitingAuthentication = false;
-      // });
+      // fetches run in the background; a throw must NEVER leave the form
+      // disabled (the historical frozen-form dead end)
+      unawaited(credsVM.loginPostSteps(vm));
       _onSuccessfulLogin(credsVM, vm);
+    }).catchError((Object e) {
+      if (kDebugMode) print("Login threw: $e");
+      if (!mounted) return;
+      setState(() {
+        _awaitingAuthentication = false;
+      });
+      context.read<ToastsProvider>().showTextToast(L10n.t("auth.fail"));
     });
   }
 

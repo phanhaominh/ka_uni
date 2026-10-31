@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.5.1+35
+version: 0.6.1+37
 
 environment:
   sdk: '>=3.3.3 <4.0.0'
@@ -29,6 +29,8 @@ environment:
 # versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_localizations:
     sdk: flutter
 
 
@@ -63,6 +65,10 @@ dependencies:
   liquid_glass_widgets: ^0.3.0-dev.1
   share_plus: ^12.0.1
   fuzzywuzzy: ^1.2.0
+  flutter_local_notifications: ^19.0.0
+  timezone: ^0.10.0
+  workmanager: ^0.9.0
+  file_picker: ^11.0.3
 dev_dependencies:
   flutter_test:
     sdk: flutter

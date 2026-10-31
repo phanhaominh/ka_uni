@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/module/models/module.dart';
 import 'package:kit_mobile/module_info_table/models/module_info_table_types/module_info_table_sensible.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
@@ -56,7 +57,7 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Stundenplan anpassen"),
+        title: Text(L10n.t("timetable.editTitle")),
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -70,7 +71,7 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                   Row(
                     children: [
                       Text(
-                        "Tutorien",
+                        L10n.t("timetable.tutorials"),
                         style: theme.textTheme.titleLarge,
                       ),
                     ],
@@ -79,8 +80,7 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                   const SizedBox(height: 8),
 
                   Text(
-                    "Verknüpfe Tutorien mit deinen Modulen und lege deren Zeitfenster fest. "
-                    "Die Zeiten entsprechen den regulären Campus-Blöcken.",
+                    L10n.t("timetable.tutorialsDescription"),
                     style: theme.textTheme.bodyMedium,
                   ),
 
@@ -95,8 +95,7 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 24),
                       child: Text(
-                        "Noch keine Tutorien gespeichert. "
-                        "Nutze den Plus-Button, um das erste Tutorium zu erstellen.",
+                        L10n.t("timetable.noTutorials"),
                         style: theme.textTheme.bodyMedium,
                       ),
                     )
@@ -139,7 +138,7 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                   Row(
                     children: [
                       Text(
-                        "Vorlesungen und Übungen",
+                        L10n.t("agenda.lecturesExercises"),
                         style: theme.textTheme.titleLarge,
                       ),
                       vm.campusManager.mostImportantModulesFetched ? SizedBox.shrink() : SizedBox(width: 8,),
@@ -150,7 +149,7 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                   const SizedBox(height: 8),
 
                   Text(
-                    "Füge Termine zum Stundenplan hizu, indem du auf das Stern-Icon klickst.",
+                    L10n.t("timetable.addAppointmentsHint"),
                     style: theme.textTheme.bodyMedium,
                   ),
 
@@ -290,8 +289,8 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                                   children: [
                                     Text(
                                       existing == null
-                                          ? "Tutorium hinzufügen"
-                                          : "Tutorium bearbeiten",
+                                          ? L10n.t("timetable.addTutorial")
+                                          : L10n.t("timetable.editTutorial"),
                                       style: theme.textTheme.titleLarge,
                                     ),
 
@@ -299,8 +298,9 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
 
                                     DropdownButtonFormField<String>(
                                       initialValue: selectedModuleId,
-                                      decoration: const InputDecoration(
-                                          labelText: "Modul auswählen",
+                                      decoration: InputDecoration(
+                                          labelText:
+                                              L10n.t("timetable.selectModule"),
                                       ),
                                       items: moduleList
                                           .map(
@@ -321,8 +321,8 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
 
                                     DropdownButtonFormField<Weekday>(
                                       initialValue: selectedWeekday,
-                                      decoration: const InputDecoration(
-                                          labelText: "Wochentag"),
+                                      decoration: InputDecoration(
+                                          labelText: L10n.t("timetable.weekdayLabel")),
                                       items: workingWeekdays
                                           .map(
                                             (weekday) => DropdownMenuItem(
@@ -342,8 +342,8 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
 
                                     DropdownButtonFormField<int>(
                                       initialValue: selectedBlockIndex,
-                                      decoration: const InputDecoration(
-                                          labelText: "Zeitblock"),
+                                      decoration: InputDecoration(
+                                          labelText: L10n.t("timetable.timeBlock")),
                                       items: _blockOptions
                                           .map(
                                             (option) => DropdownMenuItem(
@@ -381,7 +381,7 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                                               horizontal: 12, vertical: 8),
                                           onPressed: () =>
                                               Navigator.of(dialogContext).pop(),
-                                          child: const Text("Abbrechen"),
+                                          child: Text(L10n.t("timetable.cancel")),
                                         ),
                                         const SizedBox(width: 12),
                                         CupertinoButton.filled(
@@ -435,11 +435,16 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                                             await context
                                                 .read<TutorialManager>()
                                                 .addOrUpdateTutorial(tutorial);
-                                            if (mounted) {
-                                              Navigator.of(dialogContext).pop();
+                                            if (dialogContext
+                                                .mounted) {
+                                              // the OUTER dialog route pops
+                                              // here: guard that context, not
+                                              // the page State's
+                                              Navigator.of(dialogContext)
+                                                  .pop();
                                             }
                                           },
-                                          child: const Text("Speichern"),
+                                          child: Text(L10n.t("timetable.save")),
                                         ),
                                       ],
                                     ),
@@ -468,25 +473,27 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
     final shouldDelete = await showCupertinoDialog<bool>(
       context: context,
       builder: (dialogContext) => CupertinoAlertDialog(
-        title: const Text("Tutorium löschen"),
+        title: Text(L10n.t("timetable.deleteTutorial")),
         content: Text(
-          "Möchtest du das Tutorium für \"${tutorial.moduleTitle}\" wirklich entfernen?",
+          L10n.t("timetable.deleteTutorialConfirm", [tutorial.moduleTitle]),
         ),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text("Abbrechen"),
+            child: Text(L10n.t("timetable.cancel")),
           ),
           CupertinoDialogAction(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             isDestructiveAction: true,
-            child: const Text("Löschen"),
+            child: Text(L10n.t("timetable.delete")),
           ),
         ],
       ),
     );
 
-    if (shouldDelete != true) {
+    if (shouldDelete != true || !context.mounted) {
+      // dialog dismissal is an async gap: the edit page can already be
+      // popped (system back during the dialog animation)
       return;
     }
 
@@ -530,14 +537,12 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              "Keine Module verfügbar",
+                              L10n.t("timetable.noModulesTitle"),
                               style: theme.textTheme.titleLarge,
                             ),
                             const SizedBox(height: 12),
-                            const Text(
-                              "Aktuell sind noch keine Module im Cache. "
-                              "Öffne ein Modul in der App, damit es für die Tutorien verwendet "
-                              "werden kann.",
+                            Text(
+                              L10n.t("timetable.noModulesBody"),
                             ),
                             const SizedBox(height: 24),
                             Align(
@@ -547,7 +552,7 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                                     horizontal: 12, vertical: 8),
                                 onPressed: () =>
                                     Navigator.of(dialogContext).pop(),
-                                child: const Text("Verstanden"),
+                                child: Text(L10n.t("agenda.dismiss")),
                               ),
                             ),
                           ],
@@ -567,19 +572,19 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
   static String _weekdayLabel(Weekday weekday) {
     switch (weekday) {
       case Weekday.monday:
-        return "Montag";
+        return L10n.t("timetable.monday");
       case Weekday.tuesday:
-        return "Dienstag";
+        return L10n.t("timetable.tuesday");
       case Weekday.wednesday:
-        return "Mittwoch";
+        return L10n.t("timetable.wednesday");
       case Weekday.thursday:
-        return "Donnerstag";
+        return L10n.t("timetable.thursday");
       case Weekday.friday:
-        return "Freitag";
+        return L10n.t("timetable.friday");
       case Weekday.saturday:
-        return "Samstag";
+        return L10n.t("timetable.saturday");
       case Weekday.sunday:
-        return "Sonntag";
+        return L10n.t("timetable.sunday");
     }
   }
 

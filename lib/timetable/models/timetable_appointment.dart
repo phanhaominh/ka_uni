@@ -6,8 +6,6 @@ import 'package:kit_mobile/geo/models/kit_place.dart';
 import 'package:kit_mobile/parsing/util/remove_html_children.dart';
 import 'package:latlong2/latlong.dart';
 
-import '../../utils/regexps.dart';
-
 enum TimetableAppointmentType {
   lecture,
   tutorial,
@@ -46,34 +44,21 @@ class TimetableAppointment {
     return id.isEmpty && title == "—";
   }
   
-  String get abbreviatedTitle {
-    String res = "";
+  /// Faculty ICS exports append the course number ("... - 3161011",
+  /// "... - 2145191/2145192"); on half-height cards that tail wraps to its
+  /// own line like a second title. Strip it for display only - matching,
+  /// hero tags and the enrolled-title keys keep the raw string.
+  static final _numberTail = RegExp(r"\s*-\s*\d[\d/]*$");
+  String get displayTitle => title.replaceFirst(_numberTail, "");
 
-    final skipTheseAsStartingCharacters = ["(", ];
-
-    title.split(" ").forEach((part) {
-      if (part.isEmpty || abbreviatedTitleSkipRegex.hasMatch(part)) {
-        return;
-      }
-
-      final startingCharacter = part.substring(0, 1);
-      
-      if (skipTheseAsStartingCharacters.contains(startingCharacter)) {
-        return;
-      }
-      
-      res += startingCharacter;
-    });
-
-    return res;
-  }
-
-  String abbreviatedTitleIfLongerThan(int? maxAllowedLength) {
-    if (title.length > (maxAllowedLength ?? 20)) {
-      return abbreviatedTitle;
+  /// LOCATION fields repeat tokens ("Gottlieb-Daimler-HS HS bldg 10.21").
+  static final _dupToken = RegExp(r"\b(\w{2,})\s+\1\b", caseSensitive: false);
+  String get displayPlace {
+    var p = place.title;
+    while (_dupToken.hasMatch(p)) {
+      p = p.replaceAllMapped(_dupToken, (m) => m.group(1)!);
     }
-
-    return title;
+    return p;
   }
 
   int get duration => end.difference(begin).inMinutes;
@@ -85,8 +70,11 @@ class TimetableAppointment {
       return kitLocation;
     }
 
-    final response = await http.get(Uri.parse(place.dataUrl));
-    var document = parse(response.body);
+    try {
+      final response = await http
+          .get(Uri.parse(place.dataUrl))
+          .timeout(const Duration(seconds: 15));
+      var document = parse(response.body);
     final targetDiv = document.getElementById("rwro_map-field");
     if (targetDiv == null) {
       return kitLocation;
@@ -110,7 +98,11 @@ class TimetableAppointment {
       return kitLocation;
     }
 
-    return LatLng(lat, lon);
+      return LatLng(lat, lon);
+    } on Object {
+      // campus map page down/slow: detail page just centres on the campus
+      return kitLocation;
+    }
   }
 
   static TimetableAppointment? parseFromHtmlTr(Element appointmentNode) {

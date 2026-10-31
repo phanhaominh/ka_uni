@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/extensions/theme_data_extension.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/timetable/models/timetable_daily.dart';
 import 'package:kit_mobile/timetable/models/timetable_weekly.dart';
 import 'package:kit_mobile/timetable/views/timetable_daily_view.dart';
@@ -34,7 +35,6 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
   @override
   Widget build(BuildContext context) {
     // final theme = Theme.of(context);
-    final mq = MediaQuery.of(context);
 
     // final emptyDay = TimetableDaily();
 
@@ -66,39 +66,18 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
     final TimetableDaily? tt =
         weekdayIdx % 7 < 5 ? vm.timetable.days[weekdayIdx % 7] : null;
 
-    final monthStr = [
-      "Januar",
-      "Februar",
-      "März",
-      "April",
-      "Mai",
-      "Juni",
-      "Juli",
-      "August",
-      "September",
-      "Oktober",
-      "November",
-      "Dezember",
-    ][date.month - 1];
+    final monthStr = L10n.t("timetable.month${date.month}");
 
-    final weekdayShortStr = [
-      "Mo",
-      "Di",
-      "Mi",
-      "Do",
-      "Fr",
-      "Sa",
-      "So"
-    ][weekdayIdx % 7];
+    final weekdayShortStr = L10n.weekday(weekdayIdx % 7 + 1);
 
-    String dateTitle = "${date.day}. $monthStr";
+    String dateTitle = L10n.t("timetable.dayMonth", [date.day, monthStr]);
 
     if (now.day == date.day && now.month == date.month) {
-      dateTitle = "Heute, $dateTitle";
+      dateTitle = L10n.t("agenda.todayFull", [dateTitle]);
     } else if (now.day - date.day == 1 && now.month == date.month) {
-      dateTitle = "Gestern, $dateTitle";
+      dateTitle = L10n.t("timetable.yesterdayFull", [dateTitle]);
     } else if (now.day - date.day == -1 && now.month == date.month) {
-      dateTitle = "Morgen, $dateTitle";
+      dateTitle = L10n.t("agenda.tomorrowFull", [dateTitle]);
     }
 
     return Stack(
@@ -167,7 +146,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 5),
                                 child: Text(
-                                  "Wochenende :)",
+                                  L10n.t("timetable.weekend"),
                                   style: theme.textTheme.bodyLarge,
                                 ),
                               )

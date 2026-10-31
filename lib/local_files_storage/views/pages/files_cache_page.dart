@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/constants/view_constants.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/local_files_storage/files_manager.dart';
 import 'package:kit_mobile/local_files_storage/models/pinned_file.dart';
 import 'package:kit_mobile/local_files_storage/views/file_viewer.dart';
@@ -33,7 +34,7 @@ class _FilesCachePageState extends State<FilesCachePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("Dateien Cache"),
+        title: Text(L10n.t("files.cacheTitle")),
       ),
       body: FutureBuilder(
           future: semestersListFuture,
@@ -167,7 +168,7 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                       [
                                         CupertinoButton(
                                           onPressed: () async {
-                                            final shouldDelete = await _confirmFileDeletion("alle Dateien im ${_prettifySemesterString(currentSemesterString)}");
+                                            final shouldDelete = await _confirmFileDeletion(L10n.t("files.allFilesInSemester", [_prettifySemesterString(currentSemesterString)]));
                                             if (shouldDelete != true) {
                                               return;
                                             }
@@ -184,7 +185,7 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                             });
                                           },
                                           foregroundColor: Colors.red,
-                                          child: Text("Alle Löschen"),
+                                          child: Text(L10n.t("files.deleteAll")),
                                         )
                                       ],
                                 )
@@ -203,17 +204,17 @@ class _FilesCachePageState extends State<FilesCachePage> {
 
   Future<bool?> _confirmFileDeletion(String filename) async {
     return await showCupertinoDialog<bool>(context: context, builder: (dialogContext) => CupertinoAlertDialog(
-      title: Text("Dateilöschung bestätigen"),
-      content: Text("Möchtest du den Dateicache für $filename löchen?"),
+      title: Text(L10n.t("files.confirmDeletionTitle")),
+      content: Text(L10n.t("files.confirmDeletionBody", [filename])),
       actions: [
         CupertinoDialogAction(
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: const Text('Abbrechen'),
+          child: Text(L10n.t("files.cancel")),
         ),
         CupertinoDialogAction(
           isDestructiveAction: true,
           onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: const Text('Löschen'),
+          child: Text(L10n.t("files.delete")),
         ),
       ],
     ));

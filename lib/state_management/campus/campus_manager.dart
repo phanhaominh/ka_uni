@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:fuzzywuzzy/fuzzywuzzy.dart';
 import 'package:async_locks/async_locks.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,9 @@ import '../../parsing/models/hierarchic_table_row.dart';
 import '../../student/name.dart';
 import '../../student/student.dart';
 import '../../timetable/models/timetable_weekly.dart';
+import '../../notifications/mei_notifications.dart';
+import '../../timetable/models/webcal.dart';
+import '../../exams/models/exam_list.dart';
 
 const _studentDataKey = "DATA_student";
 
@@ -26,6 +30,10 @@ class CampusManager extends KITLoginManager {
   final Set<String> _moduleRefreshInProgress = {};
 
   TimetableWeekly timetable = TimetableWeekly();
+
+  List<ExamEntry> exams = [];
+  bool examsLoaded = false;
+  bool isFetchingExams = false;
 
   Student student;
 
@@ -37,10 +45,18 @@ class CampusManager extends KITLoginManager {
   bool allModulesFetched = false;
   bool mostImportantModulesFetched = false;
 
+  /// The session-expiry recovery in [fetchModule] must join KITProvider's
+  /// single-flight forceRefetchEverything instead of running its own
+  /// clear+refetch cascade concurrently with sibling fetches (which wiped
+  /// the session cookies out from under them). Set by KITProvider's ctor;
+  /// the fallback stays for unwired (test) owners.
+  Future<void> Function({bool allModulesAsWell})? forceRefetchViaOwner;
+
   Timer? scheduleFetchingTimer;
   DateTime? lastModuleFetchTime;
 
-  String get _timetableSrcCurrentSemesterKey => "DATA_timetableSrc_${KITProvider.currentSemesterString}";
+  String get _timetableSrcCurrentSemesterKey =>
+      "DATA_timetableSrc_${KITProvider.currentSemesterString}";
 
   String get _moduleCacheNamespace =>
       "module_cache_${KITProvider.currentSemesterString}";
@@ -180,11 +196,11 @@ class CampusManager extends KITLoginManager {
 
   CampusManager(this.student, this.notificationCallback);
 
-  Future<void> forceRefetchEverything({bool allModulesAsWell=true}) async {
+  Future<void> forceRefetchEverything({bool allModulesAsWell = true}) async {
     await clearEverything();
     await fetchSchedule();
     await fetchTimetable();
-
+    await fetchExams();
     if (allModulesAsWell) {
       await fetchAllModules();
     }
@@ -199,13 +215,58 @@ class CampusManager extends KITLoginManager {
     await clearCookiesAndCache();
   }
 
-  Future<http.Response?> _fetchScheduleStage3_ObtainSchedule(
-      http.Response previousResponse) async {
-    String url =
-        "https://campus.studium.kit.edu/redirect.php?system=campus&url=/campus/student/contractview.asp";
+  /// Drops every piece of account-derived in-memory state. CampusManager
+  /// (via KITProvider) is created once and SURVIVES logout, so anything not
+  /// listed here keeps rendering the previous student's data to the next
+  /// account on a shared device until every refetch happens to succeed.
+  void wipeAccountMemory() {
+    scheduleFetchingTimer?.cancel();
+    scheduleFetchingTimer = null;
+    moduleRows = [];
+    rowModules.clear();
+    _moduleRefreshInProgress.clear();
+    timetable = TimetableWeekly();
+    timetableChanged = false;
+    timetableSurfaceBroken = false;
+    exams = [];
+    examsLoaded = false;
+    examsSurfaceBroken = false;
+    isFetchingExams = false;
+    allModulesFetched = false;
+    mostImportantModulesFetched = false;
+    // A's accepted tutorials must not ride into B's cache/agenda/pushes:
+    // every later fetch injects whatever block is held here, and a failed
+    // fetchMine for B (break, plus session) would never replace it
+    signMeUpSynth = "";
+    personalIcs = "";
+    personalIcsUrl = "";
+    _personalIcsLoaded = false;
+  }
 
-    url = "https://campus.studium.kit.edu/redirect.php?system=cascampus&url=campus/student/contractview.asp";
-    var response = await session.get(Uri.parse(url));
+  Future<http.Response?> _fetchScheduleStage3ObtainSchedule(
+      http.Response previousResponse) async {
+    const url =
+        "https://cascampus.studium.kit.edu/campus/student/contractview.asp";
+
+    if (tguid == null) {
+      await bootTguid();
+    }
+    if (!cascampusReady) {
+      await bootCascampusSession();
+    }
+
+    var response = await guardedCasGet("$url?tguid=${tguid ?? ""}");
+
+    if (response.statusCode == 200 && sessionExpired(response.body)) {
+      // cascampus SP session died (TTL is ~1h) - re-bootstrap once and refetch
+      if (kDebugMode) {
+        print("Stage 3: cascampus session expired, re-bootstrapping...");
+      }
+      cascampusReady = false;
+      if (await bootCascampusSession()) {
+        response = await guardedCasGet("$url?tguid=${tguid ?? ""}");
+      }
+    }
 
     if (isManualRedirectRequired(response)) {
       if (kDebugMode) {
@@ -241,15 +302,45 @@ class CampusManager extends KITLoginManager {
       return;
     }
 
+    // isFetchingSchedule must be cleared on EVERY exit: the login flow
+    // (login -> fetchSchedule) and every retry run INSIDE this call stack,
+    // so a held flag deadlocks the login future forever (the reported
+    // "app is not responding" freeze). No re-entrancy is possible anyway.
+    isFetchingSchedule = true;
+    try {
+      await _fetchScheduleInner(
+        notify: notify,
+        retryIfFailed: retryIfFailed,
+        secondRetryIfFailed: secondRetryIfFailed,
+        refreshSession: refreshSession,
+        startRefreshTimer: startRefreshTimer,
+      );
+    } finally {
+      isFetchingSchedule = false;
+    }
+  }
+
+  Future<void> _fetchScheduleInner({
+    required bool notify,
+    required bool retryIfFailed,
+    required bool secondRetryIfFailed,
+    required bool refreshSession,
+    required bool startRefreshTimer,
+  }) async {
     if (refreshSession) {
       await clearCookiesAndCache();
     }
 
-    isFetchingSchedule = true;
-    await fetchStage0_Init(
+    final stage0 = await fetchStage0_Init(
         notify: notify,
         retryIfFailed: retryIfFailed,
         secondRetryIfFailed: secondRetryIfFailed);
+    if (stage0 < 0) {
+      // invalid credentials / no JSESSIONID: posting stage 1-2 credentials
+      // against a sessionless jar would only churn the IdP
+      if (kDebugMode) print("Stage 0 returned $stage0 - aborting schedule");
+      return;
+    }
     http.Response currentResponse = await fetchStage1_TryToOpenLoginPage(
         "https://campus.studium.kit.edu/Shibboleth.sso/Login?target=https://campus.studium.kit.edu/exams/registration.php?login=1");
 
@@ -265,7 +356,7 @@ class CampusManager extends KITLoginManager {
 
     // stage 3
     final stage3Response =
-        await _fetchScheduleStage3_ObtainSchedule(currentResponse);
+        await _fetchScheduleStage3ObtainSchedule(currentResponse);
     if (stage3Response == null) {
       if (kDebugMode) {
         print("Stage 3 failed!");
@@ -334,29 +425,51 @@ class CampusManager extends KITLoginManager {
       });
     });
 
+    // empty/odd table shape (rowsSorted[1] unset) - not necessarily an error:
+    // a freshly enrolled student legitimately has no grades row yet
     if (rowsSorted[1]?.first.grade.replaceAll(",", ".") == null) {
       if (kDebugMode) {
         print(rowsSorted);
-        print("No row. Failed to fetch for now. Retrying...");
+        print("No grade row; profile fields left as-is. Retrying once...");
       }
-
-      isFetchingSchedule = false;
       if (retryIfFailed) {
-        await fetchSchedule(
-            retryIfFailed: secondRetryIfFailed, secondRetryIfFailed: false);
+        // Retry in the inner directly: the public entry is unreachable from
+        // here (isFetchingSchedule is held by *this* frame, so its guard
+        // rejected every retry and made this path a no-op haptic twitch).
+        // Direct recursion is safe now - the flag stays owned by this frame
+        // and the inner call is awaited.
+        await _fetchScheduleInner(
+            notify: true,
+            retryIfFailed: secondRetryIfFailed,
+            secondRetryIfFailed: false,
+            refreshSession: false,
+            startRefreshTimer: false);
+        // the inner fetch parsed its own fresh page and owns ready/notify
+        if (ready) return;
       }
-
-      return;
+      // Still no grades row after the retry: that is the NORMAL state of a
+      // freshly enrolled student, not an error. Bailing out here used to
+      // leave ready=false forever, so login() bounced correct credentials
+      // every single time for first-semester users. Continue with the data
+      // that does exist; cleanCell() covers the missing grade cell.
     }
 
     degreeProgram = rowsSorted[1]?.first.title ?? "";
     ectsAcquired = rowsSorted[1]?.first.pointsAcquired ?? "";
 
+    String cleanCell(String? raw) {
+      final cleaned = (raw ?? "")
+          .replaceAll("&nbsp;", " ")
+          .replaceAll(RegExp(r"\s+"), " ")
+          .trim();
+      return cleaned.isEmpty ? "0,0" : cleaned;
+    }
+
     student.set(
         name: Name(firstName: firstName, lastName: lastName),
         matriculationNumber: matrn,
         degreeProgram: degreeProgram,
-        avgMark: rowsSorted[1]?.first.grade ?? "0,0",
+        avgMark: cleanCell(rowsSorted[1]?.first.grade),
         ectsAcquired: ectsAcquired);
 
     await writeStudentData();
@@ -371,8 +484,6 @@ class CampusManager extends KITLoginManager {
     if (kDebugMode) {
       print("Got profile data!");
     }
-
-    isFetchingSchedule = false;
 
     // TODO: reenable
     // tmp: create a lock or something to prevent interface glitches
@@ -399,8 +510,11 @@ class CampusManager extends KITLoginManager {
             getOrFetchModuleForRow(row, retryIfFailed: false);
         newModuleFutures.add(newModuleFuture);
       }
-
-      final newModules = await Future.wait(newModuleFutures);
+      // one timeout/socket failure must not reject Future.wait and leave
+      // isFetchingModules stuck true with all sibling results lost
+      final newModules = (await Future.wait(newModuleFutures.map(
+              (f) => f.then<KITModule?>((m) => m).catchError((_) => null))))
+          .whereType<KITModule>();
 
       for (final newModule in newModules) {
         if (newModule.iliasLink != null && newModule.row != null) {
@@ -414,7 +528,8 @@ class CampusManager extends KITLoginManager {
         }
 
         final newModule =
-            await getOrFetchModuleForRow(row, retryIfFailed: false);
+            await getOrFetchModuleForRow(row, retryIfFailed: false)
+                .catchError((_) => KITModule());
         if (newModule.iliasLink != null) {
           _addRelevantModuleRow(row);
         }
@@ -422,8 +537,13 @@ class CampusManager extends KITLoginManager {
     }
   }
 
-  Future<void> fetchAllModules({inParallel = true, onlyMostImportantOnes=false}) async {
+  Future<void> fetchAllModules(
+      {inParallel = true, onlyMostImportantOnes = false}) async {
     isFetchingModules = true;
+    // "all fetched" must not survive a re-fetch: it is only ever set true
+    // below, so a stale true from an earlier run made everything gated on
+    // it skip the modules this run failed to load
+    allModulesFetched = false;
     mostImportantModulesFetched = false;
 
     if (kDebugMode) {
@@ -459,17 +579,17 @@ class CampusManager extends KITLoginManager {
       }
     }
 
-    await fetchModulesForRows(rowsToFetch, inParallel: inParallel);
-    if (kDebugMode) {
-      print("Fetched the most important rows!");
+    try {
+      await fetchModulesForRows(rowsToFetch, inParallel: inParallel);
+      mostImportantModulesFetched = true;
+      if (!onlyMostImportantOnes) {
+        await fetchModulesForRows(lessImportantRows, inParallel: inParallel);
+        allModulesFetched = true;
+      }
+    } finally {
+      // the flag is what every spinner waits on; it may never outlive the fetch
+      isFetchingModules = false;
     }
-    mostImportantModulesFetched = true;
-    if (!onlyMostImportantOnes) {
-      await fetchModulesForRows(lessImportantRows, inParallel: inParallel);
-    }
-
-    isFetchingModules = false;
-    allModulesFetched = true;
     if (kDebugMode) {
       print("Finished fetching modules!");
     }
@@ -479,18 +599,34 @@ class CampusManager extends KITLoginManager {
       {recursiveRetry = true, userInitiated = false}) async {
     final url = row.href;
 
-    final response = await session.get(Uri.parse(url));
+    final response = await guardedCasGet(url);
 
-    var module = KITModule();
-
-    if (rowModules.containsKey(row.id)) {
-      module = rowModules[row.id]!;
+    // An expired cascampus session answers with a 200 "Sitzung abgelaufen"
+    // page. parseModulePage keeps every field whose DOM node is absent, so
+    // parsing it INTO the cached instance wiped its good tables and stamped
+    // lastUpdated=now (fresh for 2 days) - silent data loss instead of a
+    // visible failure. Detect first, re-boot, retry once, and parse into a
+    // fresh instance that only replaces the cache when non-empty.
+    if (response.statusCode == 200 && sessionExpired(response.body)) {
+      if (cascampusReady) {
+        cascampusReady = false;
+        await bootCascampusSession();
+        return fetchModule(row,
+            recursiveRetry: recursiveRetry, userInitiated: userInitiated);
+      }
     }
 
+    var module = KITModule();
     module.parseModulePage(response.body);
 
-    if (module.grade == "0,0" && row.grade.isNotEmpty) {
-      module.grade = row.grade;
+    final cached = rowModules[row.id];
+    if (module.isEmpty && cached != null && !cached.isEmpty) {
+      // dead/changed page against a live cache: keep the cache authoritative
+      module = cached;
+    } else if (!module.isEmpty) {
+      module.row = row;
+      module.hierarchicalTableRowId = row.id;
+      rowModules[row.id] = module;
     }
 
     if (module.title.trim().isEmpty) {
@@ -523,7 +659,11 @@ class CampusManager extends KITLoginManager {
         print(
             "Failed to fetch the module. Possible reason: session expired. Retrying...");
       }
-      await forceRefetchEverything(allModulesAsWell: !userInitiated);
+      // join the owner's single-flight when wired: calling
+      // forceRefetchEverything directly cleared cookies while sibling
+      // fetches of a concurrent refresh cascade were still in flight
+      await (forceRefetchViaOwner?.call(allModulesAsWell: !userInitiated) ??
+          forceRefetchEverything(allModulesAsWell: !userInitiated));
       return fetchModule(row, recursiveRetry: false);
     }
 
@@ -552,7 +692,8 @@ class CampusManager extends KITLoginManager {
     //   return cachedModule;
     // }
 
-    final fetchedModule = await fetchModule(row, recursiveRetry: retryIfFailed, userInitiated: userInitiated);
+    final fetchedModule = await fetchModule(row,
+        recursiveRetry: retryIfFailed, userInitiated: userInitiated);
     return fetchedModule;
   }
 
@@ -580,14 +721,17 @@ class CampusManager extends KITLoginManager {
 
   Future<void> resetRelevantModules() async {
     relevantModuleRowIDs = [];
-    await storeRelevantModuleRows();
+    // remove, don't persist an empty list: the key is user data too
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_relevantModuleRowsStorageKey);
     if (kDebugMode) {
       print("Done resetting relevant modules!");
     }
   }
 
   final Lock _addRelevantModuleLock = Lock();
-  Future<void> _addRelevantModuleRow(HierarchicTableRow row, {keepSorted = true}) async {
+  Future<void> _addRelevantModuleRow(HierarchicTableRow row,
+      {keepSorted = true}) async {
     // A module is RELEVANT if there is an ILIAS link meaning that it is
     // relevant for the current semester
 
@@ -624,7 +768,8 @@ class CampusManager extends KITLoginManager {
           int insertAt = 0;
           while (insertAt < relevantModuleRowIDs.length &&
               !module.hasFavoriteChild &&
-              rowModules[relevantModuleRowIDs[insertAt]]!.hasFavoriteChild) {
+              (rowModules[relevantModuleRowIDs[insertAt]]?.hasFavoriteChild ??
+                  false)) {
             insertAt++;
           }
           relevantModuleRowIDs.insert(insertAt, row.id);
@@ -638,8 +783,7 @@ class CampusManager extends KITLoginManager {
     });
   }
 
-  void _extractUsefulDataFromModule(KITModule module) {
-  }
+  void _extractUsefulDataFromModule(KITModule module) {}
 
   Future<bool> toggleIsFavorite(ModuleInfoTableCell cell, KITModule inModule,
       {anticipate = true}) async {
@@ -660,11 +804,12 @@ class CampusManager extends KITLoginManager {
 
     // const url =
     //     "https://campus.kit.edu/sp/campus/student/specificModuleView.asp";
-    const url = "https://cascampus.studium.kit.edu/campus/student/specificBrickView.asp";
+    const url =
+        "https://cascampus.studium.kit.edu/campus/student/specificBrickView.asp";
 
-    final response =
-        await session.post(Uri.parse(url), body: {action: cell.objectValue});
-    final isOk = !response.body.toLowerCase().contains("sitzung ist abgelaufen");
+    final response = await guardedCasPost(url, {action: cell.objectValue});
+    final isOk =
+        !response.body.toLowerCase().contains("sitzung ist abgelaufen");
 
     for (final row in moduleRows) {
       if (row.id == inModule.hierarchicalTableRowId) {
@@ -689,20 +834,583 @@ class CampusManager extends KITLoginManager {
       relevantModuleRowIDs = [];
     }
   }
+  // ---- WebCal ICS timetable source (primary; token URL, no bot wall) ----
+
+  static const _webcalUrlKey = "DATA_webcalUrl";
+  static const _webcalIcsCacheKey = "DATA_webcalIcsCache";
+  static const _webcalFingerprintKey = "DATA_webcalFingerprint";
+  static const _webcalChangesKey = "DATA_webcalChanges";
+  // fingerprint of the feed URL the cached ICS/fingerprint came from; a
+  // different source (re-provisioned token URL, test-seam build) means the
+  // stored baseline describes ANOTHER calendar - diffing across sources
+  // produced a 50-delta phantom CHAINED band during E2E runs
+  static const _webcalFeedSourceKey = "DATA_webcalFeedSource";
+
+  bool timetableChanged = false;
+
+  // ---- SignMeUp synthetic events (tutorials the webcal does not carry) ----
+  // VEVENT text merged into the cached feed at every write, bracketed by
+  // sentinel lines so re-injection is idempotent and change detection can
+  // strip it again.
+  static const synthBegin = "X-SIGNMEUP-SYNTH-BEGIN";
+  static const synthEnd = "X-SIGNMEUP-SYNTH-END";
+  String signMeUpSynth = "";
+
+  static String stripSignMeUpSynth(String raw) {
+    final b = raw.indexOf(synthBegin);
+    if (b < 0) return raw;
+    final e = raw.indexOf(synthEnd);
+    if (e < 0) return raw.substring(0, b);
+    return raw.substring(0, b) + raw.substring(e + synthEnd.length + 2);
+  }
+
+  /// The sentinel-wrapped block currently embedded in [raw] ("" if none);
+  /// lets the background isolate carry the student's tutorials across a
+  /// fresh feed fetch.
+  static String extractSignMeUpSynth(String raw) {
+    final b = raw.indexOf(synthBegin);
+    if (b < 0) return "";
+    final e = raw.indexOf(synthEnd);
+    if (e < 0 || e < b) return "";
+    return raw.substring(b + synthBegin.length + 2, e);
+  }
+
+  static String injectSignMeUpSynth(String raw, String block) {
+    final base = stripSignMeUpSynth(raw);
+    if (block.isEmpty) return base;
+    final wrapped = "$synthBegin\r\n$block$synthEnd\r\n";
+    final at = base.lastIndexOf("END:VCALENDAR");
+    if (at < 0) return "$base$wrapped";
+    return base.replaceRange(at, at, wrapped);
+  }
+
+  // ---- personal / faculty timetable ICS ----
+  // The faculty sends first-semester MEI a timetable ICS by e-mail because
+  // the big lectures (AM I, EM I, MSE I, MD A) carry no Belegungspflicht
+  // and therefore NEVER appear in the CampusKIT webcal feed. Without this
+  // the agenda showed one real lecture out of a 14-event week. Merged into
+  // the same cache as the subscription so agenda, change detection, lecture
+  // reminders and the exam relevance gate treat those events equally.
+  static const personalBegin = "X-PERSONAL-ICS-BEGIN";
+  static const personalEnd = "X-PERSONAL-ICS-END";
+  static const _personalIcsKey = "DATA_personalIcs";
+  static const _personalIcsUrlKey = "DATA_personalIcsUrl";
+  String personalIcs = "";
+  String personalIcsUrl = "";
+  bool _personalIcsLoaded = false;
+
+  static String stripPersonalIcs(String raw) {
+    final b = raw.indexOf(personalBegin);
+    if (b < 0) return raw;
+    final e = raw.indexOf(personalEnd);
+    if (e < 0) return raw.substring(0, b);
+    return raw.substring(0, b) + raw.substring(e + personalEnd.length + 2);
+  }
+
+  static String extractPersonalIcs(String raw) {
+    final b = raw.indexOf(personalBegin);
+    if (b < 0) return "";
+    final e = raw.indexOf(personalEnd);
+    if (e < 0 || e < b) return "";
+    return raw.substring(b + personalBegin.length + 2, e);
+  }
+
+  static String injectPersonalIcs(String raw, String block) {
+    final base = stripPersonalIcs(raw);
+    if (block.isEmpty) return base;
+    final wrapped = "$personalBegin\r\n$block$personalEnd\r\n";
+    final at = base.lastIndexOf("END:VCALENDAR");
+    if (at < 0) return "$base$wrapped";
+    return base.replaceRange(at, at, wrapped);
+  }
+
+  /// Reads the persisted block once per process (settings screen can open
+  /// before any feed work has run).
+  Future<void> ensurePersonalIcsLoaded() async {
+    if (_personalIcsLoaded) return;
+    _personalIcsLoaded = true;
+    final prefs = await SharedPreferences.getInstance();
+    personalIcs = prefs.getString(_personalIcsKey) ?? "";
+    personalIcsUrl = prefs.getString(_personalIcsUrlKey) ?? "";
+  }
+
+  /// Accepts a full ICS file body; keeps only the VEVENT blocks (calendar
+  /// headers would be invalid inside the subscription's VCALENDAR).
+  /// Returns null on success, "bad"/"fetch" for user-facing errors.
+  Future<String?> setPersonalIcsFromRaw(String ics) async {
+    final blocks = RegExp("BEGIN:VEVENT.*?END:VEVENT", dotAll: true)
+        .allMatches(ics)
+        .map((m) => m.group(0)!);
+    var block = blocks.join("\r\n");
+    if (block.isEmpty) return "bad";
+    if (!block.endsWith("\r\n")) block = "$block\r\n";
+    if (WebcalFeed.parse("BEGIN:VCALENDAR\r\n$block END:VCALENDAR\r\n") ==
+        null) {
+      return "bad";
+    }
+    _personalIcsLoaded = true;
+    personalIcs = block;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_personalIcsKey, block);
+    await _applyPersonalIcs(prefs);
+    return null;
+  }
+
+  Future<String?> setPersonalIcsFromUrl(String url) async {
+    final trimmed = url.trim();
+    if (!trimmed.startsWith("http")) return "bad";
+    final response = await netGet(Uri.parse(trimmed));
+    if (response.statusCode != 200 ||
+        !response.body.contains("BEGIN:VEVENT")) {
+      return "fetch";
+    }
+    final err = await setPersonalIcsFromRaw(response.body);
+    if (err == null) {
+      personalIcsUrl = trimmed;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_personalIcsUrlKey, trimmed);
+    }
+    return err;
+  }
+
+  Future<void> clearPersonalIcs() async {
+    _personalIcsLoaded = true;
+    personalIcs = "";
+    personalIcsUrl = "";
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_personalIcsKey);
+    await prefs.remove(_personalIcsUrlKey);
+    await _applyPersonalIcs(prefs);
+  }
+
+  /// Re-embeds the block into whatever feed cache exists (or a stub
+  /// VCALENDAR when the subscription has not been fetched yet, so an
+  /// offline import is still visible immediately) and rebuilds everything
+  /// derived from the cache.
+  Future<void> _applyPersonalIcs(SharedPreferences prefs) async {
+    var cached = prefs.getString(_webcalIcsCacheKey) ?? "";
+    if (!cached.contains("BEGIN:VCALENDAR")) {
+      cached = "";
+      if (personalIcs.isEmpty) {
+        notificationCallback();
+        return;
+      }
+    }
+    final base =
+        cached.isEmpty ? "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n" : cached;
+    final merged = injectPersonalIcs(base, personalIcs);
+    await prefs.setString(_webcalIcsCacheKey, merged);
+    final feed = WebcalFeed.parse(merged);
+    if (feed != null) {
+      timetable = feed.toWeeklyTemplate();
+      rememberEnrolledTitles(feed);
+      unawaited(MeiNotifications.scheduleLectureReminders(feed));
+      unawaited(MeiNotifications.scheduleMorningDigest(feed));
+    }
+    notificationCallback();
+  }
+
+  /// Called after a SignMeUp refresh: rebuilds the cached feed and the
+  /// in-memory weekly template so the grid shows assigned groups at once.
+  Future<void> reapplySignMeUpSynth(String block) async {
+    if (block == signMeUpSynth) return;
+    signMeUpSynth = block;
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getString(_webcalIcsCacheKey);
+    if (cached == null || !cached.contains("BEGIN:VCALENDAR")) return;
+    final synth = injectSignMeUpSynth(cached, block);
+    await prefs.setString(_webcalIcsCacheKey, synth);
+    final feed = WebcalFeed.parse(synth);
+    if (feed != null) {
+      timetable = feed.toWeeklyTemplate();
+      rememberEnrolledTitles(feed);
+      unawaited(MeiNotifications.scheduleLectureReminders(feed));
+      // digest must see the injected tutorials too: without this, the
+      // "Today: N classes · First at ..." body kept the pre-SignMeUp set
+      unawaited(MeiNotifications.scheduleMorningDigest(feed));
+      notificationCallback();
+    }
+  }
+
+  // Loud-failure flags: parser returned nothing on a page that fetched fine
+  // (= KIT changed the markup) as opposed to a dead session (auto-recovered).
+  bool timetableSurfaceBroken = false;
+  bool examsSurfaceBroken = false;
+
+  // The cascampus `possibleexams` view lists the exam offers of the
+  // student's ENTIRE degree-programme catalogue: a first-semester student
+  // gets "Act now" + deadline notifications for exams of lectures they
+  // will attend two years later (verified live: 4 false alarms in WS 26/27
+  // for IT&DS / ProdOps / EM III / CAE). The webcal subscription is the
+  // only current-semester ground truth the app has, so registration
+  // urgency is gated on the exam's lecture appearing on the timetable.
+  Set<String> enrolledLectureTitles = {};
+
+  static String lectureTitleKey(String raw) {
+    var t = raw.toLowerCase();
+    final comma = t.indexOf(", ");
+    if (comma > 10) {
+      t = t.substring(0, comma); // "Title (V), Schulze" -> drop lecturer
+    }
+    t = t.replaceAll(
+        RegExp(r'^(vorlesung|tutorial|tu|uebung|ubung|übung|seminar|praktikum|klausur)\s*[:\-–]\s*'),
+        "");
+    // faculty ICS exports carry "- 3161010" / "- 2145191/2145192" course
+    // number tails and "(Tutorial - Group 4)" labels; neither belongs in a
+    // title key (the digits would poison the roman-numeral guard below)
+    t = t.replaceAll(RegExp(r"\s*-\s*[\d/]{4,}\s*$"), "");
+    t = t.replaceAll(RegExp(r"group\s+[a-z0-9]+\s*"), " ");
+    t = t.replaceAll(
+        RegExp(r'\((v|ue|ü|v u ue|v/u|course|exercise|lecture)\)'), " ");
+    t = t.replaceAll(RegExp(r"[^a-z0-9äöüß]+"), " ").trim();
+    return t;
+  }
+
+  /// "I"/"III"/"2" tokens: "Engineering Mechanics I" and "... III" share a
+  /// 90+ fuzzy ratio but are different modules - never match across them.
+  static final _numToken = RegExp(r"^(?:\d+|[ivx]+)$");
+  static Set<String> _numericTokens(String key) =>
+      key.split(" ").where((w) => _numToken.hasMatch(w)).toSet();
+
+  /// The exam catalogue joins course sequences into one entry
+  /// ("Materials Science I and II") while timetables list the single
+  /// module taken this term ("Materials Science and Engineering I").
+  /// Equal number sets already matched; a proper subset (i ⊂ {i, ii})
+  /// may also match, but ONLY if the noun words still align - "i" vs
+  /// "iii" sets never intersect, so EM I can never match EM III here.
+  static bool _numSetsCompatible(Set<String> e, Set<String> t) {
+    if (e.length == t.length) return e.containsAll(t);
+    if (e.isEmpty || t.isEmpty) return false;
+    return e.containsAll(t) || t.containsAll(e);
+  }
+
+  static String _nounWords(String key) =>
+      key.split(" ").where((w) => !_numToken.hasMatch(w)).join(" ");
+
+  static Set<String> enrolledTitleKeys(WebcalFeed feed) {
+    final out = <String>{};
+    for (final occ in feed.occurrences) {
+      final k = lectureTitleKey(occ.title);
+      if (k.length >= 4) out.add(k);
+    }
+    return out;
+  }
+
+  /// Kept in sync at every point a feed is parsed (fetch, SignMeUp synth
+  /// re-injection, agenda cache loads) so relevance stays correct offline.
+  void rememberEnrolledTitles(WebcalFeed? feed) {
+    final next = feed == null ? const <String>{} : enrolledTitleKeys(feed);
+    if (next.isNotEmpty) enrolledLectureTitles = next;
+  }
+
+  /// Tri-state: null = subscription never loaded (unknown -> stay loud),
+  /// true = lecture on the current timetable, false = catalogue-only exam
+  /// of a later semester (no registration duty this term).
+  bool? isTakingThisSemester(ExamEntry e) {
+    if (enrolledLectureTitles.isEmpty) return null;
+    final t = lectureTitleKey(e.title);
+    if (t.isEmpty) return null;
+    final tNums = _numericTokens(t);
+    for (final ev in enrolledLectureTitles) {
+      if (ev == t) return true;
+      final eNums = _numericTokens(ev);
+      if (!_numSetsCompatible(eNums, tNums)) continue;
+      if (ev.length >= 6 && (ev.contains(t) || t.contains(ev))) return true;
+      // same threshold kit_provider uses before POSTing a favourite toggle
+      if (ratio(t, ev) >= 70) return true;
+      // joined-sequence match ("I and II" ⊃ "I"): full-string ratio can sit
+      // below threshold because of the extra words, so require the noun
+      // words to align closely instead.
+      if (eNums.length != tNums.length) {
+        final ne = _nounWords(ev), nt = _nounWords(t);
+        if (ne.length >= 6 && nt.length >= 6 &&
+            (ne.contains(nt) || nt.contains(ne) || ratio(ne, nt) >= 80)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  Future<String?> _ensureWebcalUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_webcalUrlKey);
+    if (stored != null && stored.isNotEmpty) {
+      return stored;
+    }
+
+    final page =
+        "https://cascampus.studium.kit.edu/campus/student/webcal.asp?tguid=${tguid ?? ""}";
+    var response = await guardedCasGet(page);
+    if (response.statusCode != 200 || sessionExpired(response.body)) {
+      cascampusReady = false;
+      await bootCascampusSession();
+      response = await guardedCasGet(page);
+    }
+
+    var m =
+        RegExp('value="(https?://cascampus\\.studium\\.kit\\.edu/webcal/[^"]+)')
+            .firstMatch(response.body);
+    if (m == null) {
+      // not activated yet - submit the enable form hosted on the page
+      final g = RegExp('name="gguid" value="(0x[0-9A-Fa-f]+)"')
+          .firstMatch(response.body);
+      if (g != null && tguid != null) {
+        final enabled = await guardedCasPost(page,
+            {"gguid": g.group(1)!, "tguid": tguid!, "enable": "Aktivieren"});
+        m = RegExp(
+                'value="(https?://cascampus\\.studium\\.kit\\.edu/webcal/[^"]+)')
+            .firstMatch(enabled.body);
+      }
+    }
+
+    if (m == null) {
+      if (kDebugMode) {
+        print("WebCal provisioning FAILED (no token URL on webcal.asp)");
+      }
+      return null;
+    }
+
+    final url = m.group(1)!.split("?").first;
+    await prefs.setString(_webcalUrlKey, url);
+    if (kDebugMode) {
+      print("WebCal token provisioned");
+    }
+    return url;
+  }
+
+  /// E2E test seam: `--dart-define=TEST_WEBCAL_URL=<url>` redirects the
+  /// whole webcal pipeline (foreground fetch + background poll) at a
+  /// controlled feed. Empty in every normal build - zero production effect.
+  static const testWebcalUrl =
+      String.fromEnvironment("TEST_WEBCAL_URL");
+
+  Future<bool> fetchWebcalTimetable() async {
+    await ensurePersonalIcsLoaded();
+    // Contain EVERY failure (incl. TimeoutException from _ensureWebcalUrl /
+    // netGet): when this threw, fetchTimetable's HTML fallback never ran and
+    // forceRefetchEverything aborted mid-pipeline *after* clearEverything()
+    // had already wiped the caches - half-reset app, no error shown.
+    try {
+      final url = testWebcalUrl.isNotEmpty
+          ? testWebcalUrl
+          : await _ensureWebcalUrl();
+      if (url == null) {
+        return false;
+      }
+
+      final response = await netGet(Uri.parse(url));
+      if (response.statusCode != 200 ||
+          !response.body.contains("BEGIN:VCALENDAR")) {
+        if (kDebugMode) {
+          print(
+              "WebCal fetch failed: ${response.statusCode} len ${response.body.length}");
+        }
+        return false;
+      }
+
+      final feed = WebcalFeed.parse(response.body);
+      if (feed == null) {
+        if (kDebugMode) {
+          print("WebCal parse produced no occurrences!");
+        }
+        return false;
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      // source switch (test seam on/off, re-provisioned webcal token URL):
+      // reseed the baseline instead of diffing two different calendars
+      final previousSource = prefs.getString(_webcalFeedSourceKey);
+      if (previousSource != null && previousSource != url) {
+        await prefs.remove(_webcalFingerprintKey);
+      }
+      await prefs.setString(_webcalFeedSourceKey, url);
+      final previousFingerprint = prefs.getString(_webcalFingerprintKey);
+      final fingerprint = feed.fingerprint();
+      if (previousFingerprint != null && previousFingerprint != fingerprint) {
+        final changes = feed.changesSince(WebcalFeed.parse(
+            stripPersonalIcs(
+                stripSignMeUpSynth(prefs.getString(_webcalIcsCacheKey) ?? ""))));
+        if (changes.isNotEmpty) {
+          // an empty diff under a changed fingerprint is the rolling parse
+          // window, not a real change - flagging it stuck the tab badge with
+          // an undismissable CHANGED band (agenda only renders non-empty)
+          timetableChanged = true;
+          await prefs.setString(
+              _webcalChangesKey,
+              IcsChange.encode(mergeIcsChanges(
+                  IcsChange.decode(prefs.getString(_webcalChangesKey) ?? ""),
+                  changes)));
+        }
+        if (kDebugMode) {
+          print("WebCal feed CHANGED: ${changes.length} deltas");
+        }
+      }
+      await prefs.setString(_webcalFingerprintKey, fingerprint);
+      await prefs.setString(
+          _webcalIcsCacheKey,
+          injectPersonalIcs(
+              injectSignMeUpSynth(feed.raw, signMeUpSynth), personalIcs));
+      // age stamp for the agenda stale-data footer (also written by the
+      // background poll after it rewrites the cache)
+      await prefs.setString(
+          "DATA_webcalFetchedAt", DateTime.now().toIso8601String());
+
+      final merged = WebcalFeed.parse(injectPersonalIcs(
+          injectSignMeUpSynth(feed.raw, signMeUpSynth), personalIcs));
+      timetable = (merged ?? feed).toWeeklyTemplate();
+      rememberEnrolledTitles(merged ?? feed);
+
+      // webcal is healthy again: a one-off HTML false alarm used to pin the
+      // red "surface broken" banner for the whole process (only write site),
+      // and background polls advance the fingerprint without touching
+      // timetableChanged - a foreground fetch after a background-detected
+      // change used to silently un-light the home badge the push announced.
+      timetableSurfaceBroken = false;
+      timetableChanged =
+          (prefs.getString(_webcalChangesKey) ?? "").isNotEmpty ||
+              timetableChanged;
+      notificationCallback();
+      unawaited(MeiNotifications.scheduleLectureReminders(merged ?? feed));
+      unawaited(MeiNotifications.scheduleMorningDigest(merged ?? feed));
+
+      if (kDebugMode) {
+        print("Timetable from WebCal: ${feed.occurrences.length} occurrences");
+      }
+      return true;
+    } catch (e) {
+      if (kDebugMode) print("WebCal fetch threw, falling back to HTML: $e");
+      return false;
+    }
+  }
 
   Future<void> fetchTimetable({retryIfFailed = true}) async {
     if (kDebugMode) {
       print("Fetching timetable...");
     }
+    if (await fetchWebcalTimetable()) {
+      return;
+    }
+
+    if (tguid == null) {
+      await bootTguid();
+    }
+    if (!cascampusReady) {
+      await bootCascampusSession();
+    }
     final url =
-        "https://campus.studium.kit.edu/redirect.php?system=cascampus&url=/campus/student/timetable.asp";
-    final response = await session.get(Uri.parse(url));
+        "https://cascampus.studium.kit.edu/campus/student/timetable.asp?tguid=${tguid ?? ""}";
+    final response = await guardedCasGet(url);
 
     final ok = await updateTimetableFromStrSrc(response.body);
 
     if (!ok && retryIfFailed) {
+      // probably an expired cascampus session page - re-bootstrap, then retry once
+      cascampusReady = false;
+      await bootCascampusSession();
       return fetchTimetable(retryIfFailed: false);
     }
+    timetableSurfaceBroken = !ok;
+    if (!ok) {
+      notificationCallback();
+    }
+  }
+
+  Future<bool>? _examsInFlight;
+
+  Future<bool> fetchExams({retryIfFailed = true}) {
+    // memoize the in-flight fetch: a pull right after login's automatic
+    // fetch must await the SAME request, not get a bogus instant false
+    final inflight = _examsInFlight;
+    if (inflight != null) return inflight;
+    final future = _fetchExamsGuarded(retryIfFailed: retryIfFailed);
+    _examsInFlight = future;
+    return future.whenComplete(() => _examsInFlight = null);
+  }
+
+  Future<bool> _fetchExamsGuarded({required bool retryIfFailed}) async {
+    isFetchingExams = true;
+    try {
+      return await _fetchExamsInner(retryIfFailed: retryIfFailed);
+    } on Object {
+      // timeouts / socket errors must land in the same failure funnel as a
+      // malformed response, or the memoized future rejects every caller
+      // (exams page: endless spinner, refresh toast never fires)
+      if (retryIfFailed) {
+        cascampusReady = false;
+        if (await bootCascampusSession()) {
+          return _fetchExamsGuarded(retryIfFailed: false);
+        }
+      }
+      examsSurfaceBroken = true;
+      notificationCallback();
+      return false;
+    } finally {
+      isFetchingExams = false;
+    }
+  }
+
+  Future<bool> _fetchExamsInner({required bool retryIfFailed}) async {
+    if (kDebugMode) {
+      print("Fetching exam registration list...");
+    }
+    if (tguid == null) {
+      await bootTguid();
+    }
+    if (!cascampusReady) {
+      await bootCascampusSession();
+    }
+
+    // exams can load before the agenda page ever ran (cold start -> exams
+    // tab first); seed relevance from the cached ICS so the catalogue gate
+    // is correct from the first frame instead of "unknown"
+    if (enrolledLectureTitles.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      rememberEnrolledTitles(
+          WebcalFeed.parse(prefs.getString(_webcalIcsCacheKey) ?? ""));
+    }
+
+    final response = await guardedCasGet(
+        "https://cascampus.studium.kit.edu/campus/student/contractview.asp?view=possibleexams&tguid=${tguid ?? ""}");
+
+    if (response.statusCode == 200 && !sessionExpired(response.body)) {
+      final parsed = ExamListParser.parse(response.body);
+      // a well-formed page with zero rows is a valid empty state, not breakage
+      if (parsed.isNotEmpty || response.body.contains("EXAMLIST")) {
+        examsSurfaceBroken = false;
+        exams = parsed;
+        examsLoaded = true;
+        notificationCallback();
+        // deadline alarms only for exams of lectures actually on the
+        // timetable - catalogue offers of later semesters must stay silent
+        unawaited(MeiNotifications.scheduleExamReminders(
+            parsed.where((e) => isTakingThisSemester(e) != false).toList()));
+        if (kDebugMode) {
+          final open = parsed
+              .where((e) =>
+                  e.needsAction(DateTime.now()) &&
+                  isTakingThisSemester(e) != false)
+              .length;
+          print(
+              "Exams: ${parsed.length} entries, $open need registration (taken this semester)");
+        }
+        return true;
+      }
+    }
+
+    if (retryIfFailed) {
+      cascampusReady = false;
+      await bootCascampusSession();
+      // bypass fetchExams(): its in-flight memo still holds THIS future -
+      // awaiting it deadlocks the fetch (and every spinner on it) forever
+      return _fetchExamsGuarded(retryIfFailed: false);
+    }
+    if (kDebugMode) {
+      print("Exams fetch FAILED (session dead or EXAMLIST markup changed)");
+    }
+    examsSurfaceBroken = true;
+    notificationCallback();
+    return false;
   }
 
   Future<bool> updateTimetableFromStrSrc(String src, {cacheSrc = true}) async {
@@ -740,8 +1448,7 @@ class CampusManager extends KITLoginManager {
     final cached = await _readCachedTimetableSrc();
     if (cached == null || cached.isEmpty) {
       return false;
-    }
-    else {
+    } else {
       return updateTimetableFromStrSrc(cached);
     }
   }
@@ -772,7 +1479,7 @@ class CampusManager extends KITLoginManager {
           // Bingo! We've found a module with an appointment that should be
           // displayed on the TimetableEditPage
 
-          assert (result[module.hierarchicalTableRowId] != null);
+          assert(result[module.hierarchicalTableRowId] != null);
           bool shouldAdd = true;
 
           // ensure we do not insert duplicates

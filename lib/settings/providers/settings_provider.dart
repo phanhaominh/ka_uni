@@ -1,5 +1,6 @@
 
 import 'package:flutter/cupertino.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/settings/types/multiple_choice_setting.dart';
 
 import '../types/bool_setting.dart';
@@ -9,6 +10,7 @@ const liquidAssEverywhereKey = "PREF_liquidAssEverywhere";
 const showingAvgMarkKey = "PREF_showingAvgMark";
 const showingProfileKey = "PREF_showingProfile";
 const defaultIliasPageKey  = "PREF_defaultIliasPage";
+const languageKey = "PREF_language";
 
 class SettingsProvider extends ChangeNotifier {
   static SettingsProvider? _instance;
@@ -42,12 +44,23 @@ class SettingsProvider extends ChangeNotifier {
     choices: ["Dashboard", "Meine Kurse & Gruppen"],
     notifyCallback: () => _instance?.notifyListeners()
   );
+
+  /// App language; "system" follows the device locale.
+  MultipleChoiceSetting<String> language = MultipleChoiceSetting(
+    valueKey: languageKey,
+    choices: ["system", "de", "en"],
+    notifyCallback: () async {
+      await L10n.reload();
+      _instance?.notifyListeners();
+    },
+  );
   
   List<Setting> get settings => [
     liquidAssEverywhere,
     showingAvgMark,
     showingProfile,
-    defaultIliasPage
+    defaultIliasPage,
+    language
   ];
   
   Future<void> prepare() async {

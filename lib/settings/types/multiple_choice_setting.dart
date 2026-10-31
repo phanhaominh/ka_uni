@@ -15,6 +15,6 @@ class MultipleChoiceSetting<T> extends Setting<T> {
   @override
   Future<void> set(T newValue) async {
     assert (choicesSet.contains(newValue));
-    super.set(newValue);
+    await super.set(newValue);
   }
 }

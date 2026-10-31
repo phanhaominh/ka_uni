@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:haptic_feedback/haptic_feedback.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/module_info_table/views/appointment_cell.dart';
 import 'package:provider/provider.dart';
 
@@ -91,15 +92,17 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
                           });
                           // final toggleSuccessful = await vm.toggleIsFavorite(row.favoriteToggleCell!, table.parentModule);
                           final toggleSuccessful = await vm.toggleIsFavoriteFuzzy(titleCell.body, table.caption, table.parentModule.title);
+                          if (!mounted) return; // network outlives the page pop
                           if (!toggleSuccessful) {
-                            toastsProvider.showTextToast("Die Sitzung ist abgelaufen. Das kann ein bisschen länger dauern...");
+                            toastsProvider.showTextToast(L10n.t("module.sessionExpired"));
                             // retry ONE MORE TIME after refetching everything
                             await vm.forceRefetchEverything(allModulesAsWell: false);
+                            if (!mounted) return;
 
                             if (table.parentModule.row == null) {
                               await Haptics.vibrate(HapticsType.error);
-                              toastsProvider.showTextToast("Fehler beim Hinzufügen von ${titleCell.body} zum Stundenplan");
-                              setState(() {
+                              toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
+                              if (mounted) setState(() {
                                 _isBusy = false;
                               });
                               await vm.campusManager.fetchAllModules();
@@ -110,8 +113,8 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
 
                             if (newRowEntry == null) {
                               await Haptics.vibrate(HapticsType.error);
-                              toastsProvider.showTextToast("Fehler beim Hinzufügen von ${titleCell.body} zum Stundenplan");
-                              setState(() {
+                              toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
+                              if (mounted) setState(() {
                                 _isBusy = false;
                               });
                               await vm.campusManager.fetchAllModules();
@@ -128,7 +131,7 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
 
                             if (!secondToggleSuccessful) {
                               await Haptics.vibrate(HapticsType.error);
-                              toastsProvider.showTextToast("Fehler beim Hinzufügen von ${titleCell.body} zum Stundenplan");
+                              toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
                             } else {
                               _onToggleFavoriteSuccess(!row.favoriteToggleCell!.isFavorite, toastsProvider);
                             }
@@ -138,6 +141,7 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
                             _onToggleFavoriteSuccess(row.favoriteToggleCell!.isFavorite, toastsProvider);
                           }
 
+                          if (!mounted) return;
                           setState(() {
                             _isBusy = false;
                           });
@@ -154,7 +158,7 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
   }
 
   Future<void> _onToggleFavoriteSuccess(bool newValue, ToastsProvider toastsProvider) async {
-    toastsProvider.showTextToast(newValue ? "Wurde zum Stundenplan hinzugefügt!" : "Wurde vom Stundenplan entfernt!");
+    toastsProvider.showTextToast(newValue ? L10n.t("module.addedToTimetable") : L10n.t("module.removedFromTimetable"));
     await Haptics.vibrate(HapticsType.success);
   }
 }

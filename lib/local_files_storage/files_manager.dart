@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:kit_mobile/local_files_storage/local_file_storage_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/l10n.dart';
 import '../state_management/kit_provider.dart';
 import 'models/pinned_file.dart';
 
@@ -202,7 +203,7 @@ class IliasFilesProvider extends ChangeNotifier {
       return trimmedFallback;
     }
 
-    return "Unbenannte Datei";
+    return L10n.t("files.unnamedFile");
   }
 
   Future<void> _addSemesterToSemestersList(

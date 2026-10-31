@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- The "own timetable" ICS import accepts a URL; serving a calendar
+         from the device itself (localhost, e.g. a local sync tool) is safe
+         over cleartext because the traffic never leaves the phone. All
+         other hosts keep the platform default (HTTPS required). -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 
 class CupertinoBorderedButton extends StatelessWidget {
   final String title;
@@ -11,16 +10,8 @@ class CupertinoBorderedButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      // decoration: BoxDecoration(
-          // borderRadius: BorderRadius.all(Radius.circular(5)),
-          // border: Border.all(
-            // color: theme.colorScheme.primary,
-          // )),
-      child: CupertinoButton(
-        padding: EdgeInsets.symmetric(horizontal: 5),
+    return CupertinoButton(
+        padding: const EdgeInsets.symmetric(horizontal: 5),
         sizeStyle: CupertinoButtonSize.small,
         onPressed: () {
           if (onPressed != null) {
@@ -36,7 +27,6 @@ class CupertinoBorderedButton extends StatelessWidget {
             Icon(icon)
           ],
         ),
-      ),
     );
   }
 }

@@ -1,8 +1,16 @@
+import 'dart:ui';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
+import 'package:kit_mobile/credentials/models/auth_result.dart';
 import 'package:kit_mobile/credentials/data/credentials_provider.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/local_files_storage/files_manager.dart';
 import 'package:kit_mobile/settings/providers/settings_provider.dart';
+import 'notifications/mei_notifications.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:kit_mobile/toasts/models/toasts_provider.dart';
 import 'package:kit_mobile/toasts/views/toasts_overlay.dart';
@@ -17,9 +25,22 @@ import 'navigation/views/kit_nav_container.dart';
 const isAlpha = true;
 
 void main() async {
-  // await initializeDateFormatting('de_DE', null);
-  // Intl.defaultLocale = 'de_DE'; // Set the default locale
+  // Plugin channels below need the binding before any platform call.
+  WidgetsFlutterBinding.ensureInitialized();
+  L10n.setSystemLanguage(
+      PlatformDispatcher.instance.locale.languageCode == "en" ? "en" : "de");
+  await L10n.reload();
   await LiquidGlassWidgets.initialize();
+  // notifications/WorkManager are optional: a PlatformException here (custom
+  // ROM, denied alarm permission, misbehaving provider) used to abort main()
+  // BEFORE runApp - a blank window instead of an app with no notifications
+  try {
+    await MeiNotifications.init();
+    await registerBackgroundPolling();
+    await registerTestPollOnce();
+  } catch (e) {
+    if (kDebugMode) print("notifications bootstrap failed: $e");
+  }
 
   runApp(const MyApp());
 }
@@ -68,59 +89,78 @@ class MyApp extends StatelessWidget {
     var darkThemeData = ThemeData.dark();
 
     darkThemeData = darkThemeData.copyWith(
-        colorScheme: ColorScheme.fromSeed(
-            seedColor: mainColor,
-            brightness: Brightness
-                .dark), //, onBackground: Colors.red, background: Colors.red),
-        textTheme: darkThemeData.textTheme.copyWith(
-          titleLarge: darkThemeData.textTheme.titleLarge
-              ?.copyWith(fontWeight: FontWeight.bold),
-          titleMedium: darkThemeData.textTheme.titleMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
-          headlineSmall: darkThemeData.textTheme.headlineSmall
-              ?.copyWith(fontWeight: FontWeight.bold),
-          headlineMedium: darkThemeData.textTheme.headlineMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        scaffoldBackgroundColor: Colors.black,
-        appBarTheme: darkThemeData.appBarTheme.copyWith(
-          backgroundColor: Colors.black,
-          surfaceTintColor: Colors.black,
-        ),
-        cardColor: appleDarkGrey,
-        bottomSheetTheme: bottomSheetThemeData,
-        canvasColor: Colors.white,
+      colorScheme: ColorScheme.fromSeed(
+          seedColor: mainColor,
+          brightness: Brightness
+              .dark), //, onBackground: Colors.red, background: Colors.red),
+      textTheme: darkThemeData.textTheme.copyWith(
+        titleLarge: darkThemeData.textTheme.titleLarge
+            ?.copyWith(fontWeight: FontWeight.bold),
+        titleMedium: darkThemeData.textTheme.titleMedium
+            ?.copyWith(fontWeight: FontWeight.bold),
+        headlineSmall: darkThemeData.textTheme.headlineSmall
+            ?.copyWith(fontWeight: FontWeight.bold),
+        headlineMedium: darkThemeData.textTheme.headlineMedium
+            ?.copyWith(fontWeight: FontWeight.bold),
+      ),
+      scaffoldBackgroundColor: Colors.black,
+      appBarTheme: darkThemeData.appBarTheme.copyWith(
+        backgroundColor: Colors.black,
+        surfaceTintColor: Colors.black,
+      ),
+      cardColor: appleDarkGrey,
+      bottomSheetTheme: bottomSheetThemeData,
+      // white canvas in a dark theme painted white popups on black
+      canvasColor: appleDarkGrey,
     );
 
+    final settingsProvider = SettingsProvider(context: context);
+
     return MultiProvider(
-        providers: [
-          ChangeNotifierProvider<KITProvider>(create: (ctx) => KITProvider()),
-          ChangeNotifierProvider<CredentialsProvider>(
-            create: (ctx) => CredentialsProvider(),
-          ),
-          ChangeNotifierProvider<ToastsProvider>(
-            create: (ctx) => ToastsProvider(),
-          ),
-          ChangeNotifierProvider<SettingsProvider>(
-            create: (ctx) => SettingsProvider(context: ctx),
-          ),
-          ChangeNotifierProvider<IliasFilesProvider>(
-            create: (ctx) => IliasFilesProvider(),
-          ),
-          ChangeNotifierProvider<TutorialManager>(
-            create: (ctx) => TutorialManager(),
-          ),
-        ],
-        child: MaterialApp(
-            title: "KA.Uni",
-            theme: themeData,
-            darkTheme: darkThemeData,
-            builder: (context, child) {
-              return Stack(
-                children: [child ?? SizedBox(), ToastsOverlay(extraPadding: EdgeInsets.only(bottom: 40),)],
-              );
-            },
-            home: KITApp()));
+      providers: [
+        ChangeNotifierProvider<KITProvider>(create: (ctx) => KITProvider()),
+        ChangeNotifierProvider<CredentialsProvider>(
+          create: (ctx) => CredentialsProvider(),
+        ),
+        ChangeNotifierProvider<ToastsProvider>(
+          create: (ctx) => ToastsProvider(),
+        ),
+        ChangeNotifierProvider<SettingsProvider>.value(
+          value: settingsProvider,
+        ),
+        ChangeNotifierProvider<IliasFilesProvider>(
+          create: (ctx) => IliasFilesProvider(),
+        ),
+        ChangeNotifierProvider<TutorialManager>(
+          create: (ctx) => TutorialManager(),
+        ),
+      ],
+      child: Consumer<SettingsProvider>(
+          // language switch -> notifyListeners -> rebuild MaterialApp with
+          // the new locale AND a new home key so every static L10n.t string
+          // in the widget tree is re-evaluated
+          builder: (context, settings, child) => MaterialApp(
+              title: "KA.Uni",
+              theme: themeData,
+              darkTheme: darkThemeData,
+              locale: L10n.locale,
+              supportedLocales: const [Locale("de"), Locale("en")],
+              localizationsDelegates: GlobalMaterialLocalizations.delegates,
+              builder: (context, child) {
+                return Stack(
+                  children: [
+                    child ?? SizedBox(),
+                    ToastsOverlay(
+                      extraPadding: EdgeInsets.only(bottom: 40),
+                    )
+                  ],
+                );
+              },
+              // No locale key on home: Navigator.changedExternalState already
+              // rebuilds every route on locale change; remounting would
+              // re-trigger the login/preload flow in initState.
+              home: KITApp())),
+    );
   }
 }
 
@@ -143,21 +183,36 @@ class _KITAppState extends State<KITApp> {
     final toastsProvider = Provider.of<ToastsProvider>(context, listen: false);
 
     _credentialsFuture = credsVM.loadCredentials(notify: false);
-    _credentialsFuture.whenComplete(() async {
-      if (credsVM.credentials.valid) {
-        final preloadResult = await vm.tryPreloadCache(credsVM.credentials);
+    // never leave this future's rejection unhandled: login rethrows after its
+    // finally when the network dies, and an unawaited whenComplete would drop
+    // it into the zone as an unhandled error (offline launch crash-noise)
+    unawaited(_credentialsFuture.then((_) async {
+      if (!credsVM.credentials.valid) return;
+      final preloadResult = await vm.tryPreloadCache(credsVM.credentials);
 
-        if (!preloadResult) {
-          // should never happen but just in case
-          toastsProvider.showTextToast("Ungültige Zugangsdaten!");
-          return;
-        }
-
-        await credsVM.login(vm);
-        await vm.campusManager.fetchTimetable();
-        await vm.campusManager.fetchAllModules(onlyMostImportantOnes: true);
+      if (!preloadResult) {
+        // should never happen but just in case
+        toastsProvider.showTextToast(L10n.t("auth.invalidCredentials"));
+        return;
       }
-    });
+
+      final loginOk = await credsVM.login(vm);
+      if (loginOk == AuthResult.ok) {
+        // shared with the manual login form: ilias SSO, timetable, exams,
+        // modules - sequentially on the fresh cascampus session, all
+        // errors contained
+        unawaited(credsVM.loginPostSteps(vm));
+      } else {
+        // Preload optimistically set ready=true; a failed re-login MUST
+        // tear it down, otherwise the dead session's cached home stays on
+        // screen forever and the user is never sent back to the login form.
+        vm.campusManager.ready = false;
+        vm.campusManager.notificationCallback();
+        toastsProvider.showTextToast(L10n.t("auth.invalidCredentials"));
+      }
+    }).catchError((Object e) {
+      if (kDebugMode) print("bootstrap login failed: $e");
+    }));
   }
 
   @override

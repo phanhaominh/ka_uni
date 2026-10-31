@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:kit_mobile/toasts/models/toasts_provider.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/l10n.dart';
 import '../main.dart';
 import 'alpha_badge.dart';
 
@@ -20,7 +21,7 @@ class KITLogo extends StatelessWidget {
       // height: 28,
       child: GestureDetector(
         onLongPress: () async {
-          toastsProvider.showTextToast("Currywerk ist überschätzt");
+          toastsProvider.showTextToast(L10n.t("easter.currywerk"));
         },
         child: Row(
           children: [

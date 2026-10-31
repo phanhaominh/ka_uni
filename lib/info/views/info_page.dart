@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import '../../common_ui/block_container.dart';
+import '../../l10n/l10n.dart';
 
 class InfoPage extends StatefulWidget {
   const InfoPage({super.key});
@@ -27,7 +28,8 @@ class _InfoPageState extends State<InfoPage> {
 
     bool isPersonalized = vm.profileReady;
 
-    final greeting = isPersonalized ? "Hi, ${vm.student.name.repr}!" : "Hallo";
+    final greeting =
+        isPersonalized ? "Hi, ${vm.student.name.repr}!" : L10n.t("settings.hello");
 
     return Scaffold(
       appBar: AppBar(
@@ -83,9 +85,7 @@ class _InfoPageState extends State<InfoPage> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 15, vertical: 10),
                         child: Text(
-                          "Wir sind sehr froh, dass du dich für diese "
-                          "App interessiert! Von Studenten für Studenten: Diese App dient dazu, dein Studentenleben "
-                          "am KIT freundlicher und einfacher zu machen. ",
+                          L10n.t("settings.aboutIntro"),
                           maxLines: 10,
                           textAlign: TextAlign.center,
                         ),
@@ -95,20 +95,14 @@ class _InfoPageState extends State<InfoPage> {
                 ),
 
                 CupertinoButton(
-                    child: Text("Privacy Policy"),
+                    child: Text(L10n.t("info.privacyPolicy")),
                     onPressed: () {
                       launchUrlString("https://dandemidov.com/ka_uni/privacy_policy/");
                     }),
 
                 InfoViewFaqSection(
-                    title:
-                        "Wie kann ich mir sicher sein, dass meine Daten nicht gestolen werden?",
-                    body:
-                        "Alles wird nur auf deinem Gerät verarbeitet, als würdest"
-                        " du das Campus-Portal in deinem Web-Browser benutzen. "
-                        "Die App ist auch open-source. Das heißt, du kannst dir den Code anschauen, "
-                        "um sicherzustellen, dass alles in Ordnung ist. "
-                        "Du kannst auch das Repo klonen und deine eigene Version benutzen."),
+                    title: L10n.t("settings.faqSecurityTitle"),
+                    body: L10n.t("settings.faqSecurityBody")),
 
                 // !isAlpha ? Text("") : Container(
                 //   padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
@@ -126,17 +120,13 @@ class _InfoPageState extends State<InfoPage> {
                 //   ),
                 // ),
 
-                const InfoViewFaqSection(
-                    title: "Kann ich zur Entwicklung beitragen?",
-                    body:
-                        "Ja! Wir würden uns darüber sehr freuen! Wenn du dich mit Flutter auskennst und beitragen möchtest, kontaktiere uns per Telegram: @XtremeUserInterfaces."),
+                InfoViewFaqSection(
+                    title: L10n.t("settings.faqContributeTitle"),
+                    body: L10n.t("settings.faqContributeBody")),
 
-                const InfoViewFaqSection(
-                    title: "Wie geht es weiter?",
-                    body:
-                        "Viele Features sind geplannt, wie z.B. ILIAS, Benachrichtigungen über Änderungen und noch mehr! "
-                        "Daran arbeiten wir jetzt. Wenn du Ideen hast, welche Features es noch in der App "
-                        "geben soll und/oder wie wir die App noch verbessern könnten, dann schreibe uns gerne!"),
+                InfoViewFaqSection(
+                    title: L10n.t("settings.faqRoadmapTitle"),
+                    body: L10n.t("settings.faqRoadmapBody")),
               ],
             ),
           )

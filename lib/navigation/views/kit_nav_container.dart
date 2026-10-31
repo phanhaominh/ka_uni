@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:kit_mobile/constants/view_constants.dart';
@@ -6,12 +8,9 @@ import 'package:kit_mobile/home/views/home_page.dart';
 import 'package:kit_mobile/ilias/views/ilias_page_view.dart';
 import 'package:kit_mobile/settings/views/settings_page.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:provider/provider.dart';
 
-import '../../constants/glass_settings.dart';
 import '../../module/models/module.dart';
-
 class KITNavContainer extends StatefulWidget {
   const KITNavContainer({super.key});
 
@@ -30,28 +29,26 @@ class _KITNavContainerState extends State<KITNavContainer> {
   Widget build(BuildContext context) {
     final vm = Provider.of<KITProvider>(context);
     final theme = Theme.of(context);
-    final mq = MediaQuery.of(context);
 
     return Scaffold(
-      bottomSheet: AdaptiveLiquidGlassLayer(
-        settings: RecommendedGlassSettings.bottomBar,
-        quality: GlassQuality.premium,
-        child: SafeArea(
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 20, horizontal: 50),
-            child: GlassContainer(
-              useOwnLayer: true,
-              // glassContainsChild: true,
-              // shape: LiquidRoundedSuperellipse(
-              //     borderRadius: appBorderRadiusDouble),
-              settings: LiquidGlassSettings(
-                blur: 3,
-              ),
+      // Plain backdrop blur instead of liquid_glass_widgets: the dev-pin
+      // premium shader layer ghosted stale content of the view behind it
+      // through the dock on this device, while remaining visually
+      // acceptable elsewhere.
+      bottomSheet: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 50),
+          child: ClipRRect(
+            borderRadius: bottomNavigationBorderRadius,
+            child: BackdropFilter(
+              // sigma 14 was too weak under the pill: menu text behind the
+              // dock stayed readable and read as ghosting
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
               child: Container(
                 decoration: BoxDecoration(
                   color: theme.isLightMode
                       ? Colors.white.withValues(alpha: 0.8)
-                      : Colors.black.withValues(alpha: 0.5),
+                      : Colors.black.withValues(alpha: 0.55),
                   border: Border.all(
                     color: Colors.grey.withValues(alpha: 0.15),
                   ),
@@ -60,23 +57,20 @@ class _KITNavContainerState extends State<KITNavContainer> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    customBottomNavBarButton(0, CupertinoIcons.settings),
+                    customBottomNavBarButton(0, CupertinoIcons.settings,
+                        title: "Settings"),
                     customBottomNavBarButton(1, CupertinoIcons.home,
                         title: "Dashboard"),
                     customBottomNavBarButton(
                         2, CupertinoIcons.rectangle_paperclip,
                         title: "ILIAS",
                         customAction: () {
-                          // if (vm.iliasManager.isBusy) {
-                          //   return;
-                          // }
-
                           Navigator.of(context).push(
                               MaterialPageRoute(
                                   builder: (BuildContext context) =>
                                       IliasPageView(KITModule(),
                                           PHPSESSID_Future:
-                                          vm.iliasManager.getPHPSESSID())));
+                                              vm.iliasManager.getPHPSESSID())));
                         })
                   ],
                 ),
@@ -85,20 +79,6 @@ class _KITNavContainerState extends State<KITNavContainer> {
           ),
         ),
       ),
-      // bottomSheet: GlassTabBar(
-      //   useOwnLayer: true,
-      //   tabs: [
-      //     GlassTab(icon: CupertinoIcons.settings),
-      //     GlassTab(icon: CupertinoIcons.home),
-      //     GlassTab(icon: CupertinoIcons.rectangle_paperclip)
-      //   ],
-      //   selectedIndex: _selectedPage,
-      //   onTabSelected: (int value) {
-      //     setState(() {
-      //       _selectedPage = value;
-      //     });
-      //   },
-      // ),
       body: Stack(
         children: [
           [
@@ -117,15 +97,19 @@ class _KITNavContainerState extends State<KITNavContainer> {
       {String title = "", Function? customAction}) {
     return CupertinoButton(
         padding: EdgeInsets.zero,
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color: targetIdx == _selectedPage ? null : Colors.grey,
-            ),
-            // SizedBox(width: 5,),
-            // Text(title)
-          ],
+        // dock icons are bare glyphs; without a label a screen reader
+        // announces nothing on the app's primary navigation
+        child: Semantics(
+          button: true,
+          label: title,
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                color: targetIdx == _selectedPage ? null : Colors.grey,
+              ),
+            ],
+          ),
         ),
         onPressed: () {
           if (customAction != null) {

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/constants/view_constants.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/module/models/module.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:kit_mobile/toasts/models/toasts_provider.dart';
@@ -60,19 +61,23 @@ class _IliasPageViewWState extends State<IliasPageView> {
           return NavigationDecision.navigate;
         }));
 
-    widget.PHPSESSID_Future.then((value) {
+    widget.PHPSESSID_Future.then((value) async {
+      // SSO future resolves after an arbitrary delay; the page is often
+      // popped (back button) before it lands
+      if (!mounted) return;
       final settingsVM = Provider.of<SettingsProvider>(context, listen: false);
       _phpsessid = value;
 
       if (widget.isFileView && widget.module.iliasLink != null) {
-        _saveAsFile(widget.module.iliasLink!);
+        await _saveAsFile(widget.module.iliasLink!);
       } else {
-        _launchPage(settingsVM.defaultIliasPage.value);
+        await _launchPage(settingsVM.defaultIliasPage.value);
       }
     });
   }
 
   void _navigationDelegateOnUrlChange(UrlChange urlChange) {
+    if (!mounted) return;
     pagesStackSize++;
     setState(() {
       canGoBackFuture = _controller.canGoBack();
@@ -84,67 +89,114 @@ class _IliasPageViewWState extends State<IliasPageView> {
     }
   }
 
-  Future<String?> _saveAsFile(String url) async {
+  /// Concurrent taps on the same link share one download (double-taps
+  /// used to race two writeAsBytes on one path and stack two viewers).
+  static final Map<String, Future<void>> _downloadsInFlight = {};
+
+  Future<String?> _saveAsFile(String url) {
+    final refId = Uri.parse(url).queryParameters["ref_id"];
+    if (refId == null) {
+      // TODO: callback!
+      return Future.value();
+    }
+    final inFlight = _downloadsInFlight[url];
+    if (inFlight != null) return inFlight.then((_) => _pathFor(refId));
+    final future = _doSaveAsFile(url, refId);
+    _downloadsInFlight[url] = future;
+    future.whenComplete(() => _downloadsInFlight.remove(url));
+    return future;
+  }
+
+  Future<String> _pathFor(String refId) async {
+    final iliasFileManager =
+        Provider.of<IliasFilesProvider>(context, listen: false);
+    final directory = await iliasFileManager.localFileStorageManager
+        .ensureAndGetCurrentSemesterDirectory();
+    return "$directory/${_safeFileName(refId)}.pdf";
+  }
+
+  /// Module titles contain slashes, colons and emoji; unfiltered they threw
+  /// on File creation or scattered files into phantom subdirectories.
+  String _safeFileName(String refId) {
+    final cleaned = widget.module.title
+        .replaceAll(RegExp(r'[^A-Za-z0-9._ -]'), "_")
+        .replaceAll(RegExp(r"\s+"), " ")
+        .trim();
+    final short = cleaned.length > 60 ? cleaned.substring(0, 60) : cleaned;
+    return "$short$refId";
+  }
+
+  Future<String?> _doSaveAsFile(String url, String refId) async {
     final vm = Provider.of<KITProvider>(context, listen: false);
     final iliasFileManager =
         Provider.of<IliasFilesProvider>(context, listen: false);
     final toastsProvider = Provider.of<ToastsProvider>(context, listen: false);
 
-    final refId = Uri.parse(url).queryParameters["ref_id"];
+    final directory = await iliasFileManager.localFileStorageManager
+        .ensureAndGetCurrentSemesterDirectory();
 
-    if (refId != null) {
-      final directory = await iliasFileManager.localFileStorageManager
-          .ensureAndGetCurrentSemesterDirectory();
+    final filepath = "$directory/${_safeFileName(refId)}.pdf";
 
-      final filepath = "$directory/${widget.module.title}$refId.pdf";
+    File file = File(filepath);
 
-      File file = File(filepath);
-
-      if (!await file.exists()) {
-        setState(() {
-          isBusy = true;
-        });
-
-        toastsProvider.showTextToast("Wird heruntergeladen...");
-
-        final iliasFile = await vm.iliasManager.downloadFile(url, file);
-
-        setState(() {
-          isBusy = false;
-        });
-
-        _launchFileView(iliasFile);
-      } else {
-        PinnedFile? iliasFile;
-
-        var existingFiles =
-            await vm.iliasFileManager.getFilesForCurrentSemester();
-        for (var element in existingFiles) {
-          if (element.urlString == url) {
-            iliasFile = element;
-            break;
-          }
-        }
-
-        _launchFileView(iliasFile ??
-            PinnedFile(
-                semesterString: KITProvider.currentSemesterString,
-                urlString: url,
-                moduleTitle: "",
-                addedAt: DateTime.now().toUtc(),
-                customName: "",
-                fileSystemPath: filepath));
+    // an old corrupt cache entry (login-page HTML saved as .pdf before the
+    // magic-byte gate existed) must not be reused forever
+    var reusable = await file.exists();
+    if (reusable) {
+      final sink = await file.open();
+      try {
+        final head = Uint8List(4);
+        final read = await sink.readInto(head);
+        reusable = read == 4 &&
+            head[0] == 0x25 &&
+            head[1] == 0x50 &&
+            head[2] == 0x44 &&
+            head[3] == 0x46;
+      } finally {
+        await sink.close();
       }
+    }
 
+    if (!reusable) {
+      if (mounted) setState(() => isBusy = true);
+      toastsProvider.showTextToast(L10n.t("ilias.downloading"));
+      try {
+        final iliasFile = await vm.iliasManager.downloadFile(url, file);
+        if (mounted) setState(() => isBusy = false);
+        _launchFileView(iliasFile);
+      } on Object catch (e) {
+        if (mounted) setState(() => isBusy = false);
+        // a wedged busy overlay makes the whole tab unusable until restart
+        toastsProvider.showTextToast(L10n.t("ilias.downloadFailed"));
+        if (kDebugMode) print("ILIAS download failed: $e");
+      }
       return filepath;
     }
 
-    // TODO: callback!
+    PinnedFile? iliasFile;
 
-    return null;
+    var existingFiles = await vm.iliasFileManager.getFilesForCurrentSemester();
+    for (var element in existingFiles) {
+      if (element.urlString == url) {
+        iliasFile = element;
+        break;
+      }
+    }
+
+    _launchFileView(iliasFile ??
+        PinnedFile(
+            semesterString: KITProvider.currentSemesterString,
+            urlString: url,
+            moduleTitle: "",
+            addedAt: DateTime.now().toUtc(),
+            customName: "",
+            fileSystemPath: filepath));
+
+    return filepath;
   }
 
   void _launchFileView(PinnedFile iliasFile) {
+    if (!mounted) return; // always called after download/listing awaits
     if (iliasFile.fileSystemPath.isEmpty) {
       if (kDebugMode) {
         print("Failed to download file!");
@@ -223,7 +275,7 @@ class _IliasPageViewWState extends State<IliasPageView> {
 
                               if (newPHPSESSIONID.isEmpty) {
                                 toastsProvider.showTextToast(
-                                    "Fehler beim Aktualisieren!");
+                                    L10n.t("ilias.refreshError"));
                               }
 
                               setState(() {

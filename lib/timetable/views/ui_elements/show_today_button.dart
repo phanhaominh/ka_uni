@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../../../l10n/l10n.dart';
 class ShowTodayButton extends StatelessWidget {
   final int relativeOffset;
   final void Function() onPressed;
@@ -37,7 +38,7 @@ class ShowTodayButton extends StatelessWidget {
                   ],
                 ),
 
-                Text("heute", style: theme.textTheme.bodyLarge?.copyWith(
+                Text(L10n.t("agenda.today"), style: theme.textTheme.bodyLarge?.copyWith(
                   color: theme.colorScheme.primary,
                   fontWeight: textFontWeight
                 ),),
