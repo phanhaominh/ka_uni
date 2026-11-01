@@ -20,6 +20,7 @@ import 'package:provider/provider.dart';
 
 import 'constants/view_constants.dart';
 import 'credentials/views/login_view.dart';
+import 'navigation/notification_deep_links.dart';
 import 'navigation/views/kit_nav_container.dart';
 
 const isAlpha = true;
@@ -35,7 +36,20 @@ void main() async {
   // ROM, denied alarm permission, misbehaving provider) used to abort main()
   // BEFORE runApp - a blank window instead of an app with no notifications
   try {
+    // notification taps -> deep links; wired BEFORE init so the callback
+    // registered inside can dispatch straight through to the router
+    MeiNotifications.onTapPayload =
+        NotificationDeepLinkRouter.instance.handleTap;
     await MeiNotifications.init();
+    // cold start: the tap that LAUNCHED the app never reaches the callback
+    // above; harvest its payload from the launch details. The main shell
+    // cannot exist yet here -> the router queues it until the login gate
+    // opens (see KITNavContainer).
+    final launchPayload =
+        await MeiNotifications.takeLaunchNotificationPayload();
+    if (launchPayload != null) {
+      NotificationDeepLinkRouter.instance.handleTap(launchPayload);
+    }
     await registerBackgroundPolling();
     await registerTestPollOnce();
   } catch (e) {
@@ -141,6 +155,9 @@ class MyApp extends StatelessWidget {
           // in the widget tree is re-evaluated
           builder: (context, settings, child) => MaterialApp(
               title: "KA.Uni",
+              // taps without any UI context (cold start, background) route
+              // through this key; see NotificationDeepLinkRouter
+              navigatorKey: NotificationDeepLinkRouter.instance.navigatorKey,
               theme: themeData,
               darkTheme: darkThemeData,
               // in-app override next to Language; "system" keeps following
@@ -178,14 +195,25 @@ class KITApp extends StatefulWidget {
   State<KITApp> createState() => _KITAppState();
 }
 
-class _KITAppState extends State<KITApp> {
+class _KITAppState extends State<KITApp> with WidgetsBindingObserver {
   late Future<bool> _credentialsFuture;
+
+  /// watched so the deep-link router learns about logout the moment
+  /// profileReady flips false — not only when the AnimatedSwitcher finally
+  /// disposes the shell, and never-missed on an in-place same-type flap
+  late final KITProvider _vm;
+  late bool _wasProfileReady;
 
   @override
   void initState() {
     super.initState();
 
+    WidgetsBinding.instance.addObserver(this);
+
     final vm = Provider.of<KITProvider>(context, listen: false);
+    _vm = vm;
+    _wasProfileReady = vm.profileReady;
+    vm.addListener(_onProfileReadyChanged);
     final credsVM = Provider.of<CredentialsProvider>(context, listen: false);
     final toastsProvider = Provider.of<ToastsProvider>(context, listen: false);
 
@@ -220,6 +248,32 @@ class _KITAppState extends State<KITApp> {
     }).catchError((Object e) {
       if (kDebugMode) print("bootstrap login failed: $e");
     }));
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _vm.removeListener(_onProfileReadyChanged);
+    super.dispose();
+  }
+
+  void _onProfileReadyChanged() {
+    final ready = _vm.profileReady;
+    if (_wasProfileReady && !ready) {
+      // queued taps must not drain onto the dying shell from here on;
+      // KITNavContainer.dispose repeats this idempotently at teardown
+      NotificationDeepLinkRouter.instance.shellGone();
+    }
+    _wasProfileReady = ready;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // a tap delivered while the engine was still backgrounded can find the
+    // Navigator detached: give the deep-link queue another drain on resume
+    if (state == AppLifecycleState.resumed) {
+      NotificationDeepLinkRouter.instance.drain();
+    }
   }
 
   @override

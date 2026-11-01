@@ -11,6 +11,7 @@ import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../../module/models/module.dart';
+import '../notification_deep_links.dart';
 class KITNavContainer extends StatefulWidget {
   const KITNavContainer({super.key});
 
@@ -24,6 +25,26 @@ const bottomNavigationBorderRadius = BorderRadius.all(appBorderRadius);
 
 class _KITNavContainerState extends State<KITNavContainer> {
   int _selectedPage = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    // deep-link queue: taps that arrived during cold start or while the
+    // login gate was still closed wait in the router; this shell being on
+    // screen IS the lifecycle signal to consume them (post-frame, because
+    // the Navigator must have its first attached frame before pushes)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) NotificationDeepLinkRouter.instance.shellAppeared();
+    });
+  }
+
+  @override
+  void dispose() {
+    // logout tears this scaffold down: later taps must queue again instead
+    // of pushing onto a Navigator that drops back to the login form
+    NotificationDeepLinkRouter.instance.shellGone();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

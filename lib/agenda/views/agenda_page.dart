@@ -10,6 +10,7 @@ import '../../l10n/l10n.dart';
 import '../../exams/models/exam_list.dart';
 import '../../exams/views/exams_page.dart';
 import '../../agenda/logic/walk_hint.dart';
+import '../../common_ui/highlight_pulse.dart';
 import '../../ilias/ilias_scraper.dart';
 import '../../geo/models/kit_place.dart';
 import '../../ilias/models/ilias_models.dart';
@@ -22,7 +23,14 @@ import '../../timetable/logic/ics_export_action.dart';
 /// Merged agenda: ICS "CHANGED" band + today/tomorrow lectures + ILIAS
 /// unread/announcements + open exam-registration deadlines on one screen.
 class AgendaPage extends StatefulWidget {
-  const AgendaPage({super.key});
+  /// [scrollToToday]: lecture reminders deep-link straight to the today
+  /// section; [highlightChanges]: a CHANGED delta push pulses the changes
+  /// band for ~2 s so the eye lands on it.
+  const AgendaPage(
+      {super.key, this.scrollToToday = false, this.highlightChanges = false});
+
+  final bool scrollToToday;
+  final bool highlightChanges;
 
   static const routeName = "/agenda";
 
@@ -67,6 +75,12 @@ class _AgendaPageState extends State<AgendaPage> {
   bool _feedCached = false;
 
   Timer? _ticker;
+  /// the today card doubles as the agenda's "now" anchor for deep links
+  final GlobalKey _todaySectionKey = GlobalKey();
+
+  /// armed by scrollToToday; consumed by [_scheduleTodayScroll] once the
+  /// today card has rendered data-driven content
+  bool _todayScrollPending = false;
 
   @override
   void initState() {
@@ -76,12 +90,39 @@ class _AgendaPageState extends State<AgendaPage> {
     _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
     });
+    if (widget.scrollToToday) {
+      // the today card doubles as the "now" anchor, but it is NOT at its
+      // final position on the first frame: the changes band and the
+      // next-up banner appear only with the cached/live agenda data.
+      // Arm the flag instead; [_scheduleTodayScroll] re-runs
+      // ensureVisible once the first data-driven rebuild has landed
+      _todayScrollPending = true;
+    }
   }
 
   @override
   void dispose() {
     _ticker?.cancel();
     super.dispose();
+  }
+
+  /// Re-anchor for deep-linked scrollToToday arrivals: called after every
+  /// data-driven rebuild, scrolls to the today card from a post-frame
+  /// callback and then clears the flag. Stays a hard no-op for normal
+  /// (scrollToToday=false) visits — the flag is never armed there.
+  void _scheduleTodayScroll() {
+    if (!_todayScrollPending) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_todayScrollPending) return;
+      final ctx = _todaySectionKey.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(ctx,
+          duration: const Duration(milliseconds: 300));
+      // while the day card only shows its "loading" spinner the content
+      // above it (banner) can still appear and move it: keep armed for
+      // the next data rebuild and settle once there is real content
+      if (_load.today.isNotEmpty || _feedCached) _todayScrollPending = false;
+    });
   }
 
   Future<void> _refresh() async {
@@ -122,6 +163,9 @@ class _AgendaPageState extends State<AgendaPage> {
           fetchedAt: DateTime.tryParse(prefs.getString(_fetchedAtKey) ?? ""));
       _loading = false;
     });
+    // first data-driven rebuild: this, not the data-free first frame, is
+    // where the deep-link scroll to the today card actually belongs
+    _scheduleTodayScroll();
 
     IliasUnread? unread;
     var announcements = const <IliasAnnouncement>[];
@@ -185,6 +229,8 @@ class _AgendaPageState extends State<AgendaPage> {
             iliasError: _load.iliasError,
             fetchedAt: _load.fetchedAt);
       });
+        // synthetic SignMeUp events may have just moved the today card
+        _scheduleTodayScroll();
     }
   }
 
@@ -267,9 +313,15 @@ class _AgendaPageState extends State<AgendaPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 130),
           children: [
-            if (_load.changes.isNotEmpty) _changedBand(context),
+            if (_load.changes.isNotEmpty)
+              HighlightPulse(
+                armed: widget.highlightChanges,
+                color: Theme.of(context).colorScheme.tertiary,
+                child: _changedBand(context),
+              ),
             _nextUpBanner(context, now),
-            _daySection(L10n.t("agenda.today"), _load.today, now),
+            _daySection(L10n.t("agenda.today"), _load.today, now,
+                key: _todaySectionKey),
             _daySection(L10n.t("agenda.tomorrow"), _load.tomorrow, now),
             _nextExamCard(context, vm, now),
             _iliasSection(context),
@@ -366,9 +418,11 @@ class _AgendaPageState extends State<AgendaPage> {
     );
   }
 
-  Widget _daySection(String label, List<IcsOccurrence> occ, DateTime now) {
+  Widget _daySection(String label, List<IcsOccurrence> occ, DateTime now,
+      {Key? key}) {
     final scheme = Theme.of(context).colorScheme;
     return Card(
+      key: key,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(

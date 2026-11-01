@@ -20,6 +20,7 @@ workers=1) to coexist with a busy desktop.
 | Meine Anmeldungen (agenda card) | SignMeUp `fetchMine` (Campus+ session, fetched at login and on force-refresh; the agenda only awaits the in-flight refresh) | state chip (accepted/rejected/open), Platz rank, countdown to confirmation deadline / first draw; display-only, no own fetch |
 | ILIAS page + scraper | `ilias.studium.kit.edu` via KIT SSO | courses, per-course materials (recursive folder walk), announcements, unread badges |
 | Notifications | exact alarms + WorkManager (2 h ICS poll) + boot receiver | lecture reminders from expanded ICS dates, Anmeldung deadline alerts, timetable-change push |
+| Round 3: notification deep links | payload on tap -> push on the root Navigator | agenda / agenda:today (scroll re-anchors after the agenda data renders) / agenda:changes (CHANGED-band pulse) / exams; **one-behind-page dedupe**: while a previous deep-link page is still mounted a new tap removes it before pushing, so repeated taps can never stack pages that each run a full refresh (SSO chain + up to 45 s SignMeUp wait); SignMeUp reminders land on the agenda (the card renders there), and logout re-arms the queue the moment profileReady flips false |
 
 ## Build
 

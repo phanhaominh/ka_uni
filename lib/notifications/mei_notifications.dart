@@ -13,6 +13,7 @@ import '../exams/models/exam_list.dart';
 import '../l10n/l10n.dart';
 import '../signmeup/signmeup_manager.dart';
 import '../state_management/campus/campus_manager.dart';
+import 'notification_payload.dart';
 import '../timetable/models/webcal.dart';
 
 const String channelIdDaily = "mei_daily";
@@ -38,13 +39,23 @@ class MeiNotifications {
   /// resurrect the old account's reminders.
   static int teardownEpoch = 0;
 
+  /// Notification tap -> deep-link routing hook. Wired once by main();
+  /// stays null in the WorkManager isolate, where there is no UI to
+  /// navigate to and a dispatch must be a no-op.
+  static void Function(String? payload)? onTapPayload;
+
   static bool _canScheduleExact = true;
 
   static Future<void> init({bool requestPermissions = true}) async {
     if (_ready || !supported) return;
     tzdata.initializeTimeZones();
-    await _plugin.initialize(const InitializationSettings(
-        android: AndroidInitializationSettings("@mipmap/ic_launcher")));
+    await _plugin.initialize(
+        const InitializationSettings(
+            android: AndroidInitializationSettings("@mipmap/ic_launcher")),
+        // taps dispatch through the routing hook; set at registration
+        // time already, so main()'s wiring can never be too late
+        onDidReceiveNotificationResponse: (response) =>
+            onTapPayload?.call(response.payload));
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.createNotificationChannel(AndroidNotificationChannel(
@@ -70,6 +81,16 @@ class MeiNotifications {
     _ready = true;
   }
 
+  /// Cold start: a notification that LAUNCHED the app does not fire the
+  /// tap callback; the launch details carry its payload instead. Read once
+  /// at startup, before the main shell can exist -> the router queues it.
+  static Future<String?> takeLaunchNotificationPayload() async {
+    if (!supported || !_ready) return null;
+    final details = await _plugin.getNotificationAppLaunchDetails();
+    if (details == null || !details.didNotificationLaunchApp) return null;
+    return details.notificationResponse?.payload;
+  }
+
   /// Id 0 => rotating slot in the 1000-1019 band: consecutive changes must
   /// not replace each other in the shade, and the band is cancelled on logout.
   static int _changeSeq = 0;
@@ -85,12 +106,15 @@ class MeiNotifications {
         NotificationDetails(
             android: AndroidNotificationDetails(
                 channelIdChanges, L10n.t("notifs.channelChanges"),
-                importance: Importance.max)));
+                importance: Importance.max)),
+        // v19 carries the payload on the show/schedule call itself, it comes
+        // back verbatim in the tap's NotificationResponse
+        payload: NotificationPayload.agendaChanges);
   }
 
   static Future<void> _zoned(
       int id, String channel, String title, String body, DateTime whenLocal,
-      {required bool deadlines}) async {
+      {required bool deadlines, required String payload}) async {
     if (!whenLocal.isAfter(DateTime.now())) {
       return;
     }
@@ -113,7 +137,10 @@ class MeiNotifications {
           // any single failure from killing the siblings.
           androidScheduleMode: _canScheduleExact
               ? AndroidScheduleMode.exactAllowWhileIdle
-              : AndroidScheduleMode.inexact);
+              : AndroidScheduleMode.inexact,
+          // v19 carries the payload on the zonedSchedule call itself; it
+          // comes back verbatim in the tap's NotificationResponse
+          payload: payload);
     } on Object catch (e) {
       if (kDebugMode) print("reminder $id failed: $e");
     }
@@ -144,7 +171,8 @@ class MeiNotifications {
         if (epoch != teardownEpoch) return; // logout mid-flight
         await _zoned(id++, channelIdDaily, occ.displayTitle,
             "${_hm(occ.start)}–${_hm(occ.end)}  ${occ.displayRoom}", remindAt,
-            deadlines: false);
+            deadlines: false,
+            payload: NotificationPayload.agendaToday);
       }
     }
   }
@@ -175,7 +203,8 @@ class MeiNotifications {
             L10n.t("notifs.examDeadlineTitle"),
             L10n.t("notifs.examDeadlineBody", [exam.title, _hm(end)]),
             remindAt,
-            deadlines: true);
+            deadlines: true,
+            payload: NotificationPayload.exams);
       }
     }
   }
@@ -202,7 +231,11 @@ class MeiNotifications {
           L10n.t("notifs.signmeupTitle"),
           L10n.t("notifs.signmeupBody", [p.name, _hm(p.registrationEnd!)]),
           remindAt,
-          deadlines: true);
+          deadlines: true,
+          // the open procedures the reminder names render ONLY in the
+          // agenda's SignMeUp card — /exams shows zero SignMeUp content,
+          // so this tap must land on the agenda, not the exams page
+          payload: NotificationPayload.agenda);
     }
   }
 
@@ -246,7 +279,8 @@ class MeiNotifications {
       if (epoch != teardownEpoch) return; // logout mid-flight
       await _zoned(id, channelIdDaily,
           L10n.t("notifs.digestTitle", [occ.length]), body, at,
-          deadlines: false);
+          deadlines: false,
+          payload: NotificationPayload.agenda);
     }
   }
 
