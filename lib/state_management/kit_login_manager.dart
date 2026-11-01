@@ -506,7 +506,8 @@ class KITLoginManager {
 
     // sometimes, server wants us to manually "redirect" to the login page, idk why
     if (isManualRedirectRequired(response)) {
-      final currentResponse = await handleNoJSResponse(response.body);
+      final currentResponse =
+          await handleNoJSResponse(response.body, base: Uri.parse(url));
       if (currentResponse == null) {
         if (kDebugMode) {
           print("Stage 1: Manual redirect has failed");
@@ -521,24 +522,58 @@ class KITLoginManager {
     return response;
   }
 
+  /// SAML relay pinning: every hop the login chain follows (login form
+  /// action, 302 Locations, no-js relay POSTs) must stay on KIT's own
+  /// HTTPS hosts. Relative targets resolve against `base`, which callers
+  /// keep pinned to the current already-verified https KIT url; a null
+  /// result means "refuse this hop" and the caller aborts via its failure
+  /// path, so credentials are never POSTed to a foreign host and the
+  /// chain can never downgrade to http. The host test demands an exact
+  /// match or a dot boundary, rejecting the suffix trap
+  /// "kit.edu.evil.example".
+  static Uri? kitHttps(Uri base, String target) {
+    final Uri uri;
+    try {
+      uri = base.resolve(target);
+    } on FormatException {
+      return null;
+    }
+    if (uri.scheme != "https") {
+      return null;
+    }
+    final host = uri.host.toLowerCase();
+    if (host != "kit.edu" && !host.endsWith(".kit.edu")) {
+      return null;
+    }
+    return uri;
+  }
+
   Future<http.Response?> fetchStage2_(http.Response previousResponse) async {
     var document = parse(previousResponse.body);
     var forms = document.getElementsByTagName("form");
-    String url = "";
+    Uri? action;
     Map<String, dynamic> formData = {};
-    bool foundLoginForm = false;
 
     for (var form in forms) {
       if (form.innerHtml.toLowerCase().contains("login")) {
-        final String? action = form.attributes["action"];
-        if (action == null) {
+        final String? formAction = form.attributes["action"];
+        if (formAction == null) {
           if (kDebugMode) {
             print("login form action is null. Reporting failure...");
           }
           return null;
         }
 
-        url = "https://idp.scc.kit.edu$action";
+        // The credential POST below must never leave KIT's own https SSO
+        // endpoint: a form action that escapes it (host swap, http
+        // downgrade) means a hijacked page -> abort the login attempt.
+        action = kitHttps(Uri.parse("https://idp.scc.kit.edu"), formAction);
+        if (action == null) {
+          if (kDebugMode) {
+            print("login form action escapes KIT https. Reporting failure...");
+          }
+          return null;
+        }
         final inputs = form.getElementsByTagName("input");
 
         for (var input in inputs) {
@@ -548,12 +583,11 @@ class KITLoginManager {
           }
         }
 
-        foundLoginForm = true;
         break;
       }
     }
 
-    if (!foundLoginForm) {
+    if (action == null) {
       if (kDebugMode) {
         print("Failed to find the login form!");
         print(previousResponse.body);
@@ -571,10 +605,10 @@ class KITLoginManager {
     }
 
     if (kDebugMode) {
-      print("Stage2 POST url=$url fields=${formData.keys.toList()}");
+      print("Stage2 POST url=$action fields=${formData.keys.toList()}");
     }
 
-    var response = await netPost(Uri.parse(url), body: formData);
+    var response = await netPost(action, body: formData);
     if (kDebugMode) {
       final t = response.body;
       print("Stage2 POST -> ${response.statusCode} len=${t.length} "
@@ -592,14 +626,20 @@ class KITLoginManager {
     // The IdP answers a valid credential POST with a 302 to the next execution
     // state (e1s2) which then carries the SAMLResponse. netPost() does not
     // follow it, so the SAML relay never ran and every login failed downstream.
+    var current = action;
     var guard = 0;
     while (response.statusCode == 302 &&
         response.headers.containsKey("location") &&
         guard++ < 8) {
       final location = response.headers["location"]!;
-      final next = location.startsWith("http")
-          ? Uri.parse(location)
-          : Uri.parse("https://idp.scc.kit.edu$location");
+      final next = kitHttps(current, location);
+      if (next == null) {
+        if (kDebugMode) {
+          print("Stage 2: refusing off-KIT hop $location");
+        }
+        return null;
+      }
+      current = next;
       if (kDebugMode) {
         print("Stage2 following 302 -> $next");
       }
@@ -613,7 +653,8 @@ class KITLoginManager {
     }
 
     if (isManualRedirectRequired(response)) {
-      final currentResponse = await handleNoJSResponse(response.body);
+      final currentResponse =
+          await handleNoJSResponse(response.body, base: current);
       if (currentResponse == null) {
         if (kDebugMode) {
           print("Stage 2: Failed to handle NO-JS RelayState response!");
@@ -633,12 +674,17 @@ class KITLoginManager {
 
       if (response.headers.containsKey("location")) {
         final location = response.headers["location"]!;
-        url = "https://idp.scc.kit.edu$location";
-        if (kDebugMode) {
-          print(url);
+        final next = kitHttps(current, location);
+        if (next == null) {
+          if (kDebugMode) {
+            print("Stage 2: refusing off-KIT hop $location");
+          }
+          return null;
         }
-
-        response = await netGet(Uri.parse(url));
+        if (kDebugMode) {
+          print(next);
+        }
+        response = await netGet(next);
       }
     }
 
@@ -651,7 +697,8 @@ class KITLoginManager {
         body.contains("relaystate");
   }
 
-  Future<http.Response?> handleNoJSResponse(String body) async {
+  Future<http.Response?> handleNoJSResponse(String body,
+      {Uri? base}) async {
     if (kDebugMode) {
       print("Attempting to handle the no-js manual redirect...");
     }
@@ -659,7 +706,8 @@ class KITLoginManager {
     final document = parse(body);
     final forms = document.getElementsByTagName("form");
     Map<String, String> formData = {};
-    String url = "";
+    final from = base ?? Uri.parse("https://idp.scc.kit.edu");
+    Uri? target;
 
     for (var form in forms) {
       if (form.innerHtml.toLowerCase().contains("relaystate")) {
@@ -672,7 +720,14 @@ class KITLoginManager {
           return null;
         }
 
-        url = action;
+        target = kitHttps(from, action);
+        if (target == null) {
+          if (kDebugMode) {
+            print("Handling no-js redirect: action escapes KIT https "
+                "($action). Reporting failure...");
+          }
+          return null;
+        }
         final inputs = form.getElementsByTagName("input");
 
         for (var input in inputs) {
@@ -686,7 +741,7 @@ class KITLoginManager {
       }
     }
 
-    if (url.isEmpty) {
+    if (target == null) {
       if (kDebugMode) {
         print("Handling no-js redirect: url is empty. Reporting failure...");
       }
@@ -696,16 +751,22 @@ class KITLoginManager {
     if (kDebugMode) {
       // print(
       // "Handling no-js redirect: url is $url, cookies: ${session.cookieStore.cookies.toString()}");
-      print("Handling no-js redirect: url is $url");
+      print("Handling no-js redirect: url is $target");
       print("formData: ${formData.keys}");
     }
 
-    var response = await netPost(Uri.parse(url), body: formData);
+    var response = await netPost(target, body: formData);
 
-    if (response.statusCode == 302 &&
-        response.headers.containsKey("location")) {
-      url = response.headers["location"]!;
-      response = await netGet(Uri.parse(url));
+    final loc = response.headers["location"];
+    if (response.statusCode == 302 && loc != null) {
+      final next = kitHttps(target, loc);
+      if (next == null) {
+        if (kDebugMode) {
+          print("Handling no-js redirect: refusing off-KIT hop $loc");
+        }
+        return null;
+      }
+      response = await netGet(next);
     }
 
     return response;

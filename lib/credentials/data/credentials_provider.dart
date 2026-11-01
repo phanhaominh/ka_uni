@@ -241,7 +241,8 @@ class CredentialsProvider extends ChangeNotifier {
         .where((k) =>
             k.startsWith("DATA_") ||
             k.startsWith("RMR ") ||
-            k.startsWith("module_cache_"))
+            k.startsWith("module_cache_") ||
+            k.startsWith("MIL "))
         .toList()) {
       await prefs.remove(key);
     }

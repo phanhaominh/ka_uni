@@ -152,7 +152,7 @@ class _AgendaPageState extends State<AgendaPage> {
           .contains("BEGIN:VCALENDAR");
       _load = _AgendaLoad(
           today: _onDay(feed, now),
-          tomorrow: _onDay(feed, now.add(const Duration(days: 1))),
+          tomorrow: _onDay(feed, DateTime(now.year, now.month, now.day + 1)),
           changes: changes,
           upcoming: _upcoming(feed, now),
           unread: iliasCached?.$1 ?? _load.unread,
@@ -241,7 +241,8 @@ class _AgendaPageState extends State<AgendaPage> {
               .contains("BEGIN:VCALENDAR");
       _load = _AgendaLoad(
           today: _onDay(feed2, now2),
-          tomorrow: _onDay(feed2, now2.add(const Duration(days: 1))),
+          tomorrow:
+              _onDay(feed2, DateTime(now2.year, now2.month, now2.day + 1)),
           changes: _load.changes,
           upcoming: _upcoming(feed2, now2),
           unread: _load.unread,
@@ -257,7 +258,8 @@ class _AgendaPageState extends State<AgendaPage> {
     if (feed == null) return const [];
     final seen = <String>{};
     final dayStart = DateTime(day.year, day.month, day.day);
-    final nextStart = dayStart.add(const Duration(days: 1));
+    // calendar next-day (not +24h): the autumn DST day is 25 real hours
+    final nextStart = DateTime(day.year, day.month, day.day + 1);
 
     return feed.occurrences
         .where((o) =>

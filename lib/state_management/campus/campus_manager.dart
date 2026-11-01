@@ -22,6 +22,7 @@ import '../../notifications/mei_notifications.dart';
 import '../../timetable/models/webcal.dart';
 import '../../exams/models/exam_list.dart';
 import '../../exams/models/exam_synth.dart';
+import '../../utils/string_prettifiers.dart';
 
 const _studentDataKey = "DATA_student";
 
@@ -213,6 +214,10 @@ class CampusManager extends KITLoginManager {
     await _clearModuleCacheForCurrentSemester();
     rowModules.clear();
     _moduleRefreshInProgress.clear();
+    // prefs survive a session re-boot, but the in-memory copy must
+    // re-read them (and a logout sweep must empty the manager)
+    _manualIliasLinks.clear();
+    _manualIliasLinksLoaded = false;
     await clearCookiesAndCache();
   }
 
@@ -229,6 +234,9 @@ class CampusManager extends KITLoginManager {
     timetable = TimetableWeekly();
     timetableChanged = false;
     timetableSurfaceBroken = false;
+    // the merged-feed keys gate card admission and exam urgency for the
+    // NEXT account too: they belong to this student's subscriptions
+    enrolledLectureTitles = {};
     exams = [];
     examsLoaded = false;
     examsSurfaceBroken = false;
@@ -592,6 +600,11 @@ class CampusManager extends KITLoginManager {
       // the flag is what every spinner waits on; it may never outlive the fetch
       isFetchingModules = false;
     }
+    // titles only became resolvable through the fetches above: the
+    // load-time dedupe in prepareRelevantModuleRows had to keep legacy
+    // duplicate ids conservatively (neither side had a key yet) - the
+    // same id-level collapse runs again now that it can judge them
+    await _collapseRelevantIdDuplicates();
     if (kDebugMode) {
       print("Finished fetching modules!");
     }
@@ -673,6 +686,10 @@ class CampusManager extends KITLoginManager {
 
     addRelevantModuleRow(row);
     _extractUsefulDataFromModule(module);
+    // manual ILIAS fallback (see manualIliasUrlFor): runs AFTER
+    // addRelevantModuleRow, so card admission keeps judging only the
+    // genuine CampusKIT link a page printed
+    await applyManualIliasLink(module);
     return module;
   }
 
@@ -712,39 +729,50 @@ class CampusManager extends KITLoginManager {
   }
 
   Future<void> prepareRelevantModuleRows() async {
+    // warm the manual-ILIAS map before any module fetch consults it:
+    // the disk module cache is deprecated, so startup repopulates
+    // rowModules exclusively through fetchModule -> applyManualIliasLink,
+    // which is where empty CampusKIT links pick up manual ones
+    await loadManualIliasLinks();
     final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getStringList(_relevantModuleRowsStorageKey);
-    if (kDebugMode) {
-      print("Stored $stored");
-    }
-    var ids = stored ?? relevantModuleRowIDs;
-    // legacy "RMR <semester>" lists were admitted by the ILIAS-link
-    // heuristic and can name future-semester modules; once the feed has
-    // spoken, drop every stored id whose title is known not to be on the
-    // current timetable (EM-III-era entries self-heal on the first
-    // refetch). Unknown titles stay: missing information must never
-    // empty the card.
-    final keys = enrolledLectureTitles;
-    if (keys.isNotEmpty) {
-      final kept = ids.where((id) {
-        final title = _knownModuleTitle(id);
-        return title == null ||
-            moduleKeyMatchesLectureKey(lectureTitleKey(title), keys);
-      }).toList();
-      if (kept.length != ids.length) {
-        ids = kept;
-        await prefs.setStringList(_relevantModuleRowsStorageKey, kept);
+    // read-modify-rebind as one locked transaction: fire-and-forget
+    // admissions persist concurrently, and an id they stored between an
+    // unlocked read and the rebind used to vanish from the card
+    await _addRelevantModuleLock.run(() async {
+      final stored = prefs.getStringList(_relevantModuleRowsStorageKey);
+      if (kDebugMode) {
+        print("Stored $stored");
       }
-    }
-    // duplicates were admitted before admission was de-duplicated by title
-    // (the on-device card showed "Mechanical Design A" twice); a stored
-    // pair collapses through the same tie-break a live duplicate gets
-    final deduped = _dedupeRelevantIds(ids);
-    if (deduped.length != ids.length) {
-      ids = deduped;
-      await prefs.setStringList(_relevantModuleRowsStorageKey, ids);
-    }
-    relevantModuleRowIDs = ids;
+      var ids = stored ?? relevantModuleRowIDs;
+      // legacy "RMR <semester>" lists were admitted by the ILIAS-link
+      // heuristic and can name future-semester modules; once the feed has
+      // spoken, drop every stored id whose title is known not to be on the
+      // current timetable (EM-III-era entries self-heal on the first
+      // refetch). Unknown titles stay: missing information must never
+      // empty the card.
+      final keys = enrolledLectureTitles;
+      if (keys.isNotEmpty) {
+        final kept = ids.where((id) {
+          final title = _knownModuleTitle(id);
+          return title == null ||
+              moduleKeyMatchesLectureKey(lectureTitleKey(title), keys);
+        }).toList();
+        if (kept.length != ids.length) {
+          ids = kept;
+          await prefs.setStringList(_relevantModuleRowsStorageKey, kept);
+        }
+      }
+      // duplicates were admitted before admission was de-duplicated by
+      // title (the on-device card showed "Mechanical Design A" twice); a
+      // stored pair collapses through the same tie-break a live duplicate
+      // gets
+      final deduped = _dedupeRelevantIds(ids);
+      if (deduped.length != ids.length) {
+        ids = deduped;
+        await prefs.setStringList(_relevantModuleRowsStorageKey, ids);
+      }
+      relevantModuleRowIDs = ids;
+    });
 
     final lastFetchRaw = prefs.getString(_moduleCacheLastFetchKey);
     final lastFetchParsed =
@@ -797,9 +825,10 @@ class CampusManager extends KITLoginManager {
 
   /// Collapse card entries naming the same module twice - legacy stores
   /// written before admission was de-duplicated (see
-  /// [moduleKeysDenoteSameModule]). Keeps the position of the first copy and
-  /// the copy that carries the ILIAS link, which is the same tie-break
-  /// [addRelevantModuleRow] applies to an arriving duplicate.
+  /// [moduleKeysDenoteSameModule]). Keeps the position of the first copy
+  /// and the better copy - fetched over never-fetched, else the one that
+  /// carries the ILIAS link - the same tie-break [addRelevantModuleRow]
+  /// applies to an arriving duplicate.
   List<String> _dedupeRelevantIds(List<String> ids) {
     final kept = <String>[];
     final keptKeys = <String?>[];
@@ -818,14 +847,80 @@ class CampusManager extends KITLoginManager {
       if (clashAt < 0) {
         kept.add(id);
         keptKeys.add(key);
-      } else if (!_hasIliasLink(rowModules[kept[clashAt]]) &&
-          _hasIliasLink(rowModules[id])) {
+      } else if ((rowModules[id] != null &&
+              rowModules[kept[clashAt]] == null) ||
+          (!_hasIliasLink(rowModules[kept[clashAt]]) &&
+              _hasIliasLink(rowModules[id]))) {
         kept[clashAt] = id;
         keptKeys[clashAt] = key;
       }
     }
     return kept;
   }
+
+  /// Does the never-fetched placeholder [ghostId] name a module that
+  /// already has a fetched card among [ids]? A stored id whose page never
+  /// loaded (the Studienverlauf row can even be gone from the tree) has no
+  /// [_relevantRowKey]; its only title is the one the card placeholder
+  /// renders, `prettifyTemporaryModuleTitle(rowId)` - compare THAT against
+  /// the fetched copies' keys.
+  bool _placeholderClashesFetched(List<String> ids, String ghostId) {
+    final ghostKey = lectureTitleKey(prettifyTemporaryModuleTitle(ghostId));
+    if (ghostKey.isEmpty) return false;
+    for (final other in ids) {
+      if (other == ghostId) continue;
+      final title = _moduleFeedTitle(rowModules[other]);
+      if (title == null) continue;
+      if (moduleKeysDenoteSameModule(ghostKey, lectureTitleKey(title))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Drop never-fetched placeholders whose module already has a fetched
+  /// card. [_dedupeRelevantIds] alone cannot express this: a ghost id never
+  /// resolves a key, so it always took the conservative "unknown id kept"
+  /// branch. Tie-break here is data quality, not order: the fetched copy
+  /// always wins over the no-page placeholder.
+  List<String> _dropPlaceholderClashes(List<String> ids) => ids
+      .where((id) =>
+          rowModules[id] != null || !_placeholderClashesFetched(ids, id))
+      .toList();
+
+  /// Re-run the id-level dedupe once titles ARE resolvable. The load-time
+  /// pass in [prepareRelevantModuleRows] keeps both copies of a legacy
+  /// duplicate when neither side has a key yet (moduleRows/rowModules still
+  /// empty); after a fetch or feed re-parse the keys exist, so the same
+  /// collapse applies: fetched copy over no-page placeholder, otherwise the
+  /// first position + the ILIAS copy, persisted through the normal path.
+  Future<void> _collapseRelevantIdDuplicates() async {
+    var collapsed = false;
+    await _addRelevantModuleLock.run(() async {
+      // placeholders first: running the id dedupe before this let an
+      // earlier never-fetched ghost evict a fetched twin whose page
+      // carries no ILIAS link ("Advanced Mathematics" collapse inversion)
+      final deduped =
+          _dedupeRelevantIds(_dropPlaceholderClashes(relevantModuleRowIDs));
+      if (deduped.length != relevantModuleRowIDs.length) {
+        relevantModuleRowIDs = deduped;
+        collapsed = true;
+      }
+    });
+    if (collapsed) {
+      await storeRelevantModuleRows();
+      notificationCallback();
+    }
+  }
+
+  /// View guard for the placeholder path in RelevantModulesView: an
+  /// admitted id whose module page was never fetched, while a fetched card
+  /// on the same list already denotes that module - the ghost the load-time
+  /// dedupe could not see. Genuinely pending modules (no fetched twin)
+  /// still render.
+  bool isPlaceholderGhost(String rowId) =>
+      rowModules[rowId] == null &&
+      _placeholderClashesFetched(relevantModuleRowIDs, rowId);
 
   final Lock _addRelevantModuleLock = Lock();
 
@@ -917,12 +1012,141 @@ class CampusManager extends KITLoginManager {
         relevantModuleRowIDs.add(row.id);
       }
 
-      storeRelevantModuleRows();
+      await storeRelevantModuleRows();
       notificationCallback();
     });
   }
 
   void _extractUsefulDataFromModule(KITModule module) {}
+
+  // ---- manual ILIAS links ----
+  //
+  // Some ILIAS courses exist although CampusKIT never links them from the
+  // module page (live case: "Advanced Mathematics I", ILIAS course
+  // 0140000) - the card and the module page then stay button-less
+  // although the course is joinable. The user can attach such a URL per
+  // module title; storage is semester-scoped exactly like the card list
+  // ("RMR <semester>") and a manual link is a FALLBACK only: whatever
+  // CampusKIT prints itself always wins (see _applyManualIliasLinks).
+
+  String get _manualIliasLinksStorageKey =>
+      "MIL ${KITProvider.currentSemesterString}";
+
+  final Map<String, String> _manualIliasLinks = {};
+  bool _manualIliasLinksLoaded = false;
+
+  /// Reads the semester's {lectureTitleKey -> url} map once per manager.
+  /// Every async entry point that may consult the sync lookup calls this
+  /// (startup row preparation, module fetch, set/remove), so production
+  /// never reads a cold map.
+  Future<void> loadManualIliasLinks() async {
+    if (_manualIliasLinksLoaded) return;
+    _manualIliasLinksLoaded = true;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_manualIliasLinksStorageKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      decoded.forEach((key, value) {
+        _manualIliasLinks["$key"] = "$value";
+      });
+    } on Object {
+      // corrupt store: start clean; the next write overwrites it
+    }
+  }
+
+  /// The user-attached ILIAS URL for a module titled [title] (matched
+  /// through [lectureTitleKey]: case, "(Lecture)" suffixes and course
+  /// number tails are tolerant), or null while none is attached.
+  String? manualIliasUrlFor(String title) {
+    final key = lectureTitleKey(title);
+    return key.isEmpty ? null : _manualIliasLinks[key];
+  }
+
+  /// Attach [url] as the fallback ILIAS link of every module whose title
+  /// normalizes to the same lecture as [title]. Only genuine KIT ILIAS
+  /// pages are accepted; anything else throws [ArgumentError] with a
+  /// human-readable message (the module page surfaces it as a toast).
+  Future<void> setManualIliasUrl(String title, String url) async {
+    _requireIliasUrl(url);
+    final key = lectureTitleKey(title);
+    if (key.isEmpty) {
+      throw ArgumentError.value(title, "title", "empty module title");
+    }
+    await loadManualIliasLinks();
+    _manualIliasLinks[key] = url;
+    await _storeManualIliasLinks();
+    // live copies pick the link up at once: an open module page flips its
+    // attach button to the real ILIAS button on the next rebuild
+    if (_applyManualIliasLinks()) notificationCallback();
+  }
+
+  /// Forget the attached link. Already-parsed modules keep theirs until
+  /// their page is re-fetched: an in-memory link equal to the removed URL
+  /// cannot be told apart from a genuine CampusKIT one, and erasing that
+  /// would break a working button.
+  Future<void> removeManualIliasUrl(String title) async {
+    await loadManualIliasLinks();
+    if (_manualIliasLinks.remove(lectureTitleKey(title)) == null) return;
+    await _storeManualIliasLinks();
+  }
+
+  /// The attach target is pinned to the real ILIAS host, so a typo or a
+  /// hostile paste can never turn the ILIAS button into an open redirect
+  /// that carries the KIT session elsewhere.
+  static void _requireIliasUrl(String url) {
+    Uri uri;
+    try {
+      uri = Uri.parse(url);
+    } on FormatException {
+      throw ArgumentError.value(url, "url", "not a URL");
+    }
+    final host = uri.host.toLowerCase();
+    if (uri.scheme != "https" ||
+        (host != "ilias.studium.kit.edu" &&
+            !host.endsWith(".ilias.studium.kit.edu"))) {
+      throw ArgumentError.value(url, "url",
+          "only https://ilias.studium.kit.edu links can be attached");
+    }
+  }
+
+  Future<void> _storeManualIliasLinks() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_manualIliasLinks.isEmpty) {
+      await prefs.remove(_manualIliasLinksStorageKey);
+      return;
+    }
+    await prefs.setString(
+        _manualIliasLinksStorageKey, jsonEncode(_manualIliasLinks));
+  }
+
+  /// Application choke point: fills EMPTY iliasLinks from the manual map
+  /// and never replaces a link CampusKIT printed. Called for every module
+  /// that lands in [rowModules] through [fetchModule] (the disk module
+  /// cache is deprecated, so that is also the startup restore path) and
+  /// after a live attach; returns whether a visible module changed.
+  bool _applyManualIliasLinks({Iterable<KITModule>? only}) {
+    var changed = false;
+    for (final module in only ?? rowModules.values) {
+      if (module.iliasLink?.isNotEmpty ?? false) continue;
+      final title = _moduleFeedTitle(module) ?? "";
+      if (title.isEmpty) continue;
+      final url = manualIliasUrlFor(title);
+      if (url == null) continue;
+      module.iliasLink = url;
+      changed = true;
+    }
+    return changed;
+  }
+
+  /// The choke point [fetchModule] ends with; test stubs that replace the
+  /// network call run exactly this before returning their parsed module.
+  @visibleForTesting
+  Future<void> applyManualIliasLink(KITModule module) async {
+    await loadManualIliasLinks();
+    if (_applyManualIliasLinks(only: [module])) notificationCallback();
+  }
 
   Future<bool> toggleIsFavorite(ModuleInfoTableCell cell, KITModule inModule,
       {anticipate = true}) async {
@@ -1135,8 +1359,20 @@ class CampusManager extends KITLoginManager {
 
   Future<String?> setPersonalIcsFromUrl(String url) async {
     final trimmed = url.trim();
-    if (!trimmed.startsWith("http")) return "bad";
-    final response = await netGet(Uri.parse(trimmed));
+    // https everywhere, plain http only on the loopback interfaces
+    // (faculty calendars served from a local dev machine); anything else
+    // could ship the whole calendar over an unencrypted link
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null ||
+        !(uri.isScheme("https") ||
+            (uri.isScheme("http") && const {
+                  "127.0.0.1",
+                  "localhost",
+                  "::1",
+                }.contains(uri.host)))) {
+      return "bad";
+    }
+    final response = await netGet(uri);
     if (response.statusCode != 200 ||
         !response.body.contains("BEGIN:VEVENT")) {
       return "fetch";
@@ -1406,7 +1642,7 @@ class CampusManager extends KITLoginManager {
             !moduleKeyMatchesLectureKey(lectureTitleKey(title), keys);
       });
       pruned = relevantModuleRowIDs.length != before;
-      if (pruned) storeRelevantModuleRows();
+      if (pruned) await storeRelevantModuleRows();
     });
     // re-admission goes through addRelevantModuleRow so ordering,
     // de-duplication and persistence stay in the one place that owns them
@@ -1421,6 +1657,10 @@ class CampusManager extends KITLoginManager {
       }
     }
     if (pruned) notificationCallback();
+
+    // the ids the load-time dedupe had to keep (no title to judge yet)
+    // are judgeable now that the feed keys and the fetched pages speak
+    await _collapseRelevantIdDuplicates();
   }
 
   /// The single matching rule shared by [isTakingThisSemester] and the
@@ -1433,9 +1673,11 @@ class CampusManager extends KITLoginManager {
   /// survive the numeric-token guard: "Engineering Mechanics I" (number
   /// set {i}) and "... III" ({iii}) have equal-size, different sets and
   /// are rejected before substring containment or the ratio could pair
-  /// them. The ratio >= 70 path is kept (parity with the exam gate)
-  /// because feed titles differ from CampusKIT spellings by more than a
-  /// substring can cover (faculty prefixes, German wording); the guard
+  /// them, and a mere containment match must pass
+  /// [_containmentDenotesSameModule]. The ratio >= 70 path is kept (parity
+  /// with the exam gate) because feed titles differ from CampusKIT
+  /// spellings by more than a substring can cover (faculty prefixes,
+  /// German wording); the guard
   /// already eliminates the I/II/III collisions fuzzy matching is known
   /// for, so dropping ratio would only lose true matches.
   static bool moduleKeyMatchesLectureKey(
@@ -1447,7 +1689,8 @@ class CampusManager extends KITLoginManager {
       final eNums = _numericTokens(ev);
       if (!_numSetsCompatible(eNums, tNums)) continue;
       if (ev.length >= 6 &&
-          (ev.contains(moduleKey) || moduleKey.contains(ev))) {
+          (ev.contains(moduleKey) || moduleKey.contains(ev)) &&
+          _containmentDenotesSameModule(ev, moduleKey, eNums, tNums)) {
         return true;
       }
       // same threshold kit_provider uses before POSTing a favourite toggle
@@ -1466,6 +1709,42 @@ class CampusManager extends KITLoginManager {
     return false;
   }
 
+  /// Administrative addenda that do not name a different module: CampusKIT
+  /// lists "Advanced Mathematics I Prerequisite" as the same course family
+  /// as "Advanced Mathematics I" (verified on device), and the German
+  /// catalogue words the same idea. Any other extra wording - "Grundlagen
+  /// der" - names a different module and must not merge.
+  static const _qualifierWords = {
+    "prerequisite",
+    "prüfungsvorleistung",
+    "prüfungsvoraussetzung",
+    "vorleistung",
+    "prüfung",
+  };
+
+  /// Is a mere containment match between two normalized keys strong
+  /// enough to denote ONE module? Equal non-empty number sets: yes (the
+  /// same "Analysis I" spelled twice). Unequal non-empty sets ("... I"
+  /// inside "... I and II"): no - the joined-sequence noun-word path in
+  /// [moduleKeyMatchesLectureKey] owns catalogue sequences. Both number
+  /// sets empty: only when the longer key adds nothing but qualifier
+  /// words (bare containment over-merges "Fertigungstechnik" into
+  /// "Grundlagen der Fertigungstechnik").
+  static bool _containmentDenotesSameModule(
+      String a, String b, Set<String> aNums, Set<String> bNums) {
+    if (aNums.isNotEmpty && bNums.isNotEmpty) {
+      return aNums.length == bNums.length;
+    }
+    if (aNums.isNotEmpty || bNums.isNotEmpty) return false;
+    final longer = a.length >= b.length ? a : b;
+    final shorter = a.length >= b.length ? b : a;
+    final at = longer.indexOf(shorter);
+    final extra =
+        "${longer.substring(0, at)} ${longer.substring(at + shorter.length)}";
+    final words = extra.split(" ").where((w) => w.isNotEmpty).toList();
+    return words.isNotEmpty && words.every(_qualifierWords.contains);
+  }
+
   /// Do two normalized module titles name the SAME lecture?
   ///
   /// The Studienverlauf tree lists some modules under two section headings,
@@ -1479,10 +1758,12 @@ class CampusManager extends KITLoginManager {
   static bool moduleKeysDenoteSameModule(String a, String b) {
     if (a.isEmpty || b.isEmpty) return false;
     if (a == b) return true;
-    if (!_numSetsCompatible(_numericTokens(a), _numericTokens(b))) {
-      return false;
-    }
-    return a.length >= 6 && b.length >= 6 && (a.contains(b) || b.contains(a));
+    final aNums = _numericTokens(a), bNums = _numericTokens(b);
+    if (!_numSetsCompatible(aNums, bNums)) return false;
+    return a.length >= 6 &&
+        b.length >= 6 &&
+        (a.contains(b) || b.contains(a)) &&
+        _containmentDenotesSameModule(a, b, aNums, bNums);
   }
 
   /// Tri-state: null = subscription never loaded (unknown -> stay loud),

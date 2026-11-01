@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:kit_mobile/module/models/module.dart';
 import 'package:kit_mobile/parsing/models/hierarchic_table_row.dart';
 import 'package:kit_mobile/state_management/campus/campus_manager.dart';
@@ -98,6 +99,22 @@ class _StubTreeManager extends CampusManager {
       ..hierarchicalTableRowId = row.id;
     rowModules[row.id] = module;
     return module;
+  }
+}
+
+/// setPersonalIcsFromUrl fetches through netGet; the unit-test seam sees
+/// the requested Uri and replies with a canned body (200 always).
+class _IcsStubManager extends CampusManager {
+  Uri? requested;
+  String body = "";
+
+  _IcsStubManager() : super(Student.empty, () {});
+
+  @override
+  Future<http.Response> netGet(Uri uri,
+      {Map<String, String>? headers, Duration? timeout}) {
+    requested = uri;
+    return Future.value(http.Response(body, 200));
   }
 }
 
@@ -381,6 +398,195 @@ void main() {
       expect(mgr.relevantModuleRowIDs.toSet(), afterFirst);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getStringList(rmrKey())?.toSet(), afterFirst);
+    });
+  });
+
+  group("ghost placeholder collapse after titles become resolvable", () {
+    // the on-device bug: pre-dedupe prefs held BOTH ids of one module,
+    // one of them a row whose page was never fetched (its tree heading
+    // is gone) - at load time NEITHER id resolved a title, the
+    // conservative "unknown id kept" path kept both, and the card grew
+    // a placeholder-titled ghost next to the real fetched module
+    test("a stored ghost id collapses once its fetched sibling arrives",
+        () async {
+      SharedPreferences.setMockInitialValues({
+        rmrKey(): [_mdaPlain, _mdaLinked],
+      });
+      final mgr = _StubTreeManager({"Mechanical Design A": _em3Link});
+      final linked = _row("Mechanical Design A")..year = 2025;
+      mgr.moduleRows.add(linked); // the _2024 tree heading is gone: only
+      // the prettified row-id title ever speaks for the persisted ghost
+      await mgr.rememberEnrolledTitles(
+          _feed(["Mechanical Design A (Lecture) - 0123456"]));
+
+      await mgr.fetchAllModules();
+      await pumpEventQueue();
+
+      // the dedupe re-run at the end of the fetch collapses the pair -
+      // fetched copy wins over the no-page placeholder
+      expect(mgr.relevantModuleRowIDs, [_mdaLinked]);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList(rmrKey()), [_mdaLinked]);
+    });
+
+    test("the ghost guard hides only placeholders with a fetched twin",
+        () async {
+      final linked = _row("Mechanical Design A")..year = 2025;
+      cm.rowModules[linked.id] = _module(linked, _em3Link);
+      final pending = _row("Advanced Mathematics I")..year = 2024;
+      cm.relevantModuleRowIDs = [_mdaPlain, linked.id, pending.id];
+
+      // never-fetched id whose prettified title denotes the fetched module
+      expect(cm.isPlaceholderGhost(_mdaPlain), isTrue);
+      // genuinely pending ids (no fetched sibling) stay visible
+      expect(cm.isPlaceholderGhost(pending.id), isFalse);
+      // a fetched card is never a ghost
+      expect(cm.isPlaceholderGhost(linked.id), isFalse);
+    });
+
+    test("a single fetched module with no duplicate keeps its card",
+        () async {
+      final mgr = _StubTreeManager({});
+      await mgr.rememberEnrolledTitles(
+          _feed(["Advanced Mathematics I (Tutorial - Group 1)"]));
+      final am1 = _row("Advanced Mathematics I");
+      mgr.moduleRows.add(am1);
+
+      await mgr.fetchAllModules();
+      await pumpEventQueue();
+
+      expect(mgr.relevantModuleRowIDs, [am1.id]);
+      expect(mgr.isPlaceholderGhost(am1.id), isFalse);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList(rmrKey()), [am1.id]);
+    });
+  });
+
+  group("collapse keeps fetched data over never-fetched ids", () {
+    // mid-fetch state on the device: prefs hold both ids of one module,
+    // the earlier tree row was never fetched, the later copy was fetched
+    // but its page carries no ILIAS link - the old collapse order (id
+    // dedupe with the ILIAS-only swap first, placeholders dropped after)
+    // evicted the fetched copy and left the card on a ghost that can
+    // never load
+    test("a fetched twin without ILIAS link survives over an earlier ghost",
+        () async {
+      final ghost = _row("Advanced Mathematics I")..year = 2024;
+      final fetched = _row("Advanced Mathematics I")..year = 2025;
+      cm.moduleRows.addAll([ghost, fetched]);
+      cm.rowModules[fetched.id] = _module(fetched, null);
+      cm.relevantModuleRowIDs = [ghost.id, fetched.id];
+
+      await cm.rememberEnrolledTitles(
+          _feed(["Advanced Mathematics I (Tutorial - Group 1)"]));
+      await pumpEventQueue();
+
+      expect(cm.relevantModuleRowIDs, [fetched.id]);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList(rmrKey()), [fetched.id]);
+    });
+  });
+
+  group("account wipe clears the feed gate", () {
+    test(
+        "wipeAccountMemory drops the feed keys so the empty-keys "
+        "fallback rules for the next account", () async {
+      await cm.rememberEnrolledTitles(
+          _feed(["Advanced Mathematics I (Lecture) - 0140000"]));
+      expect(cm.enrolledLectureTitles, isNotEmpty);
+
+      cm.wipeAccountMemory();
+
+      expect(cm.enrolledLectureTitles, isEmpty);
+      // until the new account's own feed is parsed, the legacy link rule
+      // decides again
+      final am1 = _row("Advanced Mathematics I");
+      cm.rowModules[am1.id] = _module(am1, null);
+      await cm.addRelevantModuleRow(am1);
+      final em3 = _row("Engineering Mechanics III");
+      cm.rowModules[em3.id] = _module(em3, _em3Link);
+      await cm.addRelevantModuleRow(em3);
+      await pumpEventQueue();
+
+      expect(cm.relevantModuleRowIDs, [em3.id]);
+    });
+  });
+
+  group("containment merge needs number sets or qualifiers", () {
+    test("merge truth table", () {
+      String k(String raw) => CampusManager.lectureTitleKey(raw);
+
+      // qualifier-only tail over an unnumbered title: same module
+      expect(
+          CampusManager.moduleKeysDenoteSameModule(
+              k("Analysis Prerequisite"), k("Analysis")),
+          isTrue);
+      // the intended on-device merge: equal ({i}) number sets
+      expect(
+          CampusManager.moduleKeysDenoteSameModule(
+              k("Advanced Mathematics I"),
+              k("Advanced Mathematics I Prerequisite")),
+          isTrue);
+      // group labels are stripped in lectureTitleKey -> exact keys
+      expect(
+          CampusManager.moduleKeysDenoteSameModule(
+              k("Advanced Mathematics I (Tutorial - Group 1)"),
+              k("Advanced Mathematics I (Tutorial - Group 2)")),
+          isTrue);
+      // an unnumbered content phrase names a DIFFERENT module
+      expect(
+          CampusManager.moduleKeysDenoteSameModule(
+              k("Grundlagen der Fertigungstechnik"), k("Fertigungstechnik")),
+          isFalse);
+      // unequal number sets never collapse into one card
+      expect(
+          CampusManager.moduleKeysDenoteSameModule(
+              k("Engineering Mechanics I"),
+              k("Engineering Mechanics I and II")),
+          isFalse);
+    });
+
+    test("the feed gate no longer admits qualifier-less supersets", () {
+      String k(String raw) => CampusManager.lectureTitleKey(raw);
+
+      expect(
+          CampusManager.moduleKeyMatchesLectureKey(
+              k("Fertigungstechnik"), {k("Grundlagen der Fertigungstechnik")}),
+          isFalse);
+      expect(
+          CampusManager.moduleKeyMatchesLectureKey(
+              k("Advanced Mathematics I"),
+              {k("Advanced Mathematics I Prerequisite")}),
+          isTrue);
+    });
+  });
+
+  group("personal ICS URL import", () {
+    late _IcsStubManager mgr;
+    setUp(() => mgr = _IcsStubManager());
+
+    test("plain http to a foreign host is refused before any request",
+        () async {
+      mgr.body = _ics(["Advanced Mathematics I (Lecture) - 0140000"]);
+
+      expect(
+          await mgr.setPersonalIcsFromUrl("http://evil.example/f.ima"), "bad");
+      expect(mgr.requested, isNull);
+      expect(mgr.personalIcsUrl, isEmpty);
+    });
+
+    test("http on loopback and https anywhere are accepted", () async {
+      mgr.body = _ics(["Advanced Mathematics I (Lecture) - 0140000"]);
+
+      expect(await mgr.setPersonalIcsFromUrl("http://127.0.0.1:8080/f.ima"),
+          isNull);
+      expect(mgr.requested!.host, "127.0.0.1");
+      expect(mgr.personalIcsUrl, "http://127.0.0.1:8080/f.ima");
+
+      expect(
+          await mgr.setPersonalIcsFromUrl("https://cal.anywhere.org/f.ima"),
+          isNull);
+      expect(mgr.personalIcs, contains("Advanced Mathematics I"));
     });
   });
 }

@@ -20,7 +20,13 @@ class RelevantModulesView extends StatelessWidget {
     final vm = Provider.of<KITProvider>(context);
     final toastsProvider = Provider.of<ToastsProvider>(context, listen: false);
     final theme = Theme.of(context);
-    final modules = vm.campusManager.relevantModuleRowIDs;
+    // ghost guard: ids persisted before admission was de-duplicated can
+    // name a module whose page never loaded; the placeholder path below
+    // would then prettify the row id into a second copy of a fetched
+    // card's module - hide it. Genuinely pending modules still render.
+    final modules = vm.campusManager.relevantModuleRowIDs
+        .where((id) => !vm.campusManager.isPlaceholderGhost(id))
+        .toList();
     final lastFetchTime = vm.campusManager.lastModuleFetchTime;
     final lastFetchLabel = lastFetchTime != null
         ? formatHumanReadableTimestamp(lastFetchTime)

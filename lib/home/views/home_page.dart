@@ -145,7 +145,12 @@ class _KITHomePageState extends State<KITHomePage> {
         body: Stack(
           children: [
             RefreshIndicator(
-              onRefresh: () => vm.forceRefetchEverything(),
+              // a failed pull-down must toast like the button and the
+              // empty-state retry do, not spin its error away silently
+              onRefresh: () => vm.forceRefetchEverything().catchError((e) {
+                toastsProvider
+                    .showTextToast(L10n.t("common.refreshFailed"));
+              }),
               child: SingleChildScrollView(
                 // pull-down works even when the page fits the screen
                 physics: const AlwaysScrollableScrollPhysics(),

@@ -35,6 +35,19 @@ const Map<String, String> de_settings = {
   "settings.debugTreeCopied": "„{0}“ kopiert",
   "settings.debugTreeNoPage": "(noch keine Seite geladen)",
   "settings.debugTreeEmpty": "Noch kein Modul-Baum gelaufen – auf der Startseite ziehen",
+  "settings.debugTreeShown": "auf der Karte",
+  "settings.debugTreeFeedMiss": "nicht auf dem Stundenplan",
+  "settings.debugTreeClash": "Dublette - schon auf der Karte",
+  "settings.debugTreeGhost": "Platzhalter - geladene Karte vorhanden",
+  "settings.debugTreeUnexplained": "noch nicht aufgenommen",
+  "settings.debugTreeNoModule": "(kein Modul)",
+  // manual ILIAS link (module page)
+  "settings.moduleAttachIlias": "ILIAS verknüpfen",
+  "settings.moduleAttachIliasHint":
+      "URL der ILIAS-Seite (ilias.studium.kit.edu)",
+  "settings.moduleAttachIliasSaved": "ILIAS-Link verknüpft",
+  "settings.moduleAttachIliasInvalid":
+      "Es können nur https-Links zu ilias.studium.kit.edu verknüpft werden",
   // login view
   "settings.hello": "Hallo",
   "settings.helloName": "Hallo, {0}",
@@ -102,6 +115,19 @@ const Map<String, String> en_settings = {
   "settings.debugTreeCopied": "Copied “{0}”",
   "settings.debugTreeNoPage": "(no page yet)",
   "settings.debugTreeEmpty": "No module tree yet - pull down on the home page",
+  "settings.debugTreeShown": "on the card",
+  "settings.debugTreeFeedMiss": "not on the timetable",
+  "settings.debugTreeClash": "duplicate - already on card",
+  "settings.debugTreeGhost": "placeholder - fetched card exists",
+  "settings.debugTreeUnexplained": "not admitted yet",
+  "settings.debugTreeNoModule": "(not a module)",
+  // manual ILIAS link (module page)
+  "settings.moduleAttachIlias": "Link ILIAS",
+  "settings.moduleAttachIliasHint":
+      "URL of the ILIAS page (ilias.studium.kit.edu)",
+  "settings.moduleAttachIliasSaved": "ILIAS link attached",
+  "settings.moduleAttachIliasInvalid":
+      "Only https links to ilias.studium.kit.edu can be attached",
   // login view
   "settings.hello": "Hello",
   "settings.helloName": "Hello, {0}",

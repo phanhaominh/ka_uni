@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 
 import '../../ilias/views/ilias_page_view.dart';
 import '../../state_management/kit_provider.dart';
+import '../../toasts/models/toasts_provider.dart';
 import '../models/module.dart';
 
 class ModuleView extends StatefulWidget {
@@ -58,7 +59,10 @@ class _ModuleViewState extends State<ModuleView> {
                 // print(module.iliasLink);
                 // Navigator.of(context).push(MaterialPageRoute(builder: (BuildContext context) => IliasPageView(module)));
                 // FlutterWebBrowser.openWebPage(url: module.iliasLink!);
-              } ) : Text("")
+              } ) : CupertinoButton(
+                  child: Text(L10n.t("settings.moduleAttachIlias")),
+                  onPressed: () => _attachIliasLink(module),
+              )
             ],
           ),
           body: Padding(
@@ -179,6 +183,60 @@ class _ModuleViewState extends State<ModuleView> {
         );
       }
     );
+  }
+
+  /// CampusKIT never links some ILIAS courses ("Advanced Mathematics I"
+  /// is the live case): ask for the course URL and store it as the
+  /// module's manual fallback via the manager. The manager patches the
+  /// live module instance, so after setState the header action flips to
+  /// the regular ILIAS button; a rejected URL surfaces as a toast.
+  Future<void> _attachIliasLink(KITModule module) async {
+    // providers grabbed before the dialog await: no BuildContext use
+    // across an async gap, and they are stable (listen: false) anyway
+    final vm = Provider.of<KITProvider>(context, listen: false);
+    final toastsProvider =
+        Provider.of<ToastsProvider>(context, listen: false);
+    final controller = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: Text(L10n.t("settings.moduleAttachIlias")),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: CupertinoTextField(
+            controller: controller,
+            placeholder: L10n.t("settings.moduleAttachIliasHint"),
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            child: Text(L10n.t("files.cancel")),
+            onPressed: () => Navigator.of(dialogContext).pop(),
+          ),
+          CupertinoDialogAction(
+            child: Text(L10n.t("settings.ownIcsSave")),
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+          ),
+        ],
+      ),
+    );
+    if (url == null || url.isEmpty) {
+      controller.dispose();
+      return;
+    }
+    try {
+      await vm.campusManager.setManualIliasUrl(module.title, url);
+      toastsProvider.showTextToast(L10n.t("settings.moduleAttachIliasSaved"));
+      if (mounted) setState(() {});
+    } on ArgumentError {
+      toastsProvider
+          .showTextToast(L10n.t("settings.moduleAttachIliasInvalid"));
+    } finally {
+      controller.dispose();
+    }
   }
 
   String _formatGrade(String grade) {
