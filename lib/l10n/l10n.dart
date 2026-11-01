@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'strings_exams.dart';
 import 'strings_files.dart';
 import 'strings_notifs.dart';
+import 'strings_places.dart';
 import 'strings_settings.dart';
 import 'strings_timetable.dart';
 
@@ -92,6 +93,7 @@ class L10n {
     ...de_exams,
     ...de_files,
     ...de_notifs,
+    ...de_places,
     ...de_settings,
     ...de_timetable,
     // shared / dates
@@ -197,6 +199,7 @@ class L10n {
     ...en_exams,
     ...en_files,
     ...en_notifs,
+    ...en_places,
     ...en_settings,
     ...en_timetable,
     // shared / dates

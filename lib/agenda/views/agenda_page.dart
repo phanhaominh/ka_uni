@@ -13,6 +13,7 @@ import '../../agenda/logic/walk_hint.dart';
 import '../../common_ui/highlight_pulse.dart';
 import '../../ilias/ilias_scraper.dart';
 import '../../geo/models/kit_place.dart';
+import '../../geo/views/place_search_page.dart';
 import '../../ilias/models/ilias_models.dart';
 import '../../signmeup/signmeup_manager.dart';
 import '../../signmeup/signmeup_mine_card.dart';
@@ -494,9 +495,7 @@ class _AgendaPageState extends State<AgendaPage> {
                                 FontFeature.tabularFigures()
                               ])),
                       if (occ[i].room.isNotEmpty)
-                        Text(occ[i].room,
-                            style: TextStyle(
-                                fontSize: 12, color: scheme.outline)),
+                        AgendaRoomLine(room: occ[i].room),
                     ],
                   ),
                 ),
@@ -909,4 +908,41 @@ class _AgendaPageState extends State<AgendaPage> {
             borderRadius: BorderRadius.circular(10)),
         child: Text(label, style: const TextStyle(fontSize: 11)),
       );
+}
+
+/// Room line of an agenda lecture row, and the ONE entry point to the
+/// Raum-Finder. Tapping pushes the room as query + distance reference —
+/// the SAME string the walk hints resolve. Placeholder rooms ("-", "--",
+/// "ILIAS") would open a wall of 16-89 junk rows, so they stay plain
+/// Text (F1); a real room's label is tinted [ColorScheme.primary] to
+/// announce that it is tappable (F2, the tap target itself is silent).
+class AgendaRoomLine extends StatelessWidget {
+  const AgendaRoomLine({super.key, required this.room});
+
+  /// Raw ICS LOCATION of the occurrence.
+  final String room;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    // displayRoom (IcsOccurrence.cleanRoom) over the raw string: it only
+    // folds DUPLICATED tokens ("Gottlieb-Daimler-HS HS bldg 10.21" ->
+    // one HS), the exact normalization reminders already show, and a
+    // de-duplicated string fuzzy-matches the directory better. No
+    // behavior risk: ICS matching/dedup keep using the raw room.
+    final shown = IcsOccurrence.cleanRoom(room);
+    if (ExamTerm.isPlaceholderRoom(shown)) {
+      // plain Text: nothing to open, nothing to tap
+      return Text(shown,
+          style: TextStyle(fontSize: 12, color: scheme.outline));
+    }
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (context) => PlaceSearchPage(
+              initialQuery: shown, fromRoom: shown))),
+      child: Text(shown,
+          style: TextStyle(fontSize: 12, color: scheme.primary)),
+    );
+  }
 }

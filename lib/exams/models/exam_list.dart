@@ -18,7 +18,18 @@ class ExamTerm {
       dayLabel.toLowerCase().contains("entfällt") ||
       time.toLowerCase().contains("entfällt");
 
+  /// KIT placeholder rooms carry no location. The FULL placeholder set
+  /// is "-", "--" and "ILIAS"; this is the single place that knows it,
+  /// so the agenda can gate its Raum-Finder affordance with the same
+  /// normalization the exam code uses (pushing "ILIAS" as a query
+  /// yielded 16-89 junk rows). Case/whitespace tolerant on purpose.
+  static bool isPlaceholderRoom(String room) =>
+      const {"", "-", "--", "ilias"}.contains(room.trim().toLowerCase());
+
   /// Normalized room: KIT uses "-" / "ILIAS" style placeholders.
+  /// Deliberately NARROWER than [isPlaceholderRoom] (keeps "ILIAS"):
+  /// as the LOCATION of an online Klausur in an exported calendar
+  /// "ILIAS" IS information, while for a tap target it is a lie.
   String get roomLabel =>
       (room == "-" || room == "--" || room.isEmpty) ? "" : room;
 

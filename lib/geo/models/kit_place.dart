@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -58,5 +59,37 @@ class KITPlace {
           .toList(),
       url: json["url"]?.toString() ?? "",
     );
+  }
+}
+
+/// Prefs JSON for the offline place snapshot (GEO_placeSearchSnapshot;
+/// GEO_*, not the logout-swept DATA_* - see KITTopographyManager
+/// .snapshotKey): the 824 live entries (data_de.js, 2026-11) arrive
+/// from a single JS file that rarely changes during the semester, so a
+/// cold start can serve stale-OK results while the network fetch is
+/// still in flight (or the device is offline altogether). Compact: the
+/// fields the search UI reads.
+String encodePlacesSnapshot(List<KITPlace> places) => jsonEncode(places
+    .map((p) => {
+          "id": p.id,
+          "title": p.title,
+          "category": p.category,
+          "aliasList": p.aliasList,
+          "positionList": p.positionList,
+          "url": p.url,
+        })
+    .toList());
+
+/// Returns null on any parse failure; a corrupt cache must fall back to
+/// an empty search page, never to half-parsed places.
+List<KITPlace>? decodePlacesSnapshot(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  try {
+    final list = jsonDecode(raw) as List<dynamic>;
+    return list
+        .map((e) => KITPlace.fromJSON(e as Map<String, dynamic>))
+        .toList();
+  } on Object catch (_) {
+    return null;
   }
 }
