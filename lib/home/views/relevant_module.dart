@@ -44,7 +44,14 @@ class RelevantModuleView extends StatelessWidget {
                         }
                     ),
 
-                    CupertinoButton(
+                    // feed-admitted modules may legitimately have no
+                    // ILIAS course ("Advanced Mathematics I"): hide the
+                    // button instead of opening a dashboard detour
+                    // (module_page.dart gates identically; IliasPageView
+                    // itself would only fall back to the dashboard)
+                    (module.iliasLink == null || module.iliasLink!.isEmpty)
+                        ? Text("")
+                        : CupertinoButton(
                       padding: EdgeInsets.zero,
                       child: Text("ILIAS"),
                       onPressed: () async {

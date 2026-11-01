@@ -518,9 +518,13 @@ class CampusManager extends KITLoginManager {
               (f) => f.then<KITModule?>((m) => m).catchError((_) => null))))
           .whereType<KITModule>();
 
+      // Admission (current-feed title, else the legacy ILIAS link) is
+      // decided inside addRelevantModuleRow; a link gate here is what hid
+      // "Advanced Mathematics I", whose CampusKIT page has no ILIAS course
+      // while the lecture IS on the WS timetable.
       for (final newModule in newModules) {
-        if (newModule.iliasLink != null && newModule.row != null) {
-          _addRelevantModuleRow(newModule.row!);
+        if (newModule.row != null) {
+          addRelevantModuleRow(newModule.row!);
         }
       }
     } else {
@@ -529,12 +533,9 @@ class CampusManager extends KITLoginManager {
           continue;
         }
 
-        final newModule =
-            await getOrFetchModuleForRow(row, retryIfFailed: false)
-                .catchError((_) => KITModule());
-        if (newModule.iliasLink != null) {
-          _addRelevantModuleRow(row);
-        }
+        await getOrFetchModuleForRow(row, retryIfFailed: false)
+            .catchError((_) => KITModule());
+        addRelevantModuleRow(row);
       }
     }
   }
@@ -651,7 +652,7 @@ class CampusManager extends KITLoginManager {
 
     final prevModuleData = rowModules[module.hierarchicalTableRowId];
     if (prevModuleData != null && module.isEmpty && !prevModuleData.isEmpty) {
-      _addRelevantModuleRow(row);
+      addRelevantModuleRow(row);
       return prevModuleData;
     }
 
@@ -670,7 +671,7 @@ class CampusManager extends KITLoginManager {
 
     rowModules[module.hierarchicalTableRowId] = module;
 
-    _addRelevantModuleRow(row);
+    addRelevantModuleRow(row);
     _extractUsefulDataFromModule(module);
     return module;
   }
@@ -691,13 +692,51 @@ class CampusManager extends KITLoginManager {
     return fetchedModule;
   }
 
+  /// Best module title known for a row id: fetched page title first, then
+  /// the Studienverlauf row's own title; null while neither is loaded
+  /// (nothing known => the feed gate must not prune the entry).
+  String? _knownModuleTitle(String rowId) {
+    final title = _moduleFeedTitle(rowModules[rowId]);
+    if (title != null) return title;
+    for (final row in moduleRows) {
+      if (row.id == rowId && row.title.trim().isNotEmpty) return row.title;
+    }
+    return null;
+  }
+
+  String? _moduleFeedTitle(KITModule? module, [HierarchicTableRow? row]) {
+    final title = module?.title.trim() ?? "";
+    if (title.isNotEmpty) return title;
+    final rowTitle = (row ?? module?.row)?.title.trim() ?? "";
+    return rowTitle.isEmpty ? null : rowTitle;
+  }
+
   Future<void> prepareRelevantModuleRows() async {
     final prefs = await SharedPreferences.getInstance();
     final stored = prefs.getStringList(_relevantModuleRowsStorageKey);
     if (kDebugMode) {
       print("Stored $stored");
     }
-    relevantModuleRowIDs = stored ?? relevantModuleRowIDs;
+    var ids = stored ?? relevantModuleRowIDs;
+    // legacy "RMR <semester>" lists were admitted by the ILIAS-link
+    // heuristic and can name future-semester modules; once the feed has
+    // spoken, drop every stored id whose title is known not to be on the
+    // current timetable (EM-III-era entries self-heal on the first
+    // refetch). Unknown titles stay: missing information must never
+    // empty the card.
+    final keys = enrolledLectureTitles;
+    if (keys.isNotEmpty) {
+      final kept = ids.where((id) {
+        final title = _knownModuleTitle(id);
+        return title == null ||
+            moduleKeyMatchesLectureKey(lectureTitleKey(title), keys);
+      }).toList();
+      if (kept.length != ids.length) {
+        ids = kept;
+        await prefs.setStringList(_relevantModuleRowsStorageKey, kept);
+      }
+    }
+    relevantModuleRowIDs = ids;
 
     final lastFetchRaw = prefs.getString(_moduleCacheLastFetchKey);
     final lastFetchParsed =
@@ -724,11 +763,18 @@ class CampusManager extends KITLoginManager {
   }
 
   final Lock _addRelevantModuleLock = Lock();
-  Future<void> _addRelevantModuleRow(HierarchicTableRow row,
-      {keepSorted = true}) async {
-    // A module is RELEVANT if there is an ILIAS link meaning that it is
-    // relevant for the current semester
 
+  /// A module belongs to the "current modules" card iff its normalized
+  /// title is on the CURRENT merged timetable feed: the Studienverlauf
+  /// source tree is CampusKIT's whole-programme list, so the old
+  /// ILIAS-link heuristic admitted future-semester modules (EM III in
+  /// WS 26/27) while hiding current ones whose page carries no ILIAS
+  /// course ("Advanced Mathematics I"). Until the first successful feed
+  /// parse there are no lecture keys at all - then the legacy ILIAS-link
+  /// rule still admits, so a fresh or offline first start never leaves
+  /// the card spuriously dead-empty.
+  Future<void> addRelevantModuleRow(HierarchicTableRow row,
+      {keepSorted = true}) async {
     await _addRelevantModuleLock.run(() async {
       final module = rowModules[row.id];
       if (module == null) {
@@ -736,9 +782,21 @@ class CampusManager extends KITLoginManager {
         return;
       }
 
-      // double-check if the module is relevant (there must be an ilias-course link)
-      if (module.iliasLink == null || module.iliasLink!.isEmpty) {
-        if (kDebugMode) print("${module.title} ilias link is not there :(");
+      final keys = enrolledLectureTitles;
+      if (keys.isEmpty) {
+        // no feed yet: double-check the legacy way (there must be an
+        // ilias-course link)
+        if (module.iliasLink == null || module.iliasLink!.isEmpty) {
+          if (kDebugMode) print("${module.title} ilias link is not there :(");
+          return;
+        }
+      } else if (!moduleKeyMatchesLectureKey(
+          lectureTitleKey(_moduleFeedTitle(module, row) ?? ""), keys)) {
+        // double-check the feed rule (the fetch call sites pass every
+        // fetched row through here)
+        if (kDebugMode) {
+          print("${module.title} is not on the current timetable feed");
+        }
         return;
       }
 
@@ -1232,9 +1290,93 @@ class CampusManager extends KITLoginManager {
 
   /// Kept in sync at every point a feed is parsed (fetch, SignMeUp synth
   /// re-injection, agenda cache loads) so relevance stays correct offline.
-  void rememberEnrolledTitles(WebcalFeed? feed) {
+  Future<void> rememberEnrolledTitles(WebcalFeed? feed) async {
     final next = feed == null ? const <String>{} : enrolledTitleKeys(feed);
-    if (next.isNotEmpty) enrolledLectureTitles = next;
+    if (next.isEmpty) return; // unreadable feed: keep yesterday's truth
+    enrolledLectureTitles = next;
+    // the "current modules" card tracks the feed, not the whole-SPO
+    // Studienverlauf: re-prune + re-admit whenever the keys move
+    await _reevaluateRelevantModuleRows();
+  }
+
+  /// Feed-refresh hook for the "current modules" card. Modules fetched but
+  /// previously rejected (no ILIAS link, e.g. "Advanced Mathematics I")
+  /// become eligible once their title shows up on the feed, and modules
+  /// admitted earlier that are NOT on the feed (future-semester ones like
+  /// EM III) drop out; the pruned list is persisted through the normal
+  /// storage path. Never runs with an empty key set.
+  Future<void> _reevaluateRelevantModuleRows() async {
+    final keys = enrolledLectureTitles;
+    if (keys.isEmpty) return;
+    var pruned = false;
+    await _addRelevantModuleLock.run(() async {
+      final before = relevantModuleRowIDs.length;
+      relevantModuleRowIDs.removeWhere((id) {
+        final title = _knownModuleTitle(id);
+        // stored-but-never-fetched ids whose row is unknown too stay:
+        // the rule is about titles and there is no title to judge yet
+        return title != null &&
+            !moduleKeyMatchesLectureKey(lectureTitleKey(title), keys);
+      });
+      pruned = relevantModuleRowIDs.length != before;
+      if (pruned) storeRelevantModuleRows();
+    });
+    // re-admission goes through addRelevantModuleRow so ordering,
+    // de-duplication and persistence stay in the one place that owns them
+    for (final module in rowModules.values.toList()) {
+      if (module.isEmpty) continue;
+      final row = module.row;
+      if (row == null || relevantModuleRowIDs.contains(row.id)) continue;
+      final title = _moduleFeedTitle(module, row);
+      if (title != null &&
+          moduleKeyMatchesLectureKey(lectureTitleKey(title), keys)) {
+        await addRelevantModuleRow(row);
+      }
+    }
+    if (pruned) notificationCallback();
+  }
+
+  /// The single matching rule shared by [isTakingThisSemester] and the
+  /// "current modules" card admission ([addRelevantModuleRow]): does the
+  /// normalized [moduleKey] correspond to any lecture key in
+  /// [lectureKeys]?
+  ///
+  /// Exact key equality always matches. Every fuzzy path (mutual
+  /// substring, fuzzy ratio, joined-sequence noun words) first has to
+  /// survive the numeric-token guard: "Engineering Mechanics I" (number
+  /// set {i}) and "... III" ({iii}) have equal-size, different sets and
+  /// are rejected before substring containment or the ratio could pair
+  /// them. The ratio >= 70 path is kept (parity with the exam gate)
+  /// because feed titles differ from CampusKIT spellings by more than a
+  /// substring can cover (faculty prefixes, German wording); the guard
+  /// already eliminates the I/II/III collisions fuzzy matching is known
+  /// for, so dropping ratio would only lose true matches.
+  static bool moduleKeyMatchesLectureKey(
+      String moduleKey, Set<String> lectureKeys) {
+    if (moduleKey.isEmpty || lectureKeys.isEmpty) return false;
+    final tNums = _numericTokens(moduleKey);
+    for (final ev in lectureKeys) {
+      if (ev == moduleKey) return true;
+      final eNums = _numericTokens(ev);
+      if (!_numSetsCompatible(eNums, tNums)) continue;
+      if (ev.length >= 6 &&
+          (ev.contains(moduleKey) || moduleKey.contains(ev))) {
+        return true;
+      }
+      // same threshold kit_provider uses before POSTing a favourite toggle
+      if (ratio(moduleKey, ev) >= 70) return true;
+      // joined-sequence match ("I and II" ⊃ "I"): full-string ratio can sit
+      // below threshold because of the extra words, so require the noun
+      // words to align closely instead.
+      if (eNums.length != tNums.length) {
+        final ne = _nounWords(ev), nt = _nounWords(moduleKey);
+        if (ne.length >= 6 && nt.length >= 6 &&
+            (ne.contains(nt) || nt.contains(ne) || ratio(ne, nt) >= 80)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /// Tri-state: null = subscription never loaded (unknown -> stay loud),
@@ -1244,26 +1386,7 @@ class CampusManager extends KITLoginManager {
     if (enrolledLectureTitles.isEmpty) return null;
     final t = lectureTitleKey(e.title);
     if (t.isEmpty) return null;
-    final tNums = _numericTokens(t);
-    for (final ev in enrolledLectureTitles) {
-      if (ev == t) return true;
-      final eNums = _numericTokens(ev);
-      if (!_numSetsCompatible(eNums, tNums)) continue;
-      if (ev.length >= 6 && (ev.contains(t) || t.contains(ev))) return true;
-      // same threshold kit_provider uses before POSTing a favourite toggle
-      if (ratio(t, ev) >= 70) return true;
-      // joined-sequence match ("I and II" ⊃ "I"): full-string ratio can sit
-      // below threshold because of the extra words, so require the noun
-      // words to align closely instead.
-      if (eNums.length != tNums.length) {
-        final ne = _nounWords(ev), nt = _nounWords(t);
-        if (ne.length >= 6 && nt.length >= 6 &&
-            (ne.contains(nt) || nt.contains(ne) || ratio(ne, nt) >= 80)) {
-          return true;
-        }
-      }
-    }
-    return false;
+    return moduleKeyMatchesLectureKey(t, enrolledLectureTitles);
   }
 
   Future<String?> _ensureWebcalUrl() async {
