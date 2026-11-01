@@ -15,6 +15,7 @@ import '../../ilias/ilias_scraper.dart';
 import '../../geo/models/kit_place.dart';
 import '../../geo/views/place_search_page.dart';
 import '../../ilias/models/ilias_models.dart';
+import '../../state_management/ilias/ilias_watcher.dart';
 import '../../signmeup/signmeup_manager.dart';
 import '../../signmeup/signmeup_mine_card.dart';
 import '../../state_management/kit_provider.dart';
@@ -179,6 +180,10 @@ class _AgendaPageState extends State<AgendaPage> {
       final prefs3 = await SharedPreferences.getInstance();
       await prefs3.setString(
           _iliasCacheKey, encodeIliasCard(unread, announcements));
+
+      // fire-and-forget: the watcher swallows every failure internally and
+      // must never delay or poison the agenda rebuild behind it
+      IliasWatcher.diffAndNotify(announcements);
     } catch (_) {
       // a cached card stays visible instead of degrading to an error line;
       // the error only surfaces when there is nothing cached to show

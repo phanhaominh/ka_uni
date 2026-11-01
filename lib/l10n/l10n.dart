@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'strings_exams.dart';
 import 'strings_files.dart';
+import 'strings_grades.dart';
 import 'strings_notifs.dart';
 import 'strings_places.dart';
 import 'strings_settings.dart';
@@ -92,6 +93,7 @@ class L10n {
   static const Map<String, String> _de = {
     ...de_exams,
     ...de_files,
+    ...de_grades,
     ...de_notifs,
     ...de_places,
     ...de_settings,
@@ -198,6 +200,7 @@ class L10n {
   static const Map<String, String> _en = {
     ...en_exams,
     ...en_files,
+    ...en_grades,
     ...en_notifs,
     ...en_places,
     ...en_settings,

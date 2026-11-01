@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../constants/view_constants.dart';
+import '../../grades/views/grades_page.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:kit_mobile/settings/providers/settings_provider.dart';
 import 'package:provider/provider.dart';
@@ -138,6 +140,37 @@ class ProfileView extends StatelessWidget {
                 )
               ),
             ],
+          ),
+
+          // the Studienverlauf tree aggregated into a pass/fail/pending
+          // ledger with the 30 CP orientation milestone; the data is already
+          // in memory from the login fetch, so this card is pure navigation
+          BlockContainer(
+            padding: const EdgeInsets.only(top: 7),
+            // zero inner padding so the InkWell spans the WHOLE card: with
+            // the default padding the ripple/hit area was confined to the
+            // bare Row and taps on the visible padding were dead (~24dp
+            // target vs Material's 48; place_search_page keeps its padding
+            // inside the tappable for exactly this reason)
+            innerPadding: EdgeInsets.zero,
+            child: InkWell(
+              borderRadius: const BorderRadius.all(appBorderRadius),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (context) => const GradesPage())),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(L10n.t("grades.entry"),
+                          style: theme.textTheme.titleMedium),
+                    ),
+                    Icon(Icons.chevron_right,
+                        color: theme.colorScheme.outline),
+                  ],
+                ),
+              ),
+            ),
           ),
 
         ],
