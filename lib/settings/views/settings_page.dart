@@ -20,6 +20,7 @@ import '../../l10n/l10n.dart';
 import '../../local_files_storage/views/pages/files_cache_page.dart';
 import '../../tutorials/data/tutorial_manager.dart';
 import '../../toasts/models/toasts_provider.dart';
+import '../../timetable/logic/ics_export_action.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -327,6 +328,13 @@ class _OwnIcsSectionState extends State<_OwnIcsSection> {
                   child: Text(L10n.t("settings.ownIcsClear"))),
             ],
           ),
+          const SizedBox(height: 8),
+          // one-tap export of the merged cache (webcal + personal ICS +
+          // SignMeUp blocks) as a sanitized .ics via the share sheet
+          OutlinedButton.icon(
+              onPressed: () => exportMergedTimetableIcs(context),
+              icon: const Icon(Icons.share, size: 18),
+              label: Text(L10n.t("export.timetableFull"))),
         ],
       ),
     );

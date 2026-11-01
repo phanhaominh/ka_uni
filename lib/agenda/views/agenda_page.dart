@@ -16,6 +16,7 @@ import '../../ilias/models/ilias_models.dart';
 import '../../signmeup/signmeup_manager.dart';
 import '../../state_management/kit_provider.dart';
 import '../../timetable/models/webcal.dart';
+import '../../timetable/logic/ics_export_action.dart';
 
 /// Merged agenda: ICS "CHANGED" band + today/tomorrow lectures + ILIAS
 /// unread/announcements + open exam-registration deadlines on one screen.
@@ -246,7 +247,20 @@ class _AgendaPageState extends State<AgendaPage> {
           (a.windowEnd ?? DateTime(2100)).compareTo(b.windowEnd ?? DateTime(2100)));
 
     return Scaffold(
-      appBar: AppBar(title: Text(L10n.t("agenda.title"))),
+      appBar: AppBar(
+        title: Text(L10n.t("agenda.title")),
+        actions: [
+          // one-tap export of exactly what the agenda renders from: the
+          // merged cache (webcal + personal ICS + SignMeUp blocks); a
+          // direct share button matching the file viewer's precedent,
+          // not an Android-style single-item overflow menu
+          IconButton(
+            icon: const Icon(Icons.share),
+            tooltip: L10n.t("export.timetable"),
+            onPressed: () => exportMergedTimetableIcs(context),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _refresh,
         child: ListView(

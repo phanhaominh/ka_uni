@@ -156,6 +156,14 @@ class L10n {
     // round 3: travel hints
     "agenda.walkOk": "Fußweg ca. {0} Min",
     "agenda.walkTight": "Nur {0} Min Pause – Fußweg ca. {1} Min",
+    // ICS export (agenda share button + settings own-timetable section)
+    "export.timetable": "Stundenplan exportieren…",
+    "export.timetableFull": "Stundenplan exportieren (alle Quellen)…",
+    "export.done": "{0} Termine exportiert",
+    "export.doneOne": "1 Termin exportiert",
+    "export.empty":
+        "Noch kein Stundenplan gespeichert – auf der Startseite nach unten ziehen, um ihn zu laden",
+    "export.failed": "Export fehlgeschlagen – bitte erneut versuchen",
   };
 
   static const Map<String, String> _en = {
@@ -234,5 +242,12 @@ class L10n {
     "notifs.digestChanges": " · timetable changed",
     "agenda.walkOk": "~{0} min walk",
     "agenda.walkTight": "Only {0} min break – ~{1} min walk",
+    "export.timetable": "Export timetable…",
+    "export.timetableFull": "Export timetable (all sources)…",
+    "export.done": "{0} events exported",
+    "export.doneOne": "1 event exported",
+    "export.empty":
+        "No timetable stored yet – pull down on the home page to load it",
+    "export.failed": "Export failed – please try again",
   };
 }
