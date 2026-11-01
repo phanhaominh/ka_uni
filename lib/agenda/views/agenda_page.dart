@@ -14,6 +14,7 @@ import '../../ilias/ilias_scraper.dart';
 import '../../geo/models/kit_place.dart';
 import '../../ilias/models/ilias_models.dart';
 import '../../signmeup/signmeup_manager.dart';
+import '../../signmeup/signmeup_mine_card.dart';
 import '../../state_management/kit_provider.dart';
 import '../../timetable/models/webcal.dart';
 import '../../timetable/logic/ics_export_action.dart';
@@ -280,6 +281,10 @@ class _AgendaPageState extends State<AgendaPage> {
               _pendingCard(context, L10n.t("agenda.examsLoading")),
             if (_signMeUpRows(vm, now).isNotEmpty)
               _signMeUpSection(context, _signMeUpRows(vm, now)),
+            // my registrations + outcomes directly below the open
+            // procedures: offers and results belong together
+            if (_myRegsRows(vm, now).isNotEmpty)
+              SignMeUpMineCard(rows: _myRegsRows(vm, now), now: now),
             _staleFooter(context),
             if (_loading)
               const Padding(
@@ -565,17 +570,9 @@ class _AgendaPageState extends State<AgendaPage> {
       }
     }
     if (best == null || bestAt == null) return const SizedBox.shrink();
-    // calendar days, not 24-h windows: an exam tomorrow at 08:00 seen at
-    // 23:00 must say "tomorrow", not "today"
-    final days = DateTime(bestAt.year, bestAt.month, bestAt.day)
-        .difference(DateTime(now.year, now.month, now.day))
-        .inDays;
+    final days = L10n.daysFromNow(bestAt, now);
     if (days > 45) return const SizedBox.shrink();
-    final when = days == 0
-        ? L10n.t("agenda.examToday")
-        : days == 1
-            ? L10n.t("agenda.examTomorrow")
-            : L10n.t("agenda.examInDays", [days]);
+    final when = L10n.dayOffset(bestAt, now);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -740,6 +737,11 @@ class _AgendaPageState extends State<AgendaPage> {
       ),
     );
   }
+
+  /// My still-relevant registrations for the status card; the visibility
+  /// filter lives in SignMeUpMineCard.activeRows (unit-tested there).
+  List<SignMeUpRegistration> _myRegsRows(KITProvider vm, DateTime now) =>
+      SignMeUpMineCard.activeRows(vm.signMeUpManager.mine, now);
 
   /// SignMeUp procedures needing action now or opening within 3 days.
   List<({SignMeUpProcedure p, bool open})> _signMeUpRows(

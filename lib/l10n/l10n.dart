@@ -68,6 +68,22 @@ class L10n {
   static String until(DateTime d) => t(isEnglish ? "dates.until" : "dates.bis",
       ["${d.day}.${d.month}.${d.year}"]);
 
+  /// Whole calendar days from [now] to [at] (not 24-h windows): an exam
+  /// tomorrow at 08:00 seen at 23:00 is "tomorrow", not "today".
+  static int daysFromNow(DateTime at, DateTime now) =>
+      DateTime(at.year, at.month, at.day)
+          .difference(DateTime(now.year, now.month, now.day))
+          .inDays;
+
+  /// "heute" / "morgen" / "in 5 Tagen" - the app's shared relative-date
+  /// countdown wording (agenda exam card and SignMeUp status card).
+  static String dayOffset(DateTime at, DateTime now) {
+    final days = daysFromNow(at, now);
+    if (days == 0) return t("agenda.examToday");
+    if (days == 1) return t("agenda.examTomorrow");
+    return t("agenda.examInDays", [days]);
+  }
+
   static const _deWeekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   static const _enWeekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -149,6 +165,13 @@ class L10n {
     "agenda.signmeupFrom": "ab {0}",
     "notifs.signmeupTitle": "SignMeUp-Frist endet bald",
     "notifs.signmeupBody": "{0} – Anmeldung endet um {1}",
+    // SignMeUp "Meine Anmeldungen" status card
+    "agenda.signmeupMineTitle": "Meine Anmeldungen",
+    "agenda.signmeupMineRank": "Platz {0}",
+    "agenda.signmeupMineAccepted": "angenommen",
+    "agenda.signmeupMineRejected": "abgelehnt",
+    "agenda.signmeupMineOpen": "offen",
+    "agenda.signmeupMineMore": "+{0} mehr",
     // round 3: morning digest
     "notifs.digestTitle": "Heute: {0} Veranstaltungen",
     "notifs.digestBody": " Erste um {0}{1}",
@@ -237,6 +260,12 @@ class L10n {
     "agenda.signmeupFrom": "from {0}",
     "notifs.signmeupTitle": "SignMeUp deadline approaching",
     "notifs.signmeupBody": "{0} – registration ends at {1}",
+    "agenda.signmeupMineTitle": "My registrations",
+    "agenda.signmeupMineRank": "rank {0}",
+    "agenda.signmeupMineAccepted": "accepted",
+    "agenda.signmeupMineRejected": "rejected",
+    "agenda.signmeupMineOpen": "pending",
+    "agenda.signmeupMineMore": "+{0} more",
     "notifs.digestTitle": "Today: {0} classes",
     "notifs.digestBody": " First at {0}{1}",
     "notifs.digestChanges": " · timetable changed",

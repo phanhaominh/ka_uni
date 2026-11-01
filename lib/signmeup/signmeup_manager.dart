@@ -58,6 +58,9 @@ class SignMeUpTopicSchedule {
       required this.room});
 }
 
+/// Compact outcome category derived from the server's free-text stateLabel.
+enum SignMeUpOutcome { accepted, rejected, open, unknown }
+
 class SignMeUpRegistration {
   final int id;
   final int procedureId;
@@ -68,6 +71,16 @@ class SignMeUpRegistration {
   final DateTime? registrationStart;
   final DateTime? registrationEnd;
   final DateTime? confirmationDeadline;
+
+  /// When the first draw allocates places (lottery procedures); null =
+  /// the procedure has no draw scheduled.
+  final DateTime? firstDrawDate;
+
+  /// Waitlist / draw position; null = none assigned (not on a ranking).
+  final int? rank;
+
+  /// Server-side "please confirm your spot" flag.
+  final bool canConfirm;
   final int placesNumber;
   final int registrationsCount;
   final String? topicName;
@@ -84,6 +97,9 @@ class SignMeUpRegistration {
         registrationStart = _dt(j["registrationStart"]),
         registrationEnd = _dt(j["registrationEnd"]),
         confirmationDeadline = _dt(j["confirmationDeadline"]),
+        firstDrawDate = _dtLoose(j["firstDrawDate"]),
+        rank = (j["rank"] as num?)?.toInt(),
+        canConfirm = j["canConfirm"] as bool? ?? false,
         placesNumber = j["placesNumber"] as int? ?? 0,
         registrationsCount = j["registrations"] as int? ?? 0,
         topicName = (j["assignedTopic"] as Map?)?["name"] as String?,
@@ -95,9 +111,92 @@ class SignMeUpRegistration {
   static DateTime? _dt(Object? v) =>
       v == null ? null : DateTime.tryParse("$v")?.toLocal();
 
+  /// Wire format is ISO 8601 UTC with up to seven fractional digits
+  /// ("2026-10-31T11:20:02.4388606Z" - Dart truncates the seventh).
+  /// Tolerates null/missing and, defensively, epoch numbers (< 1e11
+  /// read as seconds, otherwise milliseconds) and numeric strings.
+  static DateTime? _dtLoose(Object? v) {
+    if (v == null || v == "") return null;
+    final epoch = v is num ? v : num.tryParse("$v");
+    if (epoch != null) {
+      return DateTime.fromMillisecondsSinceEpoch(
+              epoch < 100000000000 ? (epoch * 1000).round() : epoch.round())
+          .toLocal();
+    }
+    return _dt(v);
+  }
+
   /// Any record at all (state != open) means the student has acted.
   bool get submitted => state != 0;
   bool get accepted => state == 3;
+
+  // Labels SignMeUp actually puts on the wire: fixture captures are
+  // English lower-case ("accepted", "open"); the German portal variants
+  // are mapped case-insensitively next to them. Anything else stays
+  // `unknown` and renders as its raw label.
+  static const _acceptedLabels = {
+    "accepted", "angenommen", "zugelassen", "confirmed", "bestätigt"
+  };
+  static const _rejectedLabels = {
+    "rejected",
+    "abgelehnt",
+    "nicht zugelassen",
+    "nicht angenommen",
+    "not accepted",
+    "abgesagt",
+  };
+  static const _openLabels = {
+    "open",
+    "offen",
+    "registered",
+    "angemeldet",
+    "waiting",
+    "waitlist",
+    "waiting list",
+    "warteliste",
+  };
+
+  /// whitespace/underscore/hyphen are equivalent inside labels
+  /// ("nicht-zugelassen" vs. "nicht zugelassen"); hoisted out of the
+  /// [outcome] getter like the other static regexes (_dayAbbr)
+  static final _labelSep = RegExp(r"[\s_-]+");
+
+  /// Compact chip category; unknown labels keep their raw text in the UI.
+  SignMeUpOutcome get outcome {
+    final label =
+        stateLabel.trim().toLowerCase().replaceAll(_labelSep, " ");
+    if (_acceptedLabels.contains(label)) return SignMeUpOutcome.accepted;
+    if (_rejectedLabels.contains(label)) return SignMeUpOutcome.rejected;
+    if (_openLabels.contains(label)) return SignMeUpOutcome.open;
+    // no label but a decision code (e.g. old cached rows) still maps
+    if (label.isEmpty) {
+      if (state == 3) return SignMeUpOutcome.accepted;
+      if (state == 0) return SignMeUpOutcome.open;
+    }
+    return SignMeUpOutcome.unknown;
+  }
+
+  /// Nearest future date worth counting down to; null = nothing pending.
+  DateTime? nextMilestone(DateTime now) {
+    DateTime? best;
+    for (final d in [confirmationDeadline, firstDrawDate]) {
+      if (d != null && d.isAfter(now) && (best == null || d.isBefore(best))) {
+        best = d;
+      }
+    }
+    return best;
+  }
+
+  /// The row stays on the card until every known expiry has passed: the
+  /// confirmation deadline - a row without one expires with registrationEnd,
+  /// the registration phase is its horizon - and the first draw date.
+  /// No dates at all means "unknown" and keeps the row; otherwise it
+  /// survives while at least one known date is still ahead of now.
+  bool isLive(DateTime now) {
+    final cd = confirmationDeadline ?? registrationEnd, fd = firstDrawDate;
+    if (cd == null && fd == null) return true;
+    return (cd != null && cd.isAfter(now)) || (fd != null && fd.isAfter(now));
+  }
 
   static const _dayNames = {
     1: ["montag", "monday"],

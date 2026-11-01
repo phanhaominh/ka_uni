@@ -17,6 +17,7 @@ workers=1) to coexist with a busy desktop.
 | Agenda screen (calendar icon, home app bar) | ICS cache + ILIAS + exams | merged today/tomorrow + CHANGED band |
 | CHANGED band | `WebcalFeed.changesSince` diff of cached vs fresh ICS | neu / entfällt / verschoben / Raumwechsel; "Verstanden" clears it |
 | Prüfungsanmeldung (seal icon) | campus `possibleexams` + `sqassign` | red badge while a window is open and unregistered |
+| Meine Anmeldungen (agenda card) | SignMeUp `fetchMine` (Campus+ session, fetched at login and on force-refresh; the agenda only awaits the in-flight refresh) | state chip (accepted/rejected/open), Platz rank, countdown to confirmation deadline / first draw; display-only, no own fetch |
 | ILIAS page + scraper | `ilias.studium.kit.edu` via KIT SSO | courses, per-course materials (recursive folder walk), announcements, unread badges |
 | Notifications | exact alarms + WorkManager (2 h ICS poll) + boot receiver | lecture reminders from expanded ICS dates, Anmeldung deadline alerts, timetable-change push |
 
