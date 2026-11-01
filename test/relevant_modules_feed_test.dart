@@ -53,6 +53,54 @@ KITModule _module(HierarchicTableRow row, String? iliasLink) => KITModule()
 
 const _em3Link = "https://ilias.studium.kit.edu/goto.php?target=crs_4711";
 
+// Row ids are "<level>_<title>_<year>", so two "Mechanical Design A" rows
+// under different section headings (the module-code year comes from the
+// technical name) are two rows for one module: the device showed the
+// identical card twice.
+const _mdaPlain = "4_Mechanical Design A_2024";
+const _mdaLinked = "4_Mechanical Design A_2025";
+
+/// Tree carrying "Mechanical Design A" twice, one copy whose page has an
+/// ILIAS course; `linkedFirst` decides which copy is admitted first, which
+/// on the device is decided by whichever parallel fetch returns first.
+Future<CampusManager> _duplicateCardManager({required bool linkedFirst}) async {
+  final mgr = CampusManager(Student.empty, () {});
+  final plain = _row("Mechanical Design A")..year = 2024;
+  final linked = _row("Mechanical Design A")..year = 2025;
+  mgr.moduleRows.addAll([plain, linked]);
+  mgr.rowModules[plain.id] = _module(plain, null);
+  mgr.rowModules[linked.id] = _module(linked, _em3Link);
+
+  await mgr.rememberEnrolledTitles(
+      _feed(["Mechanical Design A (Lecture) - 0123456"]));
+  await mgr.addRelevantModuleRow(linkedFirst ? linked : plain);
+  await mgr.addRelevantModuleRow(linkedFirst ? plain : linked);
+  await pumpEventQueue();
+  return mgr;
+}
+
+/// `fetchAllModules` walks cascampus module pages, which a unit test cannot
+/// open; every row instead "arrives" as a module built from the row itself
+/// plus the canned ILIAS link for its title.
+class _StubTreeManager extends CampusManager {
+  final Map<String, String?> linksByTitle;
+
+  _StubTreeManager(this.linksByTitle) : super(Student.empty, () {});
+
+  @override
+  Future<KITModule> fetchModule(HierarchicTableRow row,
+      {recursiveRetry = true, userInitiated = false}) async {
+    final module = KITModule()
+      ..id = "csbr-${row.id}"
+      ..title = row.title
+      ..iliasLink = linksByTitle[row.title]
+      ..row = row
+      ..hierarchicalTableRowId = row.id;
+    rowModules[row.id] = module;
+    return module;
+  }
+}
+
 void main() {
   late CampusManager cm;
   String rmrKey() => "RMR ${KITProvider.currentSemesterString}";
@@ -205,6 +253,134 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getStringList(rmrKey()),
           ["4_Advanced Mathematics I_0", "4_Mystery Module_0"]);
+    });
+  });
+
+  group("one card per module", () {
+    test("the same module under two tree headings yields one card", () async {
+      await cm.rememberEnrolledTitles(
+          _feed(["Mechanical Design A (Lecture) - 0123456"]));
+
+      final plain = _row("Mechanical Design A")..year = 2024;
+      final copy = _row("Mechanical Design A")..year = 2025;
+      cm.moduleRows.addAll([plain, copy]);
+      cm.rowModules[plain.id] = _module(plain, null);
+      cm.rowModules[copy.id] = _module(copy, null);
+
+      await cm.addRelevantModuleRow(plain);
+      await cm.addRelevantModuleRow(copy);
+      await pumpEventQueue();
+
+      expect(cm.relevantModuleRowIDs, [_mdaPlain]);
+      // the pruned list goes out through the normal storage path
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList(rmrKey()), [_mdaPlain]);
+    });
+
+    test("the ILIAS copy of a duplicate wins, whoever arrives first",
+        () async {
+      for (final linkedFirst in [true, false]) {
+        final mgr = await _duplicateCardManager(linkedFirst: linkedFirst);
+        expect(mgr.relevantModuleRowIDs, [_mdaLinked],
+            reason: "$linkedFirst first: arrival order must not decide");
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getStringList(rmrKey()), [_mdaLinked]);
+      }
+    });
+
+    test("modules that only differ in their number stay two cards", () async {
+      await cm.rememberEnrolledTitles(_feed([
+        "3161010 - Engineering Mechanics I (V), Fidlin",
+        "3161010 - Engineering Mechanics III (V), Fidlin",
+      ]));
+
+      final em1 = _row("Engineering Mechanics I")..year = 2024;
+      final em3 = _row("Engineering Mechanics III")..year = 2025;
+      cm.moduleRows.addAll([em1, em3]);
+      cm.rowModules[em1.id] = _module(em1, null);
+      cm.rowModules[em3.id] = _module(em3, _em3Link);
+
+      await cm.addRelevantModuleRow(em1);
+      await cm.addRelevantModuleRow(em3);
+      await pumpEventQueue();
+
+      expect(cm.relevantModuleRowIDs.toSet(), {em1.id, em3.id});
+    });
+
+    test("the merge rule never folds near-miss titles together", () {
+      String k(String raw) => CampusManager.lectureTitleKey(raw);
+
+      // one module, two spellings of it
+      expect(
+          CampusManager.moduleKeysDenoteSameModule(
+              k("Mechanical Design A"),
+              k("Mechanical Design  A (Lecture) - 0123456")),
+          isTrue);
+      // one character apart are two real modules
+      expect(
+          CampusManager.moduleKeysDenoteSameModule(
+              k("Mechanical Design A"), k("Mechanical Design B")),
+          isFalse);
+      expect(
+          CampusManager.moduleKeysDenoteSameModule(
+              k("Analysis 1"), k("Analysis 2")),
+          isFalse);
+      expect(
+          CampusManager.moduleKeysDenoteSameModule(
+              k("Engineering Mechanics I"), k("Engineering Mechanics III")),
+          isFalse);
+      // nothing known -> nothing merged
+      expect(
+          CampusManager.moduleKeysDenoteSameModule("", k("Analysis 1")),
+          isFalse);
+    });
+
+    test("a stored duplicate pair collapses when the card loads", () async {
+      SharedPreferences.setMockInitialValues({
+        rmrKey(): [_mdaPlain, _mdaLinked],
+      });
+      final mgr = CampusManager(Student.empty, () {});
+      final plain = _row("Mechanical Design A")..year = 2024;
+      final linked = _row("Mechanical Design A")..year = 2025;
+      mgr.moduleRows.addAll([plain, linked]);
+      mgr.rowModules[plain.id] = _module(plain, null);
+      mgr.rowModules[linked.id] = _module(linked, _em3Link);
+
+      await mgr.prepareRelevantModuleRows();
+      await pumpEventQueue();
+
+      // position of the first copy, content of the copy carrying ILIAS
+      expect(mgr.relevantModuleRowIDs, [_mdaLinked]);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList(rmrKey()), [_mdaLinked]);
+    });
+
+    test("fetchAllModules twice keeps the card count", () async {
+      final mgr = _StubTreeManager({"Engineering Mechanics III": _em3Link});
+      await mgr.rememberEnrolledTitles(_feed([
+        "Mechanical Design A (Lecture) - 0123456",
+        "Advanced Mathematics I (Tutorial - Group 1)",
+      ]));
+      mgr.moduleRows.addAll([
+        _row("Mechanical Design A")..year = 2024,
+        _row("Mechanical Design A")..year = 2025,
+        _row("Advanced Mathematics I"),
+        _row("Engineering Mechanics III"), // on no timetable
+      ]);
+
+      await mgr.fetchAllModules();
+      await pumpEventQueue();
+      final afterFirst = mgr.relevantModuleRowIDs.toSet();
+      expect(afterFirst, {_mdaPlain, "4_Advanced Mathematics I_0"});
+
+      await mgr.fetchAllModules();
+      await pumpEventQueue();
+
+      // refetching the whole tree never re-splits the doubled module
+      expect(mgr.relevantModuleRowIDs.length, afterFirst.length);
+      expect(mgr.relevantModuleRowIDs.toSet(), afterFirst);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList(rmrKey())?.toSet(), afterFirst);
     });
   });
 }

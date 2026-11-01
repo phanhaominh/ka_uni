@@ -736,6 +736,14 @@ class CampusManager extends KITLoginManager {
         await prefs.setStringList(_relevantModuleRowsStorageKey, kept);
       }
     }
+    // duplicates were admitted before admission was de-duplicated by title
+    // (the on-device card showed "Mechanical Design A" twice); a stored
+    // pair collapses through the same tie-break a live duplicate gets
+    final deduped = _dedupeRelevantIds(ids);
+    if (deduped.length != ids.length) {
+      ids = deduped;
+      await prefs.setStringList(_relevantModuleRowsStorageKey, ids);
+    }
     relevantModuleRowIDs = ids;
 
     final lastFetchRaw = prefs.getString(_moduleCacheLastFetchKey);
@@ -762,6 +770,63 @@ class CampusManager extends KITLoginManager {
     }
   }
 
+  /// An ILIAS course link only counts when it is actually there: freshly
+  /// parsed module pages leave `iliasLink` empty.
+  static bool _hasIliasLink(KITModule? module) =>
+      module?.iliasLink?.isNotEmpty ?? false;
+
+  /// Normalized feed title of an admitted card entry, or null while nothing
+  /// is known about that row yet (no title -> no title rule may judge it).
+  String? _relevantRowKey(String rowId) {
+    final title = _knownModuleTitle(rowId);
+    return title == null ? null : lectureTitleKey(title);
+  }
+
+  /// Already-admitted row whose normalized title denotes the same lecture as
+  /// [key] (see [moduleKeysDenoteSameModule]); null when the card has no
+  /// such entry.
+  String? _clashingRelevantRowId(String key, {required String exceptId}) {
+    if (key.isEmpty) return null;
+    for (final id in relevantModuleRowIDs) {
+      if (id == exceptId) continue;
+      final other = _relevantRowKey(id);
+      if (other != null && moduleKeysDenoteSameModule(key, other)) return id;
+    }
+    return null;
+  }
+
+  /// Collapse card entries naming the same module twice - legacy stores
+  /// written before admission was de-duplicated (see
+  /// [moduleKeysDenoteSameModule]). Keeps the position of the first copy and
+  /// the copy that carries the ILIAS link, which is the same tie-break
+  /// [addRelevantModuleRow] applies to an arriving duplicate.
+  List<String> _dedupeRelevantIds(List<String> ids) {
+    final kept = <String>[];
+    final keptKeys = <String?>[];
+    for (final id in ids) {
+      if (kept.contains(id)) continue; // the very same row listed twice
+      final key = _relevantRowKey(id);
+      var clashAt = -1;
+      if (key != null) {
+        for (var i = 0; i < kept.length; i++) {
+          if (moduleKeysDenoteSameModule(key, keptKeys[i] ?? "")) {
+            clashAt = i;
+            break;
+          }
+        }
+      }
+      if (clashAt < 0) {
+        kept.add(id);
+        keptKeys.add(key);
+      } else if (!_hasIliasLink(rowModules[kept[clashAt]]) &&
+          _hasIliasLink(rowModules[id])) {
+        kept[clashAt] = id;
+        keptKeys[clashAt] = key;
+      }
+    }
+    return kept;
+  }
+
   final Lock _addRelevantModuleLock = Lock();
 
   /// A module belongs to the "current modules" card iff its normalized
@@ -773,6 +838,10 @@ class CampusManager extends KITLoginManager {
   /// parse there are no lecture keys at all - then the legacy ILIAS-link
   /// rule still admits, so a fresh or offline first start never leaves
   /// the card spuriously dead-empty.
+  ///
+  /// Admission is also the single place that keeps ONE card per module:
+  /// the tree can carry the same module under two headings, and each copy
+  /// has its own row id (see [moduleKeysDenoteSameModule]).
   Future<void> addRelevantModuleRow(HierarchicTableRow row,
       {keepSorted = true}) async {
     await _addRelevantModuleLock.run(() async {
@@ -782,6 +851,9 @@ class CampusManager extends KITLoginManager {
         return;
       }
 
+      // normalized feed title of THIS row: both the feed gate and the
+      // duplicate-card guard below judge nothing but this key
+      final moduleKey = lectureTitleKey(_moduleFeedTitle(module, row) ?? "");
       final keys = enrolledLectureTitles;
       if (keys.isEmpty) {
         // no feed yet: double-check the legacy way (there must be an
@@ -790,8 +862,7 @@ class CampusManager extends KITLoginManager {
           if (kDebugMode) print("${module.title} ilias link is not there :(");
           return;
         }
-      } else if (!moduleKeyMatchesLectureKey(
-          lectureTitleKey(_moduleFeedTitle(module, row) ?? ""), keys)) {
+      } else if (!moduleKeyMatchesLectureKey(moduleKey, keys)) {
         // double-check the feed rule (the fetch call sites pass every
         // fetched row through here)
         if (kDebugMode) {
@@ -800,6 +871,22 @@ class CampusManager extends KITLoginManager {
         return;
       }
 
+      // One card per module, not per Studienverlauf row: the tree can carry
+      // the same module twice (two section headings -> two rows, and level
+      // plus the module-code year are part of the id, so both got a card).
+      final clash = _clashingRelevantRowId(moduleKey, exceptId: row.id);
+      if (clash != null) {
+        // which copy of a duplicate arrives first is up to the parallel
+        // fetch, so the tie-break is data quality and not arrival order:
+        // the card keeps the copy whose page carries the ILIAS course
+        if (_hasIliasLink(rowModules[clash]) || !_hasIliasLink(module)) {
+          if (kDebugMode) {
+            print("${module.title} is already on the card as $clash");
+          }
+          return;
+        }
+        relevantModuleRowIDs.remove(clash);
+      }
       // there is not so many of them
       while (relevantModuleRowIDs.remove(row.id)) {
         if (kDebugMode) print("There already exists this module");
@@ -1377,6 +1464,25 @@ class CampusManager extends KITLoginManager {
       }
     }
     return false;
+  }
+
+  /// Do two normalized module titles name the SAME lecture?
+  ///
+  /// The Studienverlauf tree lists some modules under two section headings,
+  /// and each copy has its own row id, so the card showed the identical
+  /// module twice. Keeps the numeric-token guard of
+  /// [moduleKeyMatchesLectureKey] ("Engineering Mechanics I" vs "... III"
+  /// are two modules) and is deliberately stricter than the feed gate: no
+  /// fuzzy ratio, because there a one-character difference means a
+  /// DIFFERENT module ("Mechanical Design A" vs "... B", "Analysis 1" vs
+  /// "Analysis 2") that one-card-per-module must never hide.
+  static bool moduleKeysDenoteSameModule(String a, String b) {
+    if (a.isEmpty || b.isEmpty) return false;
+    if (a == b) return true;
+    if (!_numSetsCompatible(_numericTokens(a), _numericTokens(b))) {
+      return false;
+    }
+    return a.length >= 6 && b.length >= 6 && (a.contains(b) || b.contains(a));
   }
 
   /// Tri-state: null = subscription never loaded (unknown -> stay loud),

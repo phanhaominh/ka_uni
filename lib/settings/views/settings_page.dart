@@ -18,6 +18,7 @@ import '../../credentials/data/credentials_provider.dart';
 import '../../info/views/info_page.dart';
 import '../../l10n/l10n.dart';
 import '../../local_files_storage/views/pages/files_cache_page.dart';
+import 'module_tree_debug_page.dart';
 import '../../tutorials/data/tutorial_manager.dart';
 import '../../toasts/models/toasts_provider.dart';
 import '../../timetable/logic/ics_export_action.dart';
@@ -156,6 +157,35 @@ class _SettingsPageState extends State<SettingsPage> {
                             MaterialPageRoute(
                                 builder: (BuildContext context) =>
                                     FilesCachePage())))
+                  ],
+                ),
+              ),
+
+              SettingsSectionTitle(title: "Debug"),
+
+              BlockContainer(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SettingRow(
+                      title: L10n.t("settings.debugFetch"),
+                      trailing: CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          child: const Icon(CupertinoIcons.chevron_forward),
+                          onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (BuildContext context) =>
+                                      ModuleTreeDebugPage(
+                                          campusManager:
+                                              vm.campusManager)))),
+                    ),
+                    Text(
+                      L10n.t("settings.debugFetchHint"),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Theme.of(context).colorScheme.outline),
+                    ),
                   ],
                 ),
               ),

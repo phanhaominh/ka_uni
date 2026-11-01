@@ -27,6 +27,14 @@ const Map<String, String> de_settings = {
   "settings.logout": "Ausloggen",
   "settings.loggedOut": "Ausgeloggt, alle Daten gelöscht",
   "settings.logoutFailed": "Ausloggen fehlgeschlagen – bitte erneut versuchen",
+  // module-tree diagnostic (settings > Debug)
+  "settings.debugFetch": "Modul-Baum (Debug)",
+  "settings.debugFetchHint":
+      "Zeigt jeden Modul-Eintrag des CampusKIT-Baums: Level, Treffer auf dem Stundenplan, geladene Seite. Lange drücken kopiert den Titel.",
+  "settings.debugTreeCopyHint": "Lange auf einen Titel drücken, um ihn zu kopieren.",
+  "settings.debugTreeCopied": "„{0}“ kopiert",
+  "settings.debugTreeNoPage": "(noch keine Seite geladen)",
+  "settings.debugTreeEmpty": "Noch kein Modul-Baum gelaufen – auf der Startseite ziehen",
   // login view
   "settings.hello": "Hallo",
   "settings.helloName": "Hallo, {0}",
@@ -86,6 +94,14 @@ const Map<String, String> en_settings = {
   "settings.logout": "Log out",
   "settings.loggedOut": "Logged out, all data deleted",
   "settings.logoutFailed": "Logout failed - please try again",
+  // module-tree diagnostic (settings > Debug)
+  "settings.debugFetch": "Module tree (debug)",
+  "settings.debugFetchHint":
+      "Every module entry of the CampusKIT tree: level, timetable hit, loaded page. Long-press to copy a title.",
+  "settings.debugTreeCopyHint": "Long-press a title to copy it.",
+  "settings.debugTreeCopied": "Copied “{0}”",
+  "settings.debugTreeNoPage": "(no page yet)",
+  "settings.debugTreeEmpty": "No module tree yet - pull down on the home page",
   // login view
   "settings.hello": "Hello",
   "settings.helloName": "Hello, {0}",
