@@ -90,6 +90,35 @@ class KITProvider extends ChangeNotifier {
     }
   }
 
+  Future<void>? _examsInFlight;
+
+  /// Resolves once the last started exam-list fetch (incl. the synthetic
+  /// exam-sitting injection into the ICS cache) has finished; the agenda
+  /// awaits it exactly like [signMeUpDone] so registered sittings appear
+  /// in today/tomorrow without a manual pull.
+  Future<void>? get examsDone => _examsInFlight;
+
+  /// Single-flight exam-list fetch through the provider, mirroring
+  /// [fetchSignMeUp]: while one is in flight, callers join it instead of
+  /// stacking fetches.
+  Future<void> fetchExams() {
+    final existing = _examsInFlight;
+    if (existing != null) {
+      return existing;
+    }
+    final future = _doFetchExams();
+    _examsInFlight = future;
+    return future;
+  }
+
+  Future<void> _doFetchExams() async {
+    try {
+      await campusManager.fetchExams();
+    } finally {
+      _examsInFlight = null;
+    }
+  }
+
   bool get profileReady => campusManager.ready;
 
   TimetableWeekly get timetable => campusManager.timetable;

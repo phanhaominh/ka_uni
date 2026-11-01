@@ -16,7 +16,8 @@ const icsExportMimeType = "text/calendar";
 
 /// Sentinel lines CampusManager embeds into the cache to make the personal
 /// and SignMeUp block injections idempotent. Literals are duplicated here
-/// (see campus_manager.dart personalBegin/personalEnd/synthBegin/synthEnd)
+/// (see campus_manager.dart personalBegin/personalEnd/synthBegin/synthEnd/
+/// examSynthBegin/examSynthEnd)
 /// to keep this unit independent of the state layer; [buildIcsExport]
 /// strips them so the exported document is clean, standard ICS.
 const _sentinelMarkers = [
@@ -24,6 +25,8 @@ const _sentinelMarkers = [
   "X-PERSONAL-ICS-END",
   "X-SIGNMEUP-SYNTH-BEGIN",
   "X-SIGNMEUP-SYNTH-END",
+  "X-EXAM-SYNTH-BEGIN",
+  "X-EXAM-SYNTH-END",
 ];
 
 /// Feed header properties that describe WHO publishes the source calendar;

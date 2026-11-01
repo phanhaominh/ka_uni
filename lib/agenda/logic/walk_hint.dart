@@ -2,6 +2,7 @@ import 'package:fuzzywuzzy/fuzzywuzzy.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../geo/models/kit_place.dart';
+import '../../timetable/models/webcal.dart';
 
 final RegExp _buildingNumber = RegExp(r"\b\d{1,2}\.\d{1,2}\b");
 
@@ -52,6 +53,18 @@ WalkHint? computeWalkHint(
   if (meters < 250) return null; // same building cluster
   final walkMinutes = (meters / _walkSpeedMs / 60).ceil();
   return WalkHint(walkMinutes, walkMinutes > gapMinutes);
+}
+
+/// Gap in minutes between two adjacent agenda rows, or null when there is
+/// nothing to plan: if EITHER side's end was defaulted by the parser
+/// (no DTEND - IcsOccurrence.endGuessed, e.g. a Klausur exported without
+/// DTEND), the gap is partly invented and no Fußweg may be certified
+/// across it.
+int? walkHintGap(IcsOccurrence prev, IcsOccurrence next) {
+  if (prev.endGuessed || next.endGuessed) return null;
+  final gap = next.start.difference(prev.end).inMinutes;
+  if (gap <= 4 || gap > 90) return null;
+  return gap;
 }
 
 /// Great-circle metres between two resolved room strings; exposed for the

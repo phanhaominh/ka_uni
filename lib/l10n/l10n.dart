@@ -176,6 +176,10 @@ class L10n {
     "notifs.digestTitle": "Heute: {0} Veranstaltungen",
     "notifs.digestBody": " Erste um {0}{1}",
     "notifs.digestChanges": " · Stundenplan geändert",
+    // round 4: exam sittings as calendar events
+    "notifs.digestTitleExam": "Heute: Klausur",
+    "notifs.digestBodyExam": " Klausur um {0}{1}",
+    "notifs.reminderFrom": "ab {0}",
     // round 3: travel hints
     "agenda.walkOk": "Fußweg ca. {0} Min",
     "agenda.walkTight": "Nur {0} Min Pause – Fußweg ca. {1} Min",
@@ -269,6 +273,10 @@ class L10n {
     "notifs.digestTitle": "Today: {0} classes",
     "notifs.digestBody": " First at {0}{1}",
     "notifs.digestChanges": " · timetable changed",
+    // round 4: exam sittings as calendar events
+    "notifs.digestTitleExam": "Today: exam",
+    "notifs.digestBodyExam": " Exam at {0}{1}",
+    "notifs.reminderFrom": "from {0}",
     "agenda.walkOk": "~{0} min walk",
     "agenda.walkTight": "Only {0} min break – ~{1} min walk",
     "export.timetable": "Export timetable…",

@@ -68,4 +68,19 @@ void main() {
     expect(openEnded.needsAction(DateTime(2026, 11, 20)), isTrue);
     expect(openEnded.windowEnd, isNull);
   });
+
+  test('range guard counts date fragments, not dash spelling', () {
+    // every range spelling is exactly two "d.m" fragments; a concrete
+    // sitting label exactly one. The old dash-conjunct guard missed
+    // "27.02.2027 – 06.03.2027" (dash not glued to a fragment) and a
+    // full-date-token count would miss "27.02.-06.03.2027" (its first
+    // fragment has no year, so firstMatch resolves to the range END).
+    ExamTerm t(String dayLabel) => ExamTerm(dayLabel, "10:00 - 12:00", "AVI 105");
+    expect(t("27.02.-06.03.2027").startAt, isNull);
+    expect(t("27.02.2027 – 06.03.2027").startAt, isNull);
+    expect(t("12.04 - 30.04.2027").startAt, isNull);
+    expect(t("23.03.2027").startAt, DateTime(2027, 3, 23, 10, 0));
+    expect(t("Fr, 16.04.2027, 2. Termin").startAt,
+        DateTime(2027, 4, 16, 10, 0));
+  });
 }

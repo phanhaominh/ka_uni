@@ -190,4 +190,41 @@ END:VCALENDAR
       expect(await cm.setPersonalIcsFromRaw("hello ics"), "bad");
     });
   });
+
+  group("exam-synth occurrences never self-certify", () {
+    // the synthetic "Klausur: <title>" VEVENTs are derived FROM the exam
+    // catalogue; if their titles flowed back through enrolledTitleKeys,
+    // every registered exam would trivially pass isTakingThisSemester and
+    // re-arm the suppressed needsAction badges + 24 h registration alarms
+    const examEvent = "BEGIN:VEVENT\r\n"
+        "UID:kauni-exam-01-A-9001-20270323T173000@ka_uni\r\n"
+        "DTSTART;TZID=Europe/Berlin:20270323T173000\r\n"
+        "DTEND;TZID=Europe/Berlin:20270323T190000\r\n"
+        "SUMMARY:Klausur: Engineering Mechanics II\r\nEND:VEVENT\r\n";
+
+    WebcalFeed? parse(String body) => WebcalFeed.parse(
+        "BEGIN:VCALENDAR\r\n$body END:VCALENDAR\r\n",
+        now: DateTime(2026, 11, 1));
+
+    test("Klausur event alone yields an empty key set", () {
+      final feed = parse(examEvent)!;
+      expect(
+        feed.occurrences.single.uid, startsWith("kauni-exam-"));
+      expect(CampusManager.enrolledTitleKeys(feed), isEmpty);
+      cm.rememberEnrolledTitles(feed);
+      // unknown, not true: the gate must stay silent, not self-certify
+      expect(
+          cm.isTakingThisSemester(_entry("Engineering Mechanics II")), isNull);
+    });
+
+    test("SignMeUp synth events still count as genuine enrolments", () {
+      const smu = "BEGIN:VEVENT\r\n"
+          "UID:signmeup-42-0@ka_uni\r\n"
+          "DTSTART:20261105T160000\r\nDTEND:20261105T173000\r\n"
+          "SUMMARY:Analysis I (Tutorial)\r\nEND:VEVENT\r\n";
+      final feed = parse(smu)!;
+      expect(CampusManager.enrolledTitleKeys(feed),
+          contains("analysis i tutorial"));
+    });
+  });
 }

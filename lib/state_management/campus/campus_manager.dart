@@ -21,6 +21,7 @@ import '../../timetable/models/timetable_weekly.dart';
 import '../../notifications/mei_notifications.dart';
 import '../../timetable/models/webcal.dart';
 import '../../exams/models/exam_list.dart';
+import '../../exams/models/exam_synth.dart';
 
 const _studentDataKey = "DATA_student";
 
@@ -238,6 +239,7 @@ class CampusManager extends KITLoginManager {
     // every later fetch injects whatever block is held here, and a failed
     // fetchMine for B (break, plus session) would never replace it
     signMeUpSynth = "";
+    examSynth = ""; // registered sittings are account data too
     personalIcs = "";
     personalIcsUrl = "";
     _personalIcsLoaded = false;
@@ -876,6 +878,44 @@ class CampusManager extends KITLoginManager {
     return base.replaceRange(at, at, wrapped);
   }
 
+  // ---- Exam synthetic events (registered sittings from the exam list) ----
+  // Same sentinel-bracketed VEVENT text as the SignMeUp block above: built
+  // whenever the exam list parses successfully (exam_synth.dart, see
+  // _fetchExamsInner) and re-merged at every cache write, so grid, agenda,
+  // digest, reminders and the ICS export treat registered exams like
+  // ordinary feed events without knowing where they came from.
+  static const examSynthBegin = "X-EXAM-SYNTH-BEGIN";
+  static const examSynthEnd = "X-EXAM-SYNTH-END";
+  String examSynth = "";
+
+  static String stripExamSynth(String raw) {
+    final b = raw.indexOf(examSynthBegin);
+    if (b < 0) return raw;
+    final e = raw.indexOf(examSynthEnd);
+    if (e < 0) return raw.substring(0, b);
+    return raw.substring(0, b) + raw.substring(e + examSynthEnd.length + 2);
+  }
+
+  /// The sentinel-wrapped exam block embedded in [raw] ("" if none); lets
+  /// the background isolate carry the sittings across a fresh feed fetch
+  /// (mirrors extractSignMeUpSynth).
+  static String extractExamSynth(String raw) {
+    final b = raw.indexOf(examSynthBegin);
+    if (b < 0) return "";
+    final e = raw.indexOf(examSynthEnd);
+    if (e < 0 || e < b) return "";
+    return raw.substring(b + examSynthBegin.length + 2, e);
+  }
+
+  static String injectExamSynth(String raw, String block) {
+    final base = stripExamSynth(raw);
+    if (block.isEmpty) return base;
+    final wrapped = "$examSynthBegin\r\n$block$examSynthEnd\r\n";
+    final at = base.lastIndexOf("END:VCALENDAR");
+    if (at < 0) return "$base$wrapped";
+    return base.replaceRange(at, at, wrapped);
+  }
+
   // ---- personal / faculty timetable ICS ----
   // The faculty sends first-semester MEI a timetable ICS by e-mail because
   // the big lectures (AM I, EM I, MSE I, MD A) carry no Belegungspflicht
@@ -1029,7 +1069,7 @@ class CampusManager extends KITLoginManager {
     await prefs.setString(_webcalIcsCacheKey, merged);
     final feed = WebcalFeed.parse(merged);
     if (feed != null) {
-      timetable = feed.toWeeklyTemplate();
+      timetable = gridTemplate(feed);
       rememberEnrolledTitles(feed);
       unawaited(MeiNotifications.scheduleLectureReminders(feed));
       unawaited(MeiNotifications.scheduleMorningDigest(feed));
@@ -1049,7 +1089,7 @@ class CampusManager extends KITLoginManager {
     await prefs.setString(_webcalIcsCacheKey, synth);
     final feed = WebcalFeed.parse(synth);
     if (feed != null) {
-      timetable = feed.toWeeklyTemplate();
+      timetable = gridTemplate(feed);
       rememberEnrolledTitles(feed);
       unawaited(MeiNotifications.scheduleLectureReminders(feed));
       // digest must see the injected tutorials too: without this, the
@@ -1057,6 +1097,67 @@ class CampusManager extends KITLoginManager {
       unawaited(MeiNotifications.scheduleMorningDigest(feed));
       notificationCallback();
     }
+  }
+
+  /// Called after a successful exam-list fetch: rebuilds the cached feed
+  /// (and everything derived from it) with the registered exam sittings
+  /// merged in - the exact path reapplySignMeUpSynth uses for tutorials.
+  ///
+  /// The no-op guard compares against the PERSISTED cache, not just the
+  /// in-memory copy: after a restart both are empty while the cache still
+  /// embeds last run's block - returning early on `block == examSynth`
+  /// there would let stale Klausur events live forever. `merged == cached`
+  /// is the honest "nothing to do", and because the emitter is fully
+  /// deterministic (DTSTAMP derived from the sitting, exam_synth.dart) it
+  /// still fires on every routine refetch.
+  Future<void> reapplyExamSynth(String block) async {
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getString(_webcalIcsCacheKey);
+    if (cached == null || !cached.contains("BEGIN:VCALENDAR")) {
+      examSynth = block;
+      return;
+    }
+    final merged = injectExamSynth(cached, block);
+    examSynth = block;
+    if (merged == cached) return;
+    await prefs.setString(_webcalIcsCacheKey, merged);
+    final feed = WebcalFeed.parse(merged);
+    if (feed != null) {
+      timetable = gridTemplate(feed);
+      rememberEnrolledTitles(feed);
+      unawaited(MeiNotifications.scheduleLectureReminders(feed));
+      unawaited(MeiNotifications.scheduleMorningDigest(feed));
+      notificationCallback();
+    }
+  }
+
+  /// Home grid template WITHOUT the exam-synth occurrences: toWeeklyTemplate
+  /// is a per-(weekday, block) ONE-appointment template - a one-off exam
+  /// would repeat on every same-weekday carousel page, lose block collisions
+  /// to the recurring lectures and vanish on weekends entirely. The sittings
+  /// live in agenda / digest / reminders / ICS export, which read
+  /// feed.occurrences and the raw cache directly.
+  @visibleForTesting
+  static TimetableWeekly gridTemplate(WebcalFeed feed) => WebcalFeed(
+          occurrences: feed.occurrences
+              .where((o) => !o.uid.startsWith(examSynthUidPrefix))
+              .toList(),
+          raw: feed.raw)
+      .toWeeklyTemplate();
+
+  /// Cold-start carry-over, mirroring [ensurePersonalIcsLoaded]'s
+  /// tri-state: until this process has PROVEN the exam list (a successful
+  /// fetchExams) it has no veto over the block - the in-memory copy is
+  /// empty on every fresh start, and writing THAT into the cache would
+  /// delete last run's sittings (and cancel their alarms) with nothing
+  /// restoring them once the exam fetch then fails.
+  @visibleForTesting
+  Future<void> carryExamSynthFromCache() async {
+    if (examsLoaded || examSynth.isNotEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final carried =
+        extractExamSynth(prefs.getString(_webcalIcsCacheKey) ?? "");
+    if (carried.isNotEmpty) examSynth = carried;
   }
 
   // Loud-failure flags: parser returned nothing on a page that fetched fine
@@ -1117,6 +1218,12 @@ class CampusManager extends KITLoginManager {
   static Set<String> enrolledTitleKeys(WebcalFeed feed) {
     final out = <String>{};
     for (final occ in feed.occurrences) {
+      // synthetic exam sittings are derived FROM the exam catalogue:
+      // feeding their "Klausur: <title>" summaries back into the gate
+      // self-matches isTakingThisSemester and re-arms suppressed
+      // needsAction badges + 24 h registration alarms. SignMeUp UIDs
+      // stay - an accepted tutorial IS a genuine enrolment.
+      if (occ.uid.startsWith(examSynthUidPrefix)) continue;
       final k = lectureTitleKey(occ.title);
       if (k.length >= 4) out.add(k);
     }
@@ -1214,6 +1321,7 @@ class CampusManager extends KITLoginManager {
 
   Future<bool> fetchWebcalTimetable() async {
     await ensurePersonalIcsLoaded();
+    await carryExamSynthFromCache();
     // Contain EVERY failure (incl. TimeoutException from _ensureWebcalUrl /
     // netGet): when this threw, fetchTimetable's HTML fallback never ran and
     // forceRefetchEverything aborted mid-pipeline *after* clearEverything()
@@ -1255,9 +1363,9 @@ class CampusManager extends KITLoginManager {
       final previousFingerprint = prefs.getString(_webcalFingerprintKey);
       final fingerprint = feed.fingerprint();
       if (previousFingerprint != null && previousFingerprint != fingerprint) {
-        final changes = feed.changesSince(WebcalFeed.parse(
-            stripPersonalIcs(
-                stripSignMeUpSynth(prefs.getString(_webcalIcsCacheKey) ?? ""))));
+        final changes = feed.changesSince(WebcalFeed.parse(stripPersonalIcs(
+            stripSignMeUpSynth(stripExamSynth(
+                prefs.getString(_webcalIcsCacheKey) ?? "")))));
         if (changes.isNotEmpty) {
           // an empty diff under a changed fingerprint is the rolling parse
           // window, not a real change - flagging it stuck the tab badge with
@@ -1277,15 +1385,19 @@ class CampusManager extends KITLoginManager {
       await prefs.setString(
           _webcalIcsCacheKey,
           injectPersonalIcs(
-              injectSignMeUpSynth(feed.raw, signMeUpSynth), personalIcs));
+              injectSignMeUpSynth(
+                  injectExamSynth(feed.raw, examSynth), signMeUpSynth),
+              personalIcs));
       // age stamp for the agenda stale-data footer (also written by the
       // background poll after it rewrites the cache)
       await prefs.setString(
           "DATA_webcalFetchedAt", DateTime.now().toIso8601String());
 
       final merged = WebcalFeed.parse(injectPersonalIcs(
-          injectSignMeUpSynth(feed.raw, signMeUpSynth), personalIcs));
-      timetable = (merged ?? feed).toWeeklyTemplate();
+          injectSignMeUpSynth(
+              injectExamSynth(feed.raw, examSynth), signMeUpSynth),
+          personalIcs));
+      timetable = gridTemplate(merged ?? feed);
       rememberEnrolledTitles(merged ?? feed);
 
       // webcal is healthy again: a one-off HTML false alarm used to pin the
@@ -1410,6 +1522,9 @@ class CampusManager extends KITLoginManager {
         examsSurfaceBroken = false;
         exams = parsed;
         examsLoaded = true;
+        // mirror the registered sittings into the merged timetable feed;
+        // agenda / digest / reminders / ICS export pick them up unseen
+        await reapplyExamSynth(buildExamSynthBlock(parsed));
         notificationCallback();
         // deadline alarms only for exams of lectures actually on the
         // timetable - catalogue offers of later semesters must stay silent

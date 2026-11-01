@@ -201,7 +201,8 @@ class CredentialsProvider extends ChangeNotifier {
     try {
       vm.iliasAuth = vm.iliasManager.authorize().catchError((_) {});
       await vm.campusManager.fetchTimetable();
-      await vm.campusManager.fetchExams();
+      // via the provider so `vm.examsDone` is armed for the agenda
+      await vm.fetchExams();
       await vm.campusManager.fetchAllModules();
     } on Object catch (e) {
       if (kDebugMode) print("post-login fetch failed: $e");

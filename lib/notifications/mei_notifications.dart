@@ -170,12 +170,21 @@ class MeiNotifications {
           remindAt.isBefore(now.add(const Duration(days: 2)))) {
         if (epoch != teardownEpoch) return; // logout mid-flight
         await _zoned(id++, channelIdDaily, occ.displayTitle,
-            "${_hm(occ.start)}–${_hm(occ.end)}  ${occ.displayRoom}", remindAt,
+            reminderBody(occ), remindAt,
             deadlines: false,
             payload: NotificationPayload.agendaToday);
       }
     }
   }
+
+  /// Reminder body: real start–end span, or - when the occurrence's end is
+  /// only the parser's +90 default (exam sittings export WITHOUT DTEND,
+  /// see IcsOccurrence.endGuessed) - a start-only "ab HH:MM": an invented
+  /// end time must never be announced as a fact.
+  @visibleForTesting
+  static String reminderBody(IcsOccurrence occ) => occ.endGuessed
+      ? "${L10n.t("notifs.reminderFrom", [_hm(occ.start)])}  ${occ.displayRoom}"
+      : "${_hm(occ.start)}–${_hm(occ.end)}  ${occ.displayRoom}";
 
   /// Alert 24 h before an exam-registration window closes while the entry is
   /// still unregistered (missed Anmeldung = failed attempt trap).
@@ -272,16 +281,36 @@ class MeiNotifications {
       if (!at.isAfter(now)) continue;
       final id = 900 + (day.day * 2 + ahead) % 100;
       if (occ.isEmpty) continue; // no nagging on free days
-      final body = L10n.t("notifs.digestBody", [
-        _hm(occ.first.start),
-        changesFresh ? L10n.t("notifs.digestChanges") : "",
-      ]);
+      final (title, body) =
+          digestTexts(occ, changesFresh: changesFresh);
       if (epoch != teardownEpoch) return; // logout mid-flight
-      await _zoned(id, channelIdDaily,
-          L10n.t("notifs.digestTitle", [occ.length]), body, at,
+      await _zoned(id, channelIdDaily, title, body, at,
           deadlines: false,
           payload: NotificationPayload.agenda);
     }
+  }
+
+  /// Title/body pair for one digest day (pure, testable). A day whose
+  /// calendar consists ONLY of registered exam sittings is not "N
+  /// Veranstaltungen" - say Klausur, give the time, be done.
+  @visibleForTesting
+  static (String, String) digestTexts(List<IcsOccurrence> occ,
+      {required bool changesFresh}) {
+    final examOnly = occ.isNotEmpty &&
+        occ.every((o) => o.title.startsWith("Klausur: "));
+    final args = [
+      _hm(occ.first.start),
+      changesFresh ? L10n.t("notifs.digestChanges") : "",
+    ];
+    return examOnly
+        ? (
+            L10n.t("notifs.digestTitleExam"),
+            L10n.t("notifs.digestBodyExam", args),
+          )
+        : (
+            L10n.t("notifs.digestTitle", [occ.length]),
+            L10n.t("notifs.digestBody", args),
+          );
   }
 
   /// Full reminder + background-job teardown for logout.
@@ -331,13 +360,14 @@ void meiBackgroundCallback() {
       if (feed == null) {
         return true;
       }
-      // the cache carries the student's synthetic SignMeUp VEVENTs and the
-      // imported personal ICS; the freshly polled feed never does.
+      // the cache carries the student's synthetic SignMeUp VEVENTs, the
+      // registered exam sittings and the imported personal ICS; the freshly
+      // polled feed never does.
       // Diff/compare STRIPPED snapshots or every accepted tutorial /
       // imported lecture shows up as a phantom "cancelled" lecture.
       final strippedOld = WebcalFeed.parse(CampusManager.stripPersonalIcs(
-          CampusManager.stripSignMeUpSynth(
-              prefs.getString("DATA_webcalIcsCache") ?? "")));
+          CampusManager.stripSignMeUpSynth(CampusManager.stripExamSynth(
+              prefs.getString("DATA_webcalIcsCache") ?? ""))));
       // feed-source guard mirrors the foreground fetch: never diff a
       // baseline that belongs to a different calendar URL
       final previousSource = prefs.getString("DATA_webcalFeedSource");
@@ -371,13 +401,16 @@ void meiBackgroundCallback() {
         return true; // logged out mid-fetch: a purged account's timetable
         // must not be re-seeded into prefs behind the logout sweep's back
       }
-      // keep the synthetic tutorials AND the imported personal ICS in the
-      // cache: the agenda renders today/tomorrow straight from it and a
-      // cold start may fail to re-inject (expired plus session)
+      // keep the synthetic tutorials, exam sittings AND the imported
+      // personal ICS in the cache: the agenda renders today/tomorrow
+      // straight from it and a cold start may fail to re-inject (expired
+      // plus session)
       final staleCache = prefs.getString("DATA_webcalIcsCache") ?? "";
       final mergedRaw = CampusManager.injectPersonalIcs(
           CampusManager.injectSignMeUpSynth(
-              response.body, CampusManager.extractSignMeUpSynth(staleCache)),
+              CampusManager.injectExamSynth(
+                  response.body, CampusManager.extractExamSynth(staleCache)),
+              CampusManager.extractSignMeUpSynth(staleCache)),
           CampusManager.extractPersonalIcs(staleCache));
       await prefs.setString("DATA_webcalIcsCache", mergedRaw);
       await prefs.setString(

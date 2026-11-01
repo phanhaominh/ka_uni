@@ -205,4 +205,39 @@ void main() {
     expect(days.contains("11.16"), isFalse, reason: '$days still has 16.11');
     expect(days.contains("11.2"), isTrue);
   });
+
+  test('single-shot occurrences bypass the horizon clamp', () {
+    // winter-semester Klausuren sit months out; the +56 d clamp exists to
+    // bound RRULE expansion - one-off VEVENTs are fully enumerated and the
+    // raw-cache export ships them, so parse must not disagree
+    final feed = WebcalFeed.parse(ics([
+      ev("klausur1", "20270301T173000", "20270301T190000",
+          "Klausur: EM II", "AVI 105"), // +120 d
+      rruleEv("lec1", "20261102T080000", "20270215", "Lecture long"),
+    ]), now: DateTime(2026, 11, 1));
+    expect(
+        feed!.occurrences.where((o) => o.uid == "klausur1"), hasLength(1));
+    final lec = feed.occurrences.where((o) => o.uid == "lec1").toList();
+    final horizon = DateTime(2026, 11, 1).add(const Duration(days: 56));
+    expect(lec, isNotEmpty);
+    expect(lec.any((o) => o.start.isAfter(horizon)), isFalse,
+        reason: 'recurring instances beyond the horizon must stay out');
+    // the series genuinely extends beyond it (UNTIL 2027-02-15)
+    expect(lec.last.seriesEnd!.isAfter(horizon), isTrue);
+  });
+
+  test('occurrences without DTEND carry endGuessed, with +90 default', () {
+    final feed = WebcalFeed.parse("BEGIN:VCALENDAR\r\n"
+            "BEGIN:VEVENT\r\nUID:noend\r\nDTSTART:20261103T080000\r\n"
+            "SUMMARY:Guess me\r\nEND:VEVENT\r\n" +
+            ev("realend", "20261103T100000", "20261103T120000", "Real", "HS1")
+                .replaceAll("\n", "\r\n") +
+            "END:VCALENDAR\r\n",
+        now: DateTime(2026, 11, 1));
+    final guessed = feed!.occurrences.firstWhere((o) => o.uid == "noend");
+    expect(guessed.endGuessed, isTrue);
+    expect(guessed.end.difference(guessed.start), const Duration(minutes: 90));
+    final real = feed.occurrences.firstWhere((o) => o.uid == "realend");
+    expect(real.endGuessed, isFalse);
+  });
 }

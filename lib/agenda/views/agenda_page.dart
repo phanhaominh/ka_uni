@@ -210,28 +210,46 @@ class _AgendaPageState extends State<AgendaPage> {
         // + fetchMine); a 20 s cap gave up mid-retry and lost the re-render
         await smu.timeout(const Duration(seconds: 45));
       } catch (_) {}
-      final prefs2 = await SharedPreferences.getInstance();
-      final feed2 = WebcalFeed.parse(prefs2.getString(_icsCacheKey) ?? "");
-      vm.campusManager.rememberEnrolledTitles(feed2);
-      if (!mounted) return;
-      final now2 = DateTime.now();
-      setState(() {
-        _feedCached = _feedCached ||
-            (prefs2.getString(_icsCacheKey) ?? "")
-                .contains("BEGIN:VCALENDAR");
-        _load = _AgendaLoad(
-            today: _onDay(feed2, now2),
-            tomorrow: _onDay(feed2, now2.add(const Duration(days: 1))),
-            changes: _load.changes,
-            upcoming: _upcoming(feed2, now2),
-            unread: _load.unread,
-            announcements: _load.announcements,
-            iliasError: _load.iliasError,
-            fetchedAt: _load.fetchedAt);
-      });
-        // synthetic SignMeUp events may have just moved the today card
-        _scheduleTodayScroll();
+      await _rerenderFromCache(vm);
     }
+
+    // registered exam sittings land in the same cache the moment the exam
+    // fetch injects their block; same bounded tolerance as SignMeUp above,
+    // so today/tomorrow gain "Klausur:" rows without a manual pull
+    final exams = vm.examsDone;
+    if (exams != null) {
+      try {
+        await exams.timeout(const Duration(seconds: 45));
+      } catch (_) {}
+      await _rerenderFromCache(vm);
+    }
+  }
+
+  /// Re-parse the ICS cache and rebuild today/tomorrow/upcoming from it;
+  /// used after an in-flight synthetic-event injector (SignMeUp groups,
+  /// exam sittings) has finished writing.
+  Future<void> _rerenderFromCache(KITProvider vm) async {
+    final prefs2 = await SharedPreferences.getInstance();
+    final feed2 = WebcalFeed.parse(prefs2.getString(_icsCacheKey) ?? "");
+    vm.campusManager.rememberEnrolledTitles(feed2);
+    if (!mounted) return;
+    final now2 = DateTime.now();
+    setState(() {
+      _feedCached = _feedCached ||
+          (prefs2.getString(_icsCacheKey) ?? "")
+              .contains("BEGIN:VCALENDAR");
+      _load = _AgendaLoad(
+          today: _onDay(feed2, now2),
+          tomorrow: _onDay(feed2, now2.add(const Duration(days: 1))),
+          changes: _load.changes,
+          upcoming: _upcoming(feed2, now2),
+          unread: _load.unread,
+          announcements: _load.announcements,
+          iliasError: _load.iliasError,
+          fetchedAt: _load.fetchedAt);
+    });
+    // synthetic events may have just moved the today card
+    _scheduleTodayScroll();
   }
 
   static List<IcsOccurrence> _onDay(WebcalFeed? feed, DateTime day) {
@@ -508,8 +526,11 @@ class _AgendaPageState extends State<AgendaPage> {
   List<Widget> _walkHint(
       BuildContext context, IcsOccurrence prev, IcsOccurrence next) {
     final vm = Provider.of<KITProvider>(context, listen: false);
-    final gap = next.start.difference(prev.end).inMinutes;
-    if (gap <= 4 || gap > 90) return const [];
+    // pairs where either side's end is only the parser's guess (exam
+    // sittings export without DTEND) are skipped: no certifying a Fußweg
+    // across an invented gap
+    final gap = walkHintGap(prev, next);
+    if (gap == null) return const [];
     final hint = computeWalkHint(
         _resolveRoom(vm, prev.room), _resolveRoom(vm, next.room), gap);
     if (hint == null) return const [];

@@ -18,13 +18,21 @@ class IcsOccurrence {
   /// to the expansion horizon; null for single-shot events.
   final DateTime? seriesEnd;
 
+  /// True when the originating VEVENT had no usable DTEND and [end] is the
+  /// parser's +90-minute default: the card layout stays intact, but the
+  /// end time is a GUESS - consumers that would certify a real interval
+  /// from it (walk feasibility, reminder bodies) must treat it as
+  /// start-only instead.
+  final bool endGuessed;
+
   IcsOccurrence(
       {required this.start,
       required this.end,
       required this.title,
       required this.room,
       required this.uid,
-      this.seriesEnd});
+      this.seriesEnd,
+      this.endGuessed = false});
 
   /// Faculty ICS exports append the course number to SUMMARY
   /// ("... - 3161011", "... - 2145191/2145192") and stuff duplicated tokens
@@ -151,12 +159,20 @@ class WebcalFeed {
     // distinct titles; genuine byte-identical dupes merge trivially.
     final occurrences = <IcsOccurrence>[];
     for (final series in seriesByKey.values) {
+      // The horizonEnd clamp exists to BOUND RRULE EXPANSION - unbounded
+      // weekly series must not materialise a year of instances. Single-shot
+      // occurrences (an event without RRULE, or an RRULE that expanded to
+      // exactly one instance) are already fully enumerated, so a one-off
+      // months out survives: every winter-semester Klausur sits beyond 56
+      // days, and the raw-cache ICS export ships it - the app and the
+      // export must not disagree about which events exist.
+      final oneShot = series.length == 1;
       for (final occ in series) {
-        if (occ.start.isAfter(horizonEnd)) {
+        if (!oneShot && occ.start.isAfter(horizonEnd)) {
           continue;
         }
         if (occ.end.isBefore(reference.subtract(const Duration(days: 1)))) {
-          continue;
+          continue; // past side stays clamped (yesterday only)
         }
         occurrences.add(occ);
       }
@@ -216,8 +232,9 @@ class WebcalFeed {
     if (start == null) {
       return null;
     }
-    final end = (endStr != null ? _dtOf(endStr) : null) ??
-        start.add(const Duration(minutes: 90));
+    final endParsed = endStr == null ? null : _dtOf(endStr);
+    final end = endParsed ?? start.add(const Duration(minutes: 90));
+    final endGuessed = endParsed == null;
     final title = summary ?? "—";
     final room = location ?? "";
 
@@ -229,7 +246,8 @@ class WebcalFeed {
             title: title,
             room: room,
             uid: uid ?? title,
-            seriesEnd: start)
+            seriesEnd: start,
+            endGuessed: endGuessed)
       ];
     }
 
@@ -269,7 +287,8 @@ class WebcalFeed {
             title: title,
             room: room,
             uid: uid ?? title,
-            seriesEnd: seriesEnd)
+            seriesEnd: seriesEnd,
+            endGuessed: endGuessed)
     ];
   }
 

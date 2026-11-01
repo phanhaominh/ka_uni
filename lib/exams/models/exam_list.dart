@@ -10,6 +10,8 @@ class ExamTerm {
 
   static final _date = RegExp(r'(\d{2})\.(\d{2})\.(\d{4})');
   static final _startHour = RegExp(r'(\d{1,2}):(\d{2})');
+  // "d.m" fragments: exactly one per concrete sitting date
+  static final _dayFragment = RegExp(r'\d{1,2}\.\d{1,2}');
 
   /// Cancelled sitting ("entfällt") - never count down to it.
   bool get isCancelled =>
@@ -21,15 +23,16 @@ class ExamTerm {
       (room == "-" || room == "--" || room.isEmpty) ? "" : room;
 
   /// Concrete start of this sitting, if the labels parse. Null = unknown
-  /// (dates given as ranges / text only).
+  /// (dates given as ranges / text only). The guard counts day.month
+  /// fragments: a concrete label holds exactly one ("Fr, 16.04.2027,
+  /// 2. Termin" - "2. Termin" is no fragment), every range spelling two
+  /// ("27.02.-06.03.2027", "27.02.2027 - 06.03.2027", "12.04 - 30.04.2027").
+  /// A full-date-token count would NOT work: the first fragment of
+  /// "27.02.-06.03.2027" lacks a year, so firstMatch would silently
+  /// resolve the range to its END.
   DateTime? get startAt {
     if (isCancelled) return null;
-    // block/range dates ("27.02.-06.03.2027"): the first token lacks a year,
-    // so firstMatch would silently return the range END. Treat as unknown.
-    if (dayLabel.contains("-") &&
-        RegExp(r"\d{1,2}\.\d{1,2}\s*[-–]").hasMatch(dayLabel)) {
-      return null;
-    }
+    if (_dayFragment.allMatches(dayLabel).length != 1) return null;
     final d = _date.firstMatch(dayLabel);
     if (d == null) return null;
     final t = _startHour.firstMatch(time);
