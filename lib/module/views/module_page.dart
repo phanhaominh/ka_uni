@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
@@ -151,15 +152,7 @@ class _ModuleViewState extends State<ModuleView> {
                         ],
                       ),
 
-                      // Padding(
-                      //   padding: EdgeInsets.only(top: 5),
-                      // ),
-
-                      Divider(),
-
-                      // Padding(
-                      //   padding: EdgeInsets.only(top: 5),
-                      // ),
+                      const Divider(height: spaceXl, thickness: 1),
 
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -173,7 +166,7 @@ class _ModuleViewState extends State<ModuleView> {
                             ],
                           ),
 
-                          VerticalDivider(color: Colors.black,),
+                          VerticalDivider(thickness: 1),
 
                           Row(
                             mainAxisAlignment: MainAxisAlignment.start,

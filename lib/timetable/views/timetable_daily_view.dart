@@ -28,6 +28,17 @@ String _dur(int minutes) =>
 bool _isContent(TimetableAppointment a) =>
     !a.isEmpty || a.type == TimetableAppointmentType.lunchBreak;
 
+/// A hairline is drawn after block [i] only where it separates something:
+/// after the LAST row, and anywhere inside a pure empty run (the leading
+/// or trailing void of the day), a line would float over nothing. ONE
+/// list built by this rule feeds both the row stack and the now-line
+/// walk, so painted and measured geometry can never disagree.
+List<bool> dayColumnSeams(List<TimetableAppointment> rows) => [
+      for (var i = 0; i < rows.length; i++)
+        i < rows.length - 1 &&
+            (_isContent(rows[i]) || _isContent(rows[i + 1]))
+    ];
+
 class TimetableDailyView extends StatelessWidget {
   final TimetableDaily tt;
 
@@ -91,12 +102,13 @@ class TimetableDailyView extends StatelessWidget {
 
     if (!rows.any(_isContent)) return _dayFree(context);
 
+    final seams = dayColumnSeams(rows);
     final blocks = [
-      for (final a in rows)
+      for (var i = 0; i < rows.length; i++)
         NowBlock(
-            beginMin: a.begin.hour * 60 + a.begin.minute,
-            durationMin: a.duration,
-            border: a.begin.hour < 17)
+            beginMin: rows[i].begin.hour * 60 + rows[i].begin.minute,
+            durationMin: rows[i].duration,
+            border: seams[i])
     ];
 
     return LayoutBuilder(builder: (context, constraints) {
@@ -111,7 +123,8 @@ class TimetableDailyView extends StatelessWidget {
         children: [
           Column(
             children: [
-              for (var i = 0; i < rows.length; i++) _row(context, rows, i, factor)
+              for (var i = 0; i < rows.length; i++)
+                _rowWithSeam(context, rows, i, factor, seams[i])
             ],
           ),
           if (showNowLine)
@@ -131,7 +144,7 @@ class TimetableDailyView extends StatelessWidget {
                       textStyle: theme.textTheme.bodyLarge
                               ?.copyWith(color: theme.colorScheme.primary) ??
                           TextStyle(
-                              color: theme.colorScheme.primary, fontSize: 14),
+                              color: theme.colorScheme.primary, fontSize: 16),
                     ),
                   ),
                 ),
@@ -142,16 +155,35 @@ class TimetableDailyView extends StatelessWidget {
     });
   }
 
+  /// One 1px hairline between consecutive blocks, inset to the text
+  /// gutter so it never touches the card's rounded frame. EXACTLY 1px,
+  /// drawn iff [seam] - the same flag the blocks list handed to
+  /// dayColumnFactor/nowLineY, so the line only sits where a measured row is.
+  Widget _rowWithSeam(BuildContext context, List<TimetableAppointment> rows,
+      int i, double factor, bool seam) {
+    final row = _row(context, rows, i, factor);
+    if (!seam) return row;
+    return Column(
+      children: [
+        row,
+        Container(
+          height: 1,
+          margin: const EdgeInsets.symmetric(horizontal: defaultPagePadding),
+          color: Theme.of(context).dividerColor,
+        ),
+      ],
+    );
+  }
+
   Widget _row(BuildContext context, List<TimetableAppointment> rows, int i,
       double factor) {
     final theme = Theme.of(context);
     final appointment = rows[i];
-    final border = _rowBorder(theme, appointment);
 
     if (!_isContent(appointment)) {
       final ghost = _ghostFor(appointment);
       if (ghost != null) {
-        return _ghostCard(context, appointment, ghost, border, factor);
+        return _ghostCard(context, appointment, ghost, factor);
       }
       // a slot between two lectures is worth naming; one at either end of
       // the day is only a seam
@@ -159,24 +191,21 @@ class TimetableDailyView extends StatelessWidget {
           i < rows.length - 1 &&
           _isContent(rows[i - 1]) &&
           _isContent(rows[i + 1]);
-      return Container(
+      return SizedBox(
         // A free block must read as empty: the placeholder dash and
-        // its time badge used to render like a lecture called "—".
-        decoration: BoxDecoration(border: border),
-        child: SizedBox(
-          height: appointment.duration * factor,
-          child: boxedIn
-              ? Center(
-                  child: Text(
-                    L10n.t("timetable.freeGap", [_dur(appointment.duration)]),
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.outline),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                )
-              : null,
-        ),
+        // its time badge used to render like a lecture called "-".
+        height: appointment.duration * factor,
+        child: boxedIn
+            ? Center(
+                child: Text(
+                  L10n.t("timetable.freeGap", [_dur(appointment.duration)]),
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.outline),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              )
+            : null,
       );
     }
 
@@ -195,13 +224,6 @@ class TimetableDailyView extends StatelessWidget {
         ? null
         : L10n.t("timetable.changeRoomDelta",
             [roomDelta.oldRoom!, roomDelta.room]);
-    // asymmetric: the HH:MM badge is Positioned at the top-right of this
-    // Stack, so the text column reserves the badge's footprint on the
-    // right - long titles used to run under it and cut mid-word. The badge
-    // text rides bodyLarge, so the reservation scales with THAT size, not
-    // a hardcoded 14.
-    final badgeFont = theme.textTheme.bodyLarge?.fontSize ?? 16;
-
     final placeText = Text.rich(
       TextSpan(
         children: [
@@ -225,104 +247,50 @@ class TimetableDailyView extends StatelessWidget {
     // column inside a fixed SizedBox did: AUDIT-test bled into KLAUSUR)
     final boxH = appointment.duration * factor;
     final textScale = MediaQuery.textScalerOf(context);
+    // the HH:MM rides bodyLarge and claims a line of its own at the top
+    // of the column, so the title/place budget starts below it
+    final badgeFont = theme.textTheme.bodyLarge?.fontSize ?? 16;
+    final timeLineH = textScale.scale(badgeFont) * 1.45;
     final titleLineH = textScale.scale(14) * 1.45;
     final placeLineH = textScale.scale(12) * 1.45;
-    final titleMaxLines = boxH >= 2 * titleLineH + placeLineH + 24 ? 2 : 1;
+    final availH = boxH - timeLineH;
+    final titleMaxLines = availH >= 2 * titleLineH + placeLineH + 24 ? 2 : 1;
     final showPlace =
-        boxH >= titleMaxLines * titleLineH + placeLineH + 24;
-    return Container(
-      decoration: BoxDecoration(border: border),
-      child: ClipRect(
-        child: SizedBox(
-          height: boxH,
-        child: Stack(
-          alignment: Alignment.topLeft,
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque, // the WHOLE row is the target
-              onTap: () {
-                Navigator.of(context).push(MaterialPageRoute(
-                    builder: (context) => TimetableAppointmentPage(
-                        appointment: appointment,
-                        heroSuffix: "_${tt.weekday.index}")));
-              },
-              child: Container(
-                padding: EdgeInsets.only(
-                    left: 15,
-                    right: 10 +
-                        62 *
-                            MediaQuery.textScalerOf(context)
-                                    .scale(badgeFont) /
-                                badgeFont),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
+        availH >= titleMaxLines * titleLineH + placeLineH + 24;
+    // lunch is day structure, not a lecture: same grid seat, muted ink
+    final titleColor =
+        appointment.type == TimetableAppointmentType.lunchBreak
+            ? theme.colorScheme.outline
+            : null;
+    return ClipRect(
+      child: SizedBox(
+        height: boxH,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque, // the WHOLE row is the target
+          onTap: () {
+            Navigator.of(context).push(MaterialPageRoute(
+                builder: (context) => TimetableAppointmentPage(
+                    appointment: appointment,
+                    heroSuffix: "_${tt.weekday.index}")));
+          },
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: defaultPagePadding),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Row(
                   children: [
-                    appointment.id.isNotEmpty
-                        ? Hero(
-                            tag:
-                                "appointmentTitle_${appointment.title}_${appointment.id}$heroSuffix",
-                            child: Text(
-                              isTut
-                                  ? L10n.t("timetable.tutorialPrefix",
-                                      [appointment.displayTitle])
-                                  : titleText,
-                              style: theme.textTheme.titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.bold),
-                              maxLines: titleMaxLines,
-                              overflow: TextOverflow.ellipsis,
-                            ))
-                        : Text(
-                            titleText,
-                            style: theme.textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                            maxLines: titleMaxLines,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                    if ((hasPlace || deltaText != null) && showPlace)
-                      appointment.id.isNotEmpty
-                          ? Hero(
-                              tag:
-                                  "appointmentPlace_${appointment.title}_${appointment.id}$heroSuffix",
-                              child: _placeSlot(theme, placeText,
-                                  appointment.roomVaries))
-                          : _placeSlot(
-                              theme, placeText, appointment.roomVaries)
-                    else
-                      const SizedBox(height: 0),
-                    isTut &&
-                        boxH >= 140 &&
-                            appointment is Tutorial &&
-                            (appointment.notes ?? "").isNotEmpty
-                        ? Text(
-                            appointment.notes!,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          )
-                        : const SizedBox.shrink(),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              top: 0,
-              right: 0,
-              child: ClipRRect(
-                borderRadius:
-                    const BorderRadius.only(topRight: appBorderRadius),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    BlockContainer(
-                        padding: const EdgeInsets.only(left: 3, bottom: 3),
-                        innerPadding: const EdgeInsets.only(
-                            left: 6, bottom: 3, top: 3, right: 6),
+                    Expanded(
                         child: Text(
-                          _hm(appointment.begin.hour * 60 +
-                              appointment.begin.minute),
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                              color: theme.colorScheme.primary),
-                        )),
+                      _hm(appointment.begin.hour * 60 +
+                          appointment.begin.minute),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyLarge
+                          ?.copyWith(color: theme.colorScheme.primary),
+                    )),
                     if (showNowLine)
                       // the running chip repaints on its own minute tick -
                       // the page build never waits for the clock
@@ -333,10 +301,52 @@ class TimetableDailyView extends StatelessWidget {
                       ),
                   ],
                 ),
-              ),
+                appointment.id.isNotEmpty
+                    ? Hero(
+                        tag:
+                            "appointmentTitle_${appointment.title}_${appointment.id}$heroSuffix",
+                        child: Text(
+                          isTut
+                              ? L10n.t("timetable.tutorialPrefix",
+                                  [appointment.displayTitle])
+                              : titleText,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: titleColor),
+                          maxLines: titleMaxLines,
+                          overflow: TextOverflow.ellipsis,
+                        ))
+                    : Text(
+                        titleText,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold, color: titleColor),
+                        maxLines: titleMaxLines,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                if ((hasPlace || deltaText != null) && showPlace)
+                  appointment.id.isNotEmpty
+                      ? Hero(
+                          tag:
+                              "appointmentPlace_${appointment.title}_${appointment.id}$heroSuffix",
+                          child: _placeSlot(theme, placeText,
+                              appointment.roomVaries))
+                      : _placeSlot(
+                          theme, placeText, appointment.roomVaries)
+                else
+                  const SizedBox(height: 0),
+                isTut &&
+                        boxH >= 140 &&
+                        appointment is Tutorial &&
+                        (appointment.notes ?? "").isNotEmpty
+                    ? Text(
+                        appointment.notes!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      )
+                    : const SizedBox.shrink(),
+              ],
             ),
-          ],
-        ),
+          ),
         ),
       ),
     );
@@ -349,16 +359,16 @@ class TimetableDailyView extends StatelessWidget {
       children: [
         Expanded(child: placeText),
         Container(
-          margin: const EdgeInsets.only(left: 4),
+          margin: const EdgeInsets.only(left: spaceXs),
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
           decoration: BoxDecoration(
             color: theme.colorScheme.tertiaryContainer,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(chipRadiusDouble),
           ),
           child: Text(
             L10n.t("timetable.roomVaries"),
-            style: TextStyle(
-                fontSize: 10, color: theme.colorScheme.onTertiaryContainer),
+            style: theme.textTheme.labelSmall
+                ?.copyWith(color: theme.colorScheme.onTertiaryContainer),
           ),
         ),
       ],
@@ -375,15 +385,12 @@ class TimetableDailyView extends StatelessWidget {
     final endMin = appointment.end.hour * 60 + appointment.end.minute;
     if (beginMin > minute || minute >= endMin) return const SizedBox.shrink();
     return BlockContainer(
-        padding: const EdgeInsets.only(left: 3, bottom: 3),
-        innerPadding:
-            const EdgeInsets.only(left: 6, bottom: 2, top: 2, right: 6),
+        padding: const EdgeInsets.only(left: spaceSm),
+        innerPadding: const EdgeInsets.fromLTRB(6, 3, 6, 3),
         child: Text(
           L10n.t("agenda.nowRunning", [_hm(endMin)]),
-          style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.primary),
+          style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
         ));
   }
 
@@ -418,36 +425,34 @@ class TimetableDailyView extends StatelessWidget {
   }
 
   Widget _ghostCard(BuildContext context, TimetableAppointment block,
-      IcsChange change, Border? border, double factor) {
+      IcsChange change, double factor) {
     final theme = Theme.of(context);
     return Opacity(
-      opacity: 0.4,
-      child: Container(
-        decoration: BoxDecoration(border: border),
-        child: SizedBox(
-          height: block.duration * factor,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 15, right: 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  change.title,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      decoration: TextDecoration.lineThrough),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  L10n.t("timetable.ghostCancelled"),
-                  style: theme.textTheme.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
+      opacity: deadContentOpacity,
+      child: SizedBox(
+        height: block.duration * factor,
+        child: Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: defaultPagePadding),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                change.title,
+                style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    decoration: TextDecoration.lineThrough),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                L10n.t("timetable.ghostCancelled"),
+                style: theme.textTheme.bodySmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
         ),
       ),
@@ -475,7 +480,7 @@ class TimetableDailyView extends StatelessWidget {
                   size: 64,
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  padding: const EdgeInsets.symmetric(vertical: spaceSm),
                   child: Text(
                     L10n.t("timetable.dayFree"),
                     style: theme.textTheme.bodyLarge,
@@ -487,14 +492,6 @@ class TimetableDailyView extends StatelessWidget {
         ));
   }
 
-  Border? _rowBorder(ThemeData theme, TimetableAppointment a) =>
-      a.begin.hour < 17
-          ? Border(
-              bottom: BorderSide(
-                  color: theme.brightness == Brightness.light
-                      ? Colors.black12
-                      : Colors.white.withValues(alpha: 0.15)))
-          : null;
 }
 
 class _NowLinePainter extends CustomPainter {
@@ -525,20 +522,24 @@ class _NowLinePainter extends CustomPainter {
         blocks: blocks, minutesOfDay: minute, pxPerMin: pxPerMin);
     if (y == null) return;
 
-    canvas.drawLine(Offset(0, y), Offset(size.width, y),
+    // the stroke stops short of the rounded card frame instead of
+    // bleeding into the corners; the chip labels the line at the gutter
+    canvas.drawLine(Offset(6, y), Offset(size.width - 6, y),
         Paint()
           ..color = color
-          ..strokeWidth = 2);
-    canvas.drawCircle(Offset(2, y), 2, Paint()..color = color);
+          ..strokeWidth = 1.5);
+    canvas.drawCircle(Offset(6, y), 2, Paint()..color = color);
 
     final chip = TextPainter(textDirection: TextDirection.ltr)
       ..text = TextSpan(text: _hm(minute), style: textStyle)
       ..layout();
     // above the line, unless it would climb out of the block (or the line
-    // sits on a gap seam - distance 0) → flip below
+    // sits on a gap seam - distance 0) -> flip below
     final below = y - _topOfMinute(minute) < 26;
-    chip.paint(canvas,
-        Offset(size.width - chip.width - 4, below ? y + 2 : y - chip.height - 2));
+    chip.paint(
+        canvas,
+        Offset(size.width - chip.width - defaultPagePadding,
+            below ? y + 6 : y - chip.height - 6));
   }
 
   /// y of the top edge of the block (or seam) the minute resolved into;

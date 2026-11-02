@@ -1,3 +1,4 @@
+import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
@@ -26,8 +27,9 @@ class RelevantModuleView extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                SizedBox(
-                  width: 110,
+                Padding(
+                  // clear the favorite-star bubble in the top-right corner
+                  padding: const EdgeInsets.only(right: 28),
                   child: Text(sanitizeModuleTitle(module.title), maxLines: 3, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),),
                 ),
 
@@ -80,15 +82,14 @@ class RelevantModuleView extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 module.hasFavoriteChild ? Padding(
-                  padding: EdgeInsets.all(3),
-                  // width: 20,
-                  // height: 20,
+                  padding: const EdgeInsets.all(spaceSm),
                   child: BlockContainer(
                     padding: EdgeInsets.zero,
+                    innerPadding: const EdgeInsets.all(spaceXs),
                     opacity: 0.8,
-                    child: Padding(padding: EdgeInsets.all(0), child: Icon(Icons.star, color: theme.colorScheme.primary, size: 15,),) ,
-                  )
-                ) : Text("")
+                    child: Icon(Icons.star, color: theme.colorScheme.primary, size: 15),
+                  ),
+                ) : const Text(""),
               ],
             )
         )

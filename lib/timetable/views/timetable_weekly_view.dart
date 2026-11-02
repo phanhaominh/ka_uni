@@ -1,8 +1,8 @@
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
-import 'package:kit_mobile/extensions/theme_data_extension.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/timetable/logic/now_clock.dart';
 import 'package:kit_mobile/timetable/models/timetable_appointment.dart';
@@ -217,7 +217,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
     // The date heading now lives in the fixed band above the carousel
     // viewport (see _dateBand); a page only paints its day blocks.
     return Opacity(
-      opacity: _pageDate(w).isBefore(todayMidnight) ? 0.45 : 1,
+      opacity: _pageDate(w).isBefore(todayMidnight) ? deadContentOpacity : 1,
       child: GestureDetector(
         // a ghost column tap glides it to the centre; taps on the centered
         // page fall through to their own content
@@ -257,8 +257,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
                   size: 64,
                 ),
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 5),
+                  padding: const EdgeInsets.symmetric(vertical: spaceSm),
                   child: Text(
                     label,
                     style: theme.textTheme.bodyLarge,
@@ -299,14 +298,15 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
     return SizedBox(
       height: bandHeight,
       child: Padding(
-        padding: EdgeInsets.only(left: 10, right: 10, top: 10),
+        padding: const EdgeInsets.only(
+            left: pageGutter, right: pageGutter, top: 10),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
               weekdayShortStr,
-              style: theme.textTheme.titleLarge?.copyWith(color: theme.isLightMode ? Colors.black26 : Colors.white30),
+              style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.outline),
             ),
 
             Padding(padding: EdgeInsets.all(5)),
@@ -331,7 +331,6 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
                 relativeOffset: _currentRealPage - _todayRealPage,
                 onPressed: () => _showToday(_currentRealPage)),
 
-            Padding(padding: EdgeInsets.only(right: 5)),
           ],
         ),
       ),

@@ -188,7 +188,7 @@ class GradesPage extends StatelessWidget {
           child: Column(
             children: [
               for (var i = 0; i < entries.length; i++) ...[
-                if (i > 0) const Divider(height: 1, thickness: 0.6),
+                if (i > 0) const Divider(height: 1, thickness: 1),
                 _row(context, entries[i],
                     accent: accent,
                     tinted: danger,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kit_mobile/constants/view_constants.dart';
 
 class PaddedTitle extends StatelessWidget {
   final String title;
@@ -12,9 +13,9 @@ class PaddedTitle extends StatelessWidget {
 
     return Row(
       children: [
-            const Padding(padding: EdgeInsets.all(4)),
+            const SizedBox(width: pageGutter),
             Text(title, style: theme.textTheme.titleLarge),
-            const Padding(padding: EdgeInsets.all(5)),
+            const SizedBox(width: spaceMd),
           ] +
           (trailing == null ? [] : [Spacer(), trailing!]),
     );

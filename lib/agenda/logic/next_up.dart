@@ -1,3 +1,4 @@
+import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/l10n.dart';
@@ -153,11 +154,16 @@ class NextUpCard extends StatelessWidget {
     );
     return Card(
       color: scheme.primaryContainer,
+      // same card dialect as every BlockContainer on Home: flat, radius 20
+      elevation: 0,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(appBorderRadius)),
+      margin: const EdgeInsets.all(cardGutter),
       child: onTap == null
           ? body
           : InkWell(
               onTap: onTap,
-              borderRadius: const BorderRadius.all(Radius.circular(12)),
+              borderRadius: const BorderRadius.all(appBorderRadius),
               child: body),
     );
   }

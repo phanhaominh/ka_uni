@@ -1,3 +1,4 @@
+import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:flutter/material.dart';
 import 'package:kit_mobile/module/views/module_page.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
@@ -39,55 +40,60 @@ class _HierarchicTableViewState extends State<HierarchicTableView> {
     final theme = Theme.of(context);
     final minLevelToShow = widget.minLevelToShow;
 
-    return Column(
-      children: widget.rows.map((row) {
-        if (row.level < minLevelToShow) {
-          return const SizedBox(width: 0, height: 0);
-        }
+    final children = <Widget>[];
+    var seenGroup = false;
+    for (final row in widget.rows) {
+      if (row.level < minLevelToShow) continue;
+      final isGroup = row.level == minLevelToShow;
+      // A group's hairline separates it from the group above; the FIRST
+      // group must not paint one - directly under the section header that
+      // line reads as a row line and the header loses ownership.
+      if (isGroup && seenGroup) {
+        children.add(Divider(
+            height: 1,
+            thickness: 1,
+            indent: pageGutter,
+            endIndent: pageGutter,
+            color: theme.dividerColor));
+      }
+      seenGroup = seenGroup || isGroup;
 
-        return GestureDetector(
-          onTap: () => _openModule(row),
-          child: Padding(
-            padding: EdgeInsets.only(
-                left: 10 + (row.level - minLevelToShow) * 20,
-                top: row.level == minLevelToShow ? 8 : 6,
-                bottom: row.level == minLevelToShow ? 8 : 0,
-                right: 10),
-            child: Column(
-              children: [
-                (row.level == minLevelToShow
-                    ? const Divider()
-                    : const SizedBox(height: 0)),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        row.title,
-                        maxLines: 3,
-                        style: row.level == minLevelToShow
-                            ? theme.textTheme.titleMedium
-                            : theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                    // C12: truncate, don't blank — the old `length < 6`
-                    // gate silently hid any real grade string
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 120),
-                      child: Text(
-                        row.grade,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.end,
-                      ),
-                    ),
-                  ],
-                )
-              ],
-            ),
+      children.add(GestureDetector(
+        onTap: () => _openModule(row),
+        child: Padding(
+          padding: EdgeInsets.only(
+              left: isGroup ? pageGutter : pageGutter + spaceXl,
+              top: isGroup ? spaceLg : spaceXs,
+              bottom: spaceSm,
+              right: pageGutter),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  row.title,
+                  maxLines: 3,
+                  style: isGroup
+                      ? theme.textTheme.titleMedium
+                      : theme.textTheme.bodyMedium,
+                ),
+              ),
+              // C12: truncate, don't blank - the old `length < 6`
+              // gate silently hid any real grade string
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 120),
+                child: Text(
+                  row.grade,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                ),
+              ),
+            ],
           ),
-        );
-      }).toList(),
-    );
+        ),
+      ));
+    }
+    return Column(children: children);
   }
 }

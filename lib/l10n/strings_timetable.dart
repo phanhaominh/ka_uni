@@ -49,6 +49,8 @@ const Map<String, String> de_timetable = {
   "timetable.changeRoomDelta": " · Raum {0} → {1}",
   // appointment detail sheet; home.profileLoading rides the flat l10n
   // map from here because slice rules confine new strings to this file
+  "timetable.idLabel": "ID:",
+  "timetable.placeLabel": "Ort:",
   "timetable.timeLabel": "Zeit:",
   "timetable.aliasesLabel": "Auch bekannt als:",
   "timetable.openCampusMap": "Auf dem Campusplan öffnen",
@@ -114,6 +116,8 @@ const Map<String, String> en_timetable = {
   "timetable.timeLabel": "Time:",
   "timetable.aliasesLabel": "Also known as:",
   "timetable.openCampusMap": "Open in campus map",
+  "timetable.idLabel": "ID:",
+  "timetable.placeLabel": "Room:",
   // round 12: see de_timetable
   "timetable.nowLineLabel": "Current time: {0}",
   "timetable.ghostCancelled": "Cancelled",

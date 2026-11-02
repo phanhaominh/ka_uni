@@ -1,6 +1,15 @@
 import 'package:kit_mobile/utils/regexps.dart';
 
 String sanitizeModuleTitle(String title) {
+  // Campus feeds embed SOFT HYPHENS (U+00AD) and non-breaking spaces in
+  // German titles; the hyphens are invisible but act as line-break
+  // opportunities, so cards rendered "Techni / cal Th / ermodynami / cs"
+  // with no visible hyphen anywhere. Strip them before anything else.
+  title = title
+      .replaceAll("\u00ad", "")
+      .replaceAll("\u200b", "")
+      .replaceAll("\u00a0", " ");
+
   // this method solves the problem when a hierarchic table's entry
   // like "Lineare Algebra - Prüfung" is used as module.title
   // so we split by "-" and filter out words like ["Prüfung", "Klausur"]

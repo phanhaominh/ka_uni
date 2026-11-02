@@ -28,7 +28,7 @@ class BlockContainer extends StatelessWidget {
 
     if (settingsVM.liquidAssEverywhere.value) {
       return Padding(
-        padding: padding ?? EdgeInsets.all(3),
+        padding: padding ?? const EdgeInsets.all(cardGutter),
         child: GlassContainer(
           child: Padding(
             padding: innerPadding ??
@@ -40,7 +40,7 @@ class BlockContainer extends StatelessWidget {
     }
 
     return Padding(
-      padding: padding ?? EdgeInsets.all(3),
+      padding: padding ?? const EdgeInsets.all(cardGutter),
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.all(appBorderRadius),

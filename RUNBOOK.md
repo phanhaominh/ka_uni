@@ -132,6 +132,33 @@ when `/tmp/.mei_c` exists (one line: `user password`). They print what they
 found and are the fastest way to tell "my parser broke" from "KIT changed the
 markup". Everything else in `flutter test` is offline/hermetic.
 
+## Dev tablet: rooted Fire HD 8 (LineageOS)
+
+Fire HD 8 via the NUC's adb (`nuc:/home/abspuser/tools/platform-tools/adb -s
+G090MJ05736402TB`); magisk root is available for `su -c` work. Same APK as
+the Pixel; `audit/drive.py fire shot|dump|tapxy|swipe|launch` drives it
+(artifacts in `audit/fire/`). `ensure_foreground()` aborts (exit 3) unless
+KA.Uni is the resumed activity — taps never land in someone else's app.
+
+- **Never poke `settings put system user_rotation` remotely.** On this
+  Lineage 14.1 build the Flutter view keeps a stale display transform
+  after a remote rotation flip: appbar and nav pill keep working, but ALL
+  taps AND scrolling inside the home scrollable silently go dead while
+  uiautomator coordinates still look right. Recovery is
+  `am force-stop com.dandemidov.kit_mobile` + relaunch — no reboot needed.
+  (Cost me an entire hunt through carousel hit-stacking before `am
+  force-stop` proved the app was innocent.)
+- After a clean start the drill is at phone parity: grid-block tap opens
+  the full-page route with flutter_map tiles loaded over WiFi, glass sheet
+  (title/ID/Ort/Time), Back-tap dismiss.
+- `adb shell input tap` (InputManager injection) is sufficient; rooted
+  sendevent on `/dev/input/event3` exists as fallback, unneeded.
+- Day-rollover tests: `su -c "settings put global auto_time 0; date
+  11020930"` then restore with `auto_time 1`.
+- Horizontal drag over the carousel never pages (the parent vertical
+  scroll wins the arena); navigation is ghost-edge taps -> animateToPage,
+  verified working on the tablet.
+
 ## Failure states
 
 `MeiFailureBanner` on home distinguishes, loudly:

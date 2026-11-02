@@ -1,3 +1,4 @@
+import 'package:kit_mobile/constants/view_constants.dart';
 import 'dart:math';
 import 'dart:ui';
 
@@ -170,7 +171,8 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                                   decoration: BoxDecoration(
                                     color: theme.colorScheme.surface
                                         .withValues(alpha: 0.92),
-                                    borderRadius: BorderRadius.circular(9),
+                                    borderRadius:
+                                        BorderRadius.circular(chipRadiusDouble),
                                     boxShadow: const [
                                       BoxShadow(
                                           color: Colors.black26,
@@ -251,6 +253,11 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                               theme.colorScheme.surface.withValues(alpha: 0.5),
                           child: ListView(
                             controller: controller,
+                            // last row must never sit flush on the panel
+                            // edge - and the system bar is below it
+                            padding: EdgeInsets.only(
+                                bottom: spaceXl +
+                                    MediaQuery.paddingOf(context).bottom),
                             children: [
                               // Text("data"),
                               Padding(
@@ -270,22 +277,38 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                         )),
-                                    SizedBox(height: 20),
-                                    placeDetail(
-                                        "ID:", widget.appointment.id, theme),
-                                    placeDetail("Ort:",
-                                        widget.appointment.displayPlace, theme),
-                                    placeDetail(L10n.t("timetable.timeLabel"),
-                                        _timeRangeLabel(), theme),
-                                    if (widget
-                                        .appointment.place.aliasList.isNotEmpty)
-                                      placeDetail(
-                                          L10n.t("timetable.aliasesLabel"),
-                                          widget
-                                              .appointment.place.aliasList
-                                              .join(", "),
-                                          theme),
-                                    SizedBox(height: 20),
+                                    SizedBox(height: spaceLg),
+                                    // empty values (lunch has no room, feed
+                                    // rows often no id) would leave orphan
+                                    // labels eating the column's rhythm
+                                    ...(() {
+                                      final details = <(String, String)>[
+                                        (L10n.t("timetable.idLabel"),
+                                            widget.appointment.id),
+                                        (L10n.t("timetable.placeLabel"),
+                                            widget.appointment.displayPlace),
+                                        (L10n.t("timetable.timeLabel"),
+                                            _timeRangeLabel()),
+                                        if (widget.appointment.place.aliasList
+                                            .isNotEmpty)
+                                          (L10n.t("timetable.aliasesLabel"),
+                                              widget
+                                                  .appointment.place.aliasList
+                                                  .join(", ")),
+                                      ];
+                                      final widgets = <Widget>[];
+                                      for (final (label, value) in details) {
+                                        if (value.isEmpty) continue;
+                                        if (widgets.isNotEmpty) {
+                                          widgets.add(
+                                              const SizedBox(height: spaceSm));
+                                        }
+                                        widgets.add(
+                                            placeDetail(label, value, theme));
+                                      }
+                                      return widgets;
+                                    })(),
+                                    SizedBox(height: spaceXl),
                                     // the real payload of the expanded state:
                                     // a jump to the KIT campus-map / room
                                     // page. The old trailing 500px spacer is
@@ -300,7 +323,7 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                                             Radius.circular(12)),
                                         child: Padding(
                                           padding: const EdgeInsets.symmetric(
-                                              vertical: 10),
+                                              vertical: spaceMd),
                                           child: Row(
                                             children: [
                                               Icon(
@@ -381,31 +404,6 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                   ),
                 );
               }),
-          // ClipRRect(
-          //   child: BackdropFilter(
-          //     filter: ImageFilter.blur(
-          //       sigmaX: 10,
-          //       sigmaY: 10,
-          //     ),
-          //     child: Container(
-          //       color: theme.colorScheme.surface.withValues(alpha: 0.5),
-          //       child: SafeArea(
-          //         bottom: false,
-          //         child:
-          //         Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          //           CupertinoButton(
-          //             padding: EdgeInsets.zero,
-          //             // color: Colors.amber,
-          //             child: Icon(Icons.arrow_back_ios_rounded),
-          //             onPressed: () {
-          //               Navigator.of(context).maybePop();
-          //             },
-          //           )
-          //         ]),
-          //       ),
-          //     ),
-          //   ),
-          // )
         ],
       ),
     );
@@ -420,7 +418,7 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
               theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
         SizedBox(
-          width: 5,
+          width: spaceXs,
         ),
         // Expanded: an unbounded long ID/place used to blow up the row;
         // the detail now truncates with an ellipsis instead of clipping

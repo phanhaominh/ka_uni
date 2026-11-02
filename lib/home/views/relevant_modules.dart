@@ -75,6 +75,11 @@ class RelevantModulesView extends StatelessWidget {
             height: 300,
             child: GridView.count(
               crossAxisCount: 2,
+              // GridView computes mainAxisExtent = crossAxisExtent / ratio,
+              // and the MAIN axis here is horizontal: 3/4 makes tiles
+              // 200x150 instead of 112x150, giving long words like
+              // "Thermodynamics" a text box wide enough to stay intact
+              childAspectRatio: 3 / 4,
               scrollDirection: Axis.horizontal,
               children: List.generate(modules.length, (idx) {
                 final rowID = modules[idx];

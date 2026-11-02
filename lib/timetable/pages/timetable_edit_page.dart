@@ -104,7 +104,10 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: tutorials.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (context, _) => Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: Theme.of(context).dividerColor),
                       itemBuilder: (context, index) => _TutorialListTile(
                         tutorial: tutorials[index],
                         modulesById: modulesById,

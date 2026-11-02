@@ -182,8 +182,10 @@ class _KITHomePageState extends State<KITHomePage> {
                           : SizedBox(),
                     ),
                     TimetableWeeklyView(),
+                    const SizedBox(height: spaceMd),
                     CupertinoButton(
-                        padding: EdgeInsets.zero,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: pageGutter, vertical: spaceSm),
                         onPressed: () {
                           Navigator.of(context).push(MaterialPageRoute(
                               builder: (BuildContext context) =>
@@ -193,10 +195,11 @@ class _KITHomePageState extends State<KITHomePage> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(CupertinoIcons.pencil_circle),
+                            const SizedBox(width: spaceSm),
                             Text(L10n.t("settings.editTimetable")),
                           ],
                         )),
-                    const Padding(padding: EdgeInsets.all(10)),
+                    const SizedBox(height: spaceLg),
                     Row(
                       children: [
                         PaddedTitle(
@@ -230,10 +233,11 @@ class _KITHomePageState extends State<KITHomePage> {
                       ],
                     ),
                     Container(
-                      padding: EdgeInsets.all(5),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: cardGutter),
                       child: RelevantModulesView(),
                     ),
-                    const Padding(padding: EdgeInsets.all(20)),
+                    const SizedBox(height: spaceXl),
                     PaddedTitle(
                       title: L10n.t("settings.pinnedFiles"),
                       trailing: CupertinoButton(
@@ -244,7 +248,7 @@ class _KITHomePageState extends State<KITHomePage> {
                                       FilesCachePage()))),
                     ),
                     PinnedFilesListView(),
-                    const Padding(padding: EdgeInsets.all(20)),
+                    const SizedBox(height: spaceXl),
                     PaddedTitle(title: L10n.t("settings.myModules")),
                     HierarchicTableView(
                       rows: vm.campusManager.moduleRows,
