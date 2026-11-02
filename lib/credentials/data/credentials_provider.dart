@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:kit_mobile/credentials/models/auth_result.dart';
 import 'package:kit_mobile/credentials/models/kit_credentials.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
+import 'package:workmanager/workmanager.dart';
 
 import '../../local_files_storage/local_file_storage_manager.dart';
 import '../../main.dart';
@@ -211,14 +212,22 @@ class CredentialsProvider extends ChangeNotifier {
 
   Future<void> logout(KITProvider vm, TutorialManager tutorialManager) async {
     // purge-first ordering: a keystore hiccup during credential wipe must
-    // never skip the DATA_*/webcal-token sweep on a shared device
+    // never skip the DATA_*/webcal-token sweep on a shared device - hence
+    // every teardown step is individually try/caught, its failure merely
+    // accumulated and rethrown at the end: the UI's toast then tells a
+    // full sweep apart from a partial one instead of lying either way
+    final failures = <String>[];
     try {
       await _clearCredentials();
     } on Object catch (e) {
-      if (kDebugMode) print("credential wipe failed, sweeping anyway: $e");
+      failures.add("credential wipe: $e");
     }
-    // IdP/cascampus/ILIAS SSO cookies must die with the logout, not linger
-    await vm.clearCookiesAndCache();
+    try {
+      // IdP/cascampus/ILIAS SSO cookies must die with the logout, not linger
+      await vm.clearCookiesAndCache();
+    } on Object catch (e) {
+      failures.add("cookie/cache purge: $e");
+    }
     vm.campusManager.wipeAccountMemory();
     tutorialManager.clearAll();
     vm.signMeUpManager.procedures = [];
@@ -228,25 +237,60 @@ class CredentialsProvider extends ChangeNotifier {
     vm.signMeUpManager.loadedMine = false;
     vm.campusManager.ready = false;
     vm.campusManager.scheduleFetchingTimer?.cancel();
-    vm.campusManager.resetRelevantModules();
-    await vm.campusManager.clearStudentData();
-    await vm.campusManager.clearCachedTimetableData();
-    await vm.iliasManager.logout();
+    try {
+      // awaited: it is async and its prefs.remove used to run unawaited,
+      // i.e. outside every guard below
+      await vm.campusManager.resetRelevantModules();
+    } on Object catch (e) {
+      failures.add("relevant modules: $e");
+    }
+    try {
+      await vm.campusManager.clearStudentData();
+    } on Object catch (e) {
+      failures.add("student data wipe: $e");
+    }
+    try {
+      await vm.campusManager.clearCachedTimetableData();
+    } on Object catch (e) {
+      failures.add("timetable cache wipe: $e");
+    }
+    try {
+      await vm.iliasManager.logout();
+    } on Object catch (e) {
+      failures.add("ilias logout: $e");
+    }
+    // Kill the background ICS poll BEFORE the sweep so no further run
+    // starts against the dying token; the already-running poll lives in a
+    // separate isolate and cannot be awaited from here - its own
+    // logged-out re-check is the fence for that last in-flight run.
+    try {
+      await Workmanager().cancelByUniqueName("mei-webcal-poll");
+    } on Object catch (e) {
+      failures.add("bg poll cancel: $e");
+    }
     // Full data sweep: DATA_* holds the webcal TOKEN url, the scraped
     // schedule, pinned ILIAS files and change logs - none may survive a
     // logout on a shared device or bleed into the next account's session.
-    final prefs = await SharedPreferences.getInstance();
-    for (final key in prefs
-        .getKeys()
-        .where((k) =>
-            k.startsWith("DATA_") ||
-            k.startsWith("RMR ") ||
-            k.startsWith("module_cache_") ||
-            k.startsWith("MIL "))
-        .toList()) {
-      await prefs.remove(key);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      for (final key in prefs
+          .getKeys()
+          .where((k) =>
+              k.startsWith("DATA_") ||
+              k.startsWith("RMR ") ||
+              k.startsWith("module_cache_") ||
+              k.startsWith("MIL "))
+          .toList()) {
+        await prefs.remove(key);
+      }
+    } on Object catch (e) {
+      failures.add("prefs sweep: $e");
     }
-    await MeiNotifications.cancelAllScheduled();
+    try {
+      await MeiNotifications.cancelAllScheduled();
+    } on Object catch (e) {
+      failures.add("notification teardown: $e");
+    }
     // downloaded ILIAS file BYTES live outside prefs: purging only the
     // index left every file browsable by the next account until uninstall
     try {
@@ -255,11 +299,23 @@ class CredentialsProvider extends ChangeNotifier {
         await cacheDir.delete(recursive: true);
       }
     } on Object catch (e) {
-      if (kDebugMode) print("file cache wipe failed: $e");
+      failures.add("file cache wipe: $e");
     }
-    vm.setCredentials(credentials);
-    notifyListeners();
-    vm.notifyListeners();
+    // local UI reset runs and must never rethrow into the caller chain: a
+    // throwing listener would toast "logout failed" although everything
+    // is swept
+    try {
+      vm.setCredentials(credentials);
+      notifyListeners();
+      vm.notifyListeners();
+    } on Object catch (e) {
+      if (kDebugMode) print("local logout reset failed: $e");
+    }
+    // never leak raw exception text into the toast (settings_page prints
+    // this in debug and shows its generic logoutFailed text)
+    if (failures.isNotEmpty) {
+      throw StateError("logout completed with failures: ${failures.join("; ")}");
+    }
   }
 
   IOSOptions get _iOSOptions => const IOSOptions(accountName: "kit-student");

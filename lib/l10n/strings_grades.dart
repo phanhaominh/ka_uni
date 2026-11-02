@@ -29,11 +29,12 @@ const Map<String, String> en_grades = {
   "grades.title": "Grades",
   "grades.entry": "Grades & credits",
   "grades.loadError": "Refresh failed – please try again",
-  // proper name of the KIT orientation milestone: stays German in EN too
-  "grades.sopTitle": "Studienorientierungsprüfung",
+  // official German proper noun, kept as-is plus an English gloss
+  "grades.sopTitle": "Studienorientierungsprüfung (orientation exam)",
   "grades.sopProgress": "{0} / {1} CP",
   "grades.sopReached": "Passed",
-  "grades.sopOpen": "still open",
+  // pairs with the CP goal above: "12,0 / 30 CP ... not yet met"
+  "grades.sopOpen": "not yet met",
   "grades.sopOverdue": "Deadline passed",
   "grades.totalLabel": "Total ECTS",
   "grades.avgLabel": "Average grade",

@@ -1,5 +1,4 @@
 import '../../parsing/models/hierarchic_table_row.dart';
-import '../../state_management/campus/campus_manager.dart';
 
 enum GradeState { passed, failed, pending }
 
@@ -109,6 +108,13 @@ class GradeBook {
   /// Studienorientierungsprüfung proxy: 30 CP must be visible by then.
   static const double sopTarget = 30.0;
 
+  /// KIT SOP milestone: the 30 CP above must be booked by this date -
+  /// end of the first year of studies for the WS 2026/27 intake, i.e.
+  /// 31.03.2027 (RUNBOOK "Round 8"). The ONE place that value lives: past
+  /// it, "SOP not reached yet" turns into the page's error tint, so a new
+  /// intake or PO update changes this constant and nothing else.
+  static final DateTime sopDeadline = DateTime(2027, 3, 31);
+
   double get sopProgress => (totalEcts / sopTarget).clamp(0.0, 1.0);
   bool get sopReached => totalEcts >= sopTarget;
 
@@ -156,9 +162,19 @@ class GradeBook {
       numericGrade: numeric,
       moduleEcts: _parseGermanDecimal(_cleanCell(row.pointsMax)),
       level: row.level,
-      titleKey: CampusManager.lectureTitleKey(title),
+      titleKey: _ledgerTitleKey(title),
     );
   }
+
+  /// Ledger-local dedup key: the exact title, case- and layout-whitespace
+  /// normalized - deliberately NOT CampusManager.lectureTitleKey: that key
+  /// also cuts at the first ", " past position 10 (to drop lecturer
+  /// suffixes), which silently merges DISTINCT modules whose titles differ
+  /// only after a comma - one of them vanishes from the ledger along with
+  /// its CP. The feed/timetable matchers need that loose key; the ledger
+  /// only ever compares tree titles against tree titles.
+  static String _ledgerTitleKey(String raw) =>
+      _cleanCell(raw).toLowerCase();
 
   /// Mirrors campus_manager cleanCell (layout entities + squeezed
   /// whitespace); its "0,0" fallback is intentionally NOT mirrored: an empty

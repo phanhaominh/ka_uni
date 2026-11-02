@@ -36,6 +36,30 @@ void main() {
     expect(resolveRoomPlace(places, "")?.id, isNull);
   });
 
+  test("building numbers match as bounded tokens, not substrings", () {
+    // the directory-order trap: an unbounded contains() let "1.2" hit
+    // the "21.2" inside "Gebäude 21.2" and certify the WRONG building
+    final narrow = KITPlace(id: "1.2", title: "Gebäude 1.2");
+    final wide = KITPlace(id: "21.2", title: "Gebäude 21.2");
+    expect(resolveRoomPlace([wide, narrow], "1.2, Raum 101")?.id, "1.2");
+    expect(resolveRoomPlace([wide, narrow], "Geb. 21.2")?.id, "21.2");
+    // no digit-neighbour fallback: unresolvable beats a wrong building
+    expect(resolveRoomPlace([wide], "Raum 1.2, 101"), isNull);
+  });
+
+  test("fuzzy bind must share real tokens with the winning place", () {
+    // differing number-like tokens are never noise: "30.11" may not be
+    // certified as its neighbour "30.12", and a mistyped "SR 1001" may
+    // not soak into an unrelated seminar room
+    final neighbour = KITPlace(id: "30.12", title: "Gebäude 30.12");
+    expect(resolveRoomPlace([neighbour], "Gebäude 30.11"), isNull);
+    final wrong = KITPlace(id: "sr1011", title: "Seminarraum 1011");
+    expect(resolveRoomPlace([wrong], "SR 1001"), isNull);
+    // the genuine room still resolves through its shared token
+    final right = KITPlace(id: "sr1001", title: "Seminarraum 1001");
+    expect(resolveRoomPlace([right], "Seminarraum 1001")?.id, "sr1001");
+  });
+
   test("tight gap across campus warns with walk minutes", () {
     final hint = computeWalkHint(audimax(), northBuilding(), 10);
     expect(hint, isNotNull);

@@ -24,7 +24,9 @@ class TimetableDaily {
     return appointmentsByBlock;
   }
 
-  bool get isEmpty {
+  /// True when at least one time block has no appointment bound to it
+  /// (semantics: "the day has a free slot", NOT "the day is empty").
+  bool get hasEmptySlot {
     for (final appointment in appointments) {
       if (appointment.isEmpty) {
         return true;

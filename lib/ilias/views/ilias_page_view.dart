@@ -94,6 +94,9 @@ String _scrubFileNamePart(String raw) {
 }
 
 class IliasPageView extends StatefulWidget {
+  /// Route name used by the nav container to dedupe pushes of this page.
+  static const routeName = "/ilias";
+
   final KITModule module;
   final Future<String> PHPSESSID_Future;
   final bool isFileView;
@@ -113,9 +116,14 @@ class _IliasPageViewWState extends State<IliasPageView> {
 
   bool isBusy = false;
 
-  int pagesStackSize = 0;
-  Future<bool?> canGoBackFuture = Future.value(false),
-      canGoForwardFuture = Future.value(false);
+  /// A session (re-)authorization is in flight: keeps the pre-webview
+  /// gate on the spinner instead of flashing the auth-failed scaffold
+  /// while a retry/refresh is running
+  bool _retrying = false;
+
+  /// Forward reachability, re-read on every URL change; the unified back
+  /// button queries the controller live instead.
+  Future<bool?> canGoForwardFuture = Future.value(false);
 
   @override
   void initState() {
@@ -152,9 +160,7 @@ class _IliasPageViewWState extends State<IliasPageView> {
 
   void _navigationDelegateOnUrlChange(UrlChange urlChange) {
     if (!mounted) return;
-    pagesStackSize++;
     setState(() {
-      canGoBackFuture = _controller.canGoBack();
       canGoForwardFuture = _controller.canGoForward();
     });
 
@@ -183,6 +189,9 @@ class _IliasPageViewWState extends State<IliasPageView> {
   }
 
   Future<String?> _pathFor(String url) async {
+    // follow-up callers resolve after an arbitrary await; their State may
+    // already be disposed - Provider.of on a defunct context would throw
+    if (!mounted) return null;
     final iliasFileManager =
         Provider.of<IliasFilesProvider>(context, listen: false);
     final directory = await iliasFileManager.localFileStorageManager
@@ -304,6 +313,16 @@ class _IliasPageViewWState extends State<IliasPageView> {
     _controller.loadRequest(Uri.parse(link));
   }
 
+  /// Back = webview history first; the page only pops once the webview
+  /// itself sits on its first entry.
+  Future<void> _onBack() async {
+    if (await _controller.canGoBack()) {
+      _controller.goBack();
+    } else if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final vm = Provider.of<KITProvider>(context);
@@ -313,16 +332,10 @@ class _IliasPageViewWState extends State<IliasPageView> {
     return FutureBuilder(
         future: widget.PHPSESSID_Future,
         builder: (context, snapshot) {
-          if (!snapshot.hasData || _phpsessid.isEmpty) {
-            return Scaffold(
-                body: Center(
-              child: KITProgressIndicator(),
-            ));
-          }
-
-          Future<void> refreshSession() async {
+          Future<String> refreshSession() async {
             setState(() {
               _phpsessid = "";
+              _retrying = true;
             });
 
             await vm.iliasManager.authorize(refreshSession: true);
@@ -332,99 +345,118 @@ class _IliasPageViewWState extends State<IliasPageView> {
               toastsProvider.showTextToast(L10n.t("ilias.refreshError"));
             }
 
-            setState(() {
-              _phpsessid = newPHPSESSIONID;
-            });
+            if (mounted) {
+              setState(() {
+                _phpsessid = newPHPSESSIONID;
+                _retrying = false;
+              });
+            }
+            return newPHPSESSIONID;
           }
 
-          // Immersive: ILIAS renders its own header inside the page, so any
-          // app bar on top doubles it and the hand-computed webview height
-          // (screen - 100 - appBar) letterboxed it. The page goes edge to
-          // edge and every control floats on glass instead.
+          if (!snapshot.hasData || _phpsessid.isEmpty) {
+            // loading vs auth-failed: an EMPTY resolution means the SSO
+            // chain ended without a PHPSESSID - a spinner there is a
+            // dead end (the refresh chip lives inside the loaded
+            // scaffold), so the gate offers its own retry
+            if (!snapshot.hasData || _retrying) {
+              return Scaffold(
+                  body: Center(
+                child: KITProgressIndicator(),
+              ));
+            }
+            return Scaffold(
+                body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(L10n.t("ilias.authFailed"),
+                      style: theme.textTheme.bodyMedium),
+                  SizedBox(height: 8),
+                  CupertinoButton(
+                    onPressed: () async {
+                      final id = await refreshSession();
+                      if (id.isEmpty || !mounted) return;
+                      // initState's launch ran with the failed session;
+                      // the gate only opens now, so this retry has to
+                      // load the page itself
+                      await _launchPage(Provider.of<SettingsProvider>(
+                              context,
+                              listen: false)
+                          .defaultIliasPage.value);
+                    },
+                    child: Text(L10n.t("ilias.retry")),
+                  ),
+                ],
+              ),
+            ));
+          }
+
+          // All controls live in ONE slim translucent strip ABOVE the
+          // webview, outside the viewport. The old floating glass chips
+          // sat on top of web content: back over the HINWEIS banner and
+          // KIT logo, refresh over the site's overflow menu, the history
+          // pair over the bottom nav - a dead zone that swallowed taps
+          // meant for the 'Lernerfolge' tab on every ILIAS page. Auto-
+          // fading the history chips would only shrink that zone; a strip
+          // outside the viewport removes all four occlusions for ~52 dp
+          // of web content instead. (The chips stayed glass - the strip
+          // is translucent over the page background, and nothing ever
+          // scrolls behind it.)
           return Scaffold(
-              body: Stack(
+              body: Column(
             children: [
-              Positioned.fill(child: WebViewWidget(controller: _controller)),
-              if (isBusy)
-                Center(
-                  child: GlassContainer(
-                    useOwnLayer: true,
-                    child: Padding(
-                      padding: EdgeInsets.all(10),
-                      child: KITProgressIndicator(),
-                    ),
-                  ),
-                ),
-              // readability for the floating chips over white ILIAS headers
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                height: 72,
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          theme.scaffoldBackgroundColor
-                              .withValues(alpha: 0.6),
-                          theme.scaffoldBackgroundColor
-                              .withValues(alpha: 0.0),
-                        ],
+              _IliasControlBar(
+                showBack: Navigator.of(context).canPop(),
+                showForward: !widget.isFileView,
+                canGoForward: canGoForwardFuture,
+                onBack: _onBack,
+                onForward: () => _controller.goForward(),
+                onRefresh: refreshSession,
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                        child: WebViewWidget(controller: _controller)),
+                    if (isBusy)
+                      Center(
+                        child: GlassContainer(
+                          useOwnLayer: true,
+                          child: Padding(
+                            padding: EdgeInsets.all(10),
+                            child: KITProgressIndicator(),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                  ],
                 ),
               ),
-              if (Navigator.of(context).canPop())
-                Positioned(
-                    top: 6,
-                    left: 8,
-                    child: SafeArea(
-                      child: _glassChip(CupertinoIcons.chevron_left,
-                          () => Navigator.of(context).pop()),
-                    )),
-              Positioned(
-                  top: 6,
-                  right: 8,
-                  child: SafeArea(
-                      child: _glassChip(CupertinoIcons.refresh, refreshSession)),
-                  ),
-              if (!widget.isFileView)
-                Positioned(
-                  right: 8,
-                  bottom: 12,
-                  child: SafeArea(
-                    child: _FloatingNavChips(
-                      canGoBack: canGoBackFuture,
-                      canGoForward: canGoForwardFuture,
-                      onBack: () => _controller.goBack(),
-                      onForward: () => _controller.goForward(),
-                    ),
-                  ),
-                ),
             ],
           ));
         });
   }
 }
 
-Widget _glassChip(IconData icon, VoidCallback? onPressed) {
-  return Opacity(
-    opacity: onPressed == null ? 0.35 : 1,
-    child: GlassContainer(
-      useOwnLayer: true,
-      child: CupertinoButton(
-        padding: EdgeInsets.zero,
-        minimumSize: const Size(40, 40),
-        onPressed: onPressed,
-        child: SizedBox(
-          width: 40,
-          height: 40,
-          child: Center(
-            child: Icon(icon, size: 20),
+/// ≥44 dp glass hit target (WCAG touch minimum) wrapped in a tooltip, so
+/// the unlabelled chevrons stay distinguishable by long-press/accessibility.
+Widget _glassChip(IconData icon, VoidCallback? onPressed, String tooltip) {
+  return Tooltip(
+    message: tooltip,
+    child: Opacity(
+      opacity: onPressed == null ? 0.35 : 1,
+      child: GlassContainer(
+        useOwnLayer: true,
+        child: CupertinoButton(
+          padding: EdgeInsets.zero,
+          minimumSize: const Size(44, 44),
+          onPressed: onPressed,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: Icon(icon, size: 20),
+            ),
           ),
         ),
       ),
@@ -432,41 +464,55 @@ Widget _glassChip(IconData icon, VoidCallback? onPressed) {
   );
 }
 
-/// Webview history controls floating over the page's bottom-right corner:
-/// present but never paying rent in vertical space.
-class _FloatingNavChips extends StatelessWidget {
-  final Future<bool?> canGoBack;
+/// The ILIAS tab's whole browser chrome: one slim translucent strip above
+/// the webview so it can never overlap web content. Back folds the old
+/// pop chip and the webview-history-back chip together (history first,
+/// then pop); forward follows the controller; refresh re-authorizes.
+class _IliasControlBar extends StatelessWidget {
+  final bool showBack;
+  final bool showForward;
   final Future<bool?> canGoForward;
   final VoidCallback onBack;
   final VoidCallback onForward;
+  final VoidCallback onRefresh;
 
-  const _FloatingNavChips(
-      {required this.canGoBack,
+  const _IliasControlBar(
+      {required this.showBack,
+      required this.showForward,
       required this.canGoForward,
       required this.onBack,
-      required this.onForward});
+      required this.onForward,
+      required this.onRefresh});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        FutureBuilder(
-            future: canGoBack,
-            builder: (context, snapshot) {
-              final enabled = snapshot.hasData && snapshot.data!;
-              return _glassChip(CupertinoIcons.chevron_left,
-                  enabled ? onBack : null);
-            }),
-        const SizedBox(height: 8),
-        FutureBuilder(
-            future: canGoForward,
-            builder: (context, snapshot) {
-              final enabled = snapshot.hasData && snapshot.data!;
-              return _glassChip(CupertinoIcons.chevron_right,
-                  enabled ? onForward : null);
-            }),
-      ],
+    final theme = Theme.of(context);
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        color: theme.scaffoldBackgroundColor.withValues(alpha: 0.9),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          children: [
+            if (showBack)
+              _glassChip(CupertinoIcons.chevron_left, onBack,
+                  L10n.t("ilias.backTooltip")),
+            if (showForward)
+              FutureBuilder(
+                  future: canGoForward,
+                  builder: (context, snapshot) {
+                    final enabled = snapshot.hasData && snapshot.data!;
+                    return _glassChip(
+                        CupertinoIcons.chevron_right,
+                        enabled ? onForward : null,
+                        L10n.t("ilias.forwardTooltip"));
+                  }),
+            const Spacer(),
+            _glassChip(CupertinoIcons.refresh, onRefresh,
+                L10n.t("ilias.refreshTooltip")),
+          ],
+        ),
+      ),
     );
   }
 }

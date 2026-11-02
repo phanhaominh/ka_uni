@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'package:url_launcher/url_launcher.dart';
 import '../l10n/l10n.dart';
 import 'signmeup_manager.dart';
 
@@ -84,43 +85,87 @@ class SignMeUpMineCard extends StatelessWidget {
     );
   }
 
+  /// Launchable target of a row: the procedure's page in the Campus+
+  /// SignMeUp SPA (`procedures/<id>` — the `SMUProcedureView` route of the
+  /// deployed bundle). A registration without a real procedureId (the
+  /// model's -1 sentinel) has no launchable URL.
+  static String? _procedureUrl(SignMeUpRegistration r) =>
+      r.procedureId >= 0
+          ? "https://plus.campus.kit.edu/signmeup/procedures/${r.procedureId}"
+          : null;
+
+  /// Mirror of agenda_page's private `_launchExternal` (importing it from
+  /// a view would invert the dependency): only a well-formed http(s) URL
+  /// reaches the launcher and a missing/refusing launcher never throws
+  /// inside the tap.
+  void _launchExternal(String raw) {
+    try {
+      final uri = Uri.parse(raw);
+      if (uri.host.isEmpty ||
+          (uri.scheme != "http" && uri.scheme != "https")) {
+        return;
+      }
+      launchUrl(uri, mode: LaunchMode.externalApplication)
+          .catchError((_) => false);
+    } on Object catch (_) {}
+  }
+
   Widget _row(
       SignMeUpRegistration r, BuildContext context, ColorScheme scheme) {
     final milestone = r.nextMilestone(now);
     final rank = r.rank;
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(r.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w600)),
+        Wrap(
+          spacing: 6,
+          runSpacing: 2,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _stateChip(r, context, scheme),
+            // a rank of 0/negative/null means "no draw position";
+            // descriptive, so it sits back at outline level while the
+            // countdown (an actionable deadline) stays w500
+            if (rank != null && rank > 0)
+              Text(L10n.t("agenda.signmeupMineRank", [rank]),
+                  style: TextStyle(fontSize: 12, color: scheme.outline)),
+            if (milestone != null)
+              Text(L10n.dayOffset(milestone, now),
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: scheme.onSurfaceVariant)),
+          ],
+        ),
+      ],
+    );
+    final url = _procedureUrl(r);
+    if (url == null) {
+      // no target page -> no tap target, no chevron (no dead affordance)
+      return Padding(
+        // same stacked name/detail rows as the procedures card: a long
+        // course name must not push the chip line around
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: content,
+      );
+    }
     return Padding(
-      // same stacked name/detail rows as the procedures card: a long
-      // course name must not push the chip line around
       padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(r.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.w600)),
-          Wrap(
-            spacing: 6,
-            runSpacing: 2,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _stateChip(r, context, scheme),
-              // a rank of 0/negative/null means "no draw position";
-              // descriptive, so it sits back at outline level while the
-              // countdown (an actionable deadline) stays w500
-              if (rank != null && rank > 0)
-                Text(L10n.t("agenda.signmeupMineRank", [rank]),
-                    style: TextStyle(fontSize: 12, color: scheme.outline)),
-              if (milestone != null)
-                Text(L10n.dayOffset(milestone, now),
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: scheme.onSurfaceVariant)),
-            ],
-          ),
-        ],
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _launchExternal(url),
+        child: Row(
+          children: [
+            Expanded(child: content),
+            // chevron only where there is actually something to open
+            Icon(Icons.chevron_right, size: 18, color: scheme.outline),
+          ],
+        ),
       ),
     );
   }

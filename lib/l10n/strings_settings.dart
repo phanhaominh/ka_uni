@@ -27,6 +27,10 @@ const Map<String, String> de_settings = {
   "settings.logout": "Ausloggen",
   "settings.loggedOut": "Ausgeloggt, alle Daten gelöscht",
   "settings.logoutFailed": "Ausloggen fehlgeschlagen – bitte erneut versuchen",
+  "settings.cancel": "Abbrechen",
+  "settings.logoutConfirmTitle": "Ausloggen?",
+  "settings.logoutConfirmBody":
+      "Alle lokal gespeicherten Daten und Dateien werden von diesem Gerät gelöscht. Du kannst dich jederzeit wieder einloggen.",
   // module-tree diagnostic (settings > Debug)
   "settings.debugFetch": "Modul-Baum (Debug)",
   "settings.debugFetchHint":
@@ -107,6 +111,10 @@ const Map<String, String> en_settings = {
   "settings.logout": "Log out",
   "settings.loggedOut": "Logged out, all data deleted",
   "settings.logoutFailed": "Logout failed - please try again",
+  "settings.cancel": "Cancel",
+  "settings.logoutConfirmTitle": "Log out?",
+  "settings.logoutConfirmBody":
+      "All locally stored data and files will be deleted from this device. You can log in again at any time.",
   // module-tree diagnostic (settings > Debug)
   "settings.debugFetch": "Module tree (debug)",
   "settings.debugFetchHint":

@@ -26,6 +26,10 @@ const bottomNavigationBorderRadius = BorderRadius.all(appBorderRadius);
 class _KITNavContainerState extends State<KITNavContainer> {
   int _selectedPage = 1;
 
+  /// the pushed ILIAS page while it is on the stack; one-page rule for the
+  /// paperclip, mirroring NotificationDeepLinkRouter.drain
+  Route<dynamic>? _iliasRoute;
+
   @override
   void initState() {
     super.initState();
@@ -86,12 +90,25 @@ class _KITNavContainerState extends State<KITNavContainer> {
                         2, CupertinoIcons.rectangle_paperclip,
                         title: "ILIAS",
                         customAction: () {
-                          Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (BuildContext context) =>
-                                      IliasPageView(KITModule(),
-                                          PHPSESSID_Future:
-                                              vm.iliasManager.getPHPSESSID())));
+                          // one-page rule: ILIAS is a heavy SSO page holding
+                          // its own WebView - burst clip taps must not stack
+                          // copies of it; a tap while one is already on the
+                          // stack is a no-op, mirroring the deep-link router
+                          final open = _iliasRoute;
+                          if (open != null && open.navigator != null) return;
+                          final route = MaterialPageRoute(
+                              settings: RouteSettings(
+                                  name: IliasPageView.routeName),
+                              builder: (BuildContext context) => IliasPageView(
+                                  KITModule(),
+                                  PHPSESSID_Future:
+                                      vm.iliasManager.getPHPSESSID()));
+                          Navigator.of(context).push(route);
+                          _iliasRoute = route;
+                          // popping frees the slot: the next tap pushes fresh
+                          route.popped.whenComplete(() {
+                            if (_iliasRoute == route) _iliasRoute = null;
+                          });
                         })
                   ],
                 ),
@@ -105,9 +122,6 @@ class _KITNavContainerState extends State<KITNavContainer> {
           [
             SettingsPage(),
             KITHomePage(),
-            // IliasPageView(KITModule(),
-            //     PHPSESSID: vm.iliasManager.getPHPSESSID()),
-            IliasPageView(KITModule(), PHPSESSID_Future: Future.value("")),
           ][_selectedPage],
         ],
       ),

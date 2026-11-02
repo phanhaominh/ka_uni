@@ -93,8 +93,20 @@ class ModuleInfoTableCell {
     return dateStr.isNotEmpty && timeStr.isNotEmpty;
   }
 
+  /// Only a real https ILIAS URL may be hoisted as the course's ILIAS
+  /// link: mirrors the host gate of CampusManager's manual-attach
+  /// validator (_requireIliasUrl is private, so the check is duplicated
+  /// deliberately). Before this, ANY href merely containing "ilias" -
+  /// e.g. a CampusKIT link with ilias in a query param - became the
+  /// module page's ILIAS button target: an open redirect that opens
+  /// inside the session-carrying ILIAS webview.
   bool get hasIliasLink {
-    return (link.toLowerCase().contains("ilias"));
+    const host = "ilias.studium.kit.edu";
+    final uri = Uri.tryParse(link);
+    if (uri == null) return false;
+    final lowerHost = uri.host.toLowerCase();
+    return uri.scheme == "https" &&
+        (lowerHost == host || lowerHost.endsWith(".$host"));
   }
 
   static ModuleInfoTableCell get empty {

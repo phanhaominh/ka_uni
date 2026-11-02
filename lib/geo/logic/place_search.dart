@@ -94,7 +94,14 @@ List<PlaceMatch> rankPlaces(List<KITPlace> places, String query,
         if (na.isEmpty) continue;
         final s = na == nq ? 75 : na.startsWith(nq) ? 70 : na.contains(nq) ? 65 : 0;
         if (s == 0) continue;
-        if (tier == null || s > score) {
+        // tie-break: among aliases scoring equally the alphabetically
+        // first wins, so the shown "auch:" hint no longer rides on the
+        // directory order (which shifts across KIT data refreshes)
+        if (tier == null ||
+            s > score ||
+            (s == score &&
+                matchedAlias != null &&
+                a.compareTo(matchedAlias) < 0)) {
           tier = PlaceMatchTier.alias;
           score = s;
           matchedAlias = a;

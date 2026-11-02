@@ -1,9 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/timetable/logic/ics_export.dart';
+import 'package:kit_mobile/timetable/logic/ics_export_action.dart';
 import 'package:kit_mobile/timetable/models/webcal.dart';
+import 'package:kit_mobile/toasts/models/toasts_provider.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 String _text(IcsExport e) => utf8.decode(e.bytes);
 
@@ -149,4 +155,39 @@ void main() {
         WebcalFeed.parse(_text(e), now: DateTime(2026, 11, 5, 8));
     expect(feed!.occurrences.single.title, summary);
   });
+
+  testWidgets("busy share: a second tap while an export runs toasts",
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final toasts = _RecordingToasts();
+    late BuildContext ctx;
+    await tester.pumpWidget(ChangeNotifierProvider<ToastsProvider>(
+      create: (_) => toasts,
+      child: Builder(builder: (b) {
+        ctx = b;
+        return const SizedBox.shrink();
+      }),
+    ));
+
+    final first = exportMergedTimetableIcs(ctx);
+    // synchronous dedupe: this tap lands while the first export is still
+    // in flight - before C98 it was a silent no-op from the user's POV
+    exportMergedTimetableIcs(ctx);
+    await first;
+
+    expect(toasts.shown, contains(L10n.t("export.inFlight")));
+  });
+}
+
+/// records the toast texts instead of arming real hide timers
+class _RecordingToasts extends ToastsProvider {
+  final shown = <String>[];
+
+  @override
+  Future<void> showTextToast(String message,
+      {Duration duration = Duration.zero,
+      Color backgroundColor = Colors.grey,
+      Color? foregroundColor}) async {
+    shown.add(message);
+  }
 }

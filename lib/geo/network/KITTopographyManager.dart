@@ -40,13 +40,14 @@ class KITTopographyManager {
       // rawResponseBody contains a JS code defining a variable with
       // its value being the array of dictionaries
       // each describing a place. This array is being extracted...
-      final startIdx = rawResponseBody.indexOf("[");
-      final endIdx = rawResponseBody.lastIndexOf(";");
-      if (startIdx < 0 || endIdx <= startIdx) return;
-      rawResponseBody = rawResponseBody.substring(startIdx, endIdx);
+      // Anchored on the array's own brackets instead of "first [ ...
+      // last ;": a leading JS comment carrying a bracket or trailing
+      // code after the final semicolon used to silently void the parse.
+      final placesJson = _extractPlacesJson(rawResponseBody);
+      if (placesJson == null) return;
 
       //... and parsed...
-      List<dynamic> placesData = jsonDecode(rawResponseBody);
+      List<dynamic> placesData = jsonDecode(placesJson);
       for (final placeData in placesData) {
         Map<String, dynamic> placeDataMap = placeData as Map<String, dynamic>;
         newPlaces.add(KITPlace.fromJSON(placeDataMap));
@@ -97,5 +98,38 @@ class KITTopographyManager {
     } on Object catch (_) {
       return null;
     }
+  }
+
+  /// Extracts the JSON array of place dictionaries from the data_de.js
+  /// body: the first `[` that opens an object, up to its matching `]`.
+  /// String literals are tracked while counting, so a bracket inside a
+  /// place name cannot throw the balance off. Null when no plausible
+  /// array is found (restructured payload - caller keeps the snapshot).
+  static String? _extractPlacesJson(String body) {
+    final start = RegExp(r"\[\s*\{").firstMatch(body);
+    if (start == null) return null;
+    var depth = 0;
+    var inString = false;
+    var escaped = false;
+    for (var i = start.start; i < body.length; i++) {
+      final ch = body[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch == r"\") {
+          escaped = true;
+        } else if (ch == '"') {
+          inString = false;
+        }
+      } else if (ch == '"') {
+        inString = true;
+      } else if (ch == "[") {
+        depth++;
+      } else if (ch == "]") {
+        depth--;
+        if (depth == 0) return body.substring(start.start, i + 1);
+      }
+    }
+    return null;
   }
 }

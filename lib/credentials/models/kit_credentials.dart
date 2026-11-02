@@ -16,9 +16,11 @@ class KITCredentials {
   }
 
   bool get isFormatValid {
-    final exp = RegExp(r'u([a-z]){4}');
-    final matches = exp.allMatches(username);
-    return matches.length == 1 && matches.firstOrNull?.input == username;
+    // anchored: unanchored, "xuabcdd" passes too - allMatches finds one
+    // uxxxx group and `input == username` only proves same string, not
+    // same extent
+    final exp = RegExp(r'^u([a-z]){4}$');
+    return exp.hasMatch(username);
   }
 
   @override

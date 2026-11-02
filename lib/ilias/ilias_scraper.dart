@@ -41,59 +41,36 @@ extension IliasScraper on IliasManager {
     }
   }
 
-  /// Logged-out detection from the RESPONSE, not the cookie jar: PHPSESSID
-  /// is a session cookie that survives server-side expiry inside the jar,
-  /// and several landing pages carry no "Lokale ILIAS-Anmeldung" marker -
-  /// a dead session used to scrape as "0 courses / no news" success.
-  /// Dead sessions always land on a login page after redirects.
-  bool _looksLoggedOut(Response response, String body) {
-    // final URL after redirects (request.url is the original);
-    // BaseResponseWithUrl is matched via an Object receiver so the
-    // promotion sees the interface getter, not Response's absent one
-    final Object asObject = response;
-    final url = asObject is BaseResponseWithUrl
-        ? asObject.url.toString()
-        : (response.request?.url ?? Uri.parse(_base)).toString();
-    if (url.contains("login.php") ||
-        url.contains("cmd=force_login") ||
-        url.contains("SingleSignOn") ||
-        url.contains("sso.kit.edu") ||
-        url.contains("oauth2/authorize")) {
-      return true;
-    }
-    return body.contains("Lokale ILIAS-Anmeldung");
-  }
-
-  /// Re-runs SSO when the ILIAS session died, then retries once; if the
-  /// retried page still shows a login wall the session is NOT revived -
-  /// throwing beats parsing login HTML as empty course data.
+  /// Re-runs SSO when the ILIAS session died, then retries once; the
+  /// wrapper itself lives on IliasManager ([withSessionResponse]) so
+  /// [IliasManager.downloadFile] recovers through the exact same path.
+  /// If the retried page still shows a login wall the session is NOT
+  /// revived - throwing beats parsing login HTML as empty course data.
   Future<String> _withSessionBody(Future<Response> Function() action) async {
-    var response = await action();
-    if (!_looksLoggedOut(response, bodyOf(response))) {
-      return bodyOf(response);
-    }
-    if (kDebugMode) print("ILIAS session dead -> re-authorize");
-    await authorize(refreshSession: true);
-    response = await action();
-    final body = bodyOf(response);
-    if (_looksLoggedOut(response, body)) {
-      throw Exception("ILIAS session could not be revived");
-    }
-    return body;
+    return bodyOf(await withSessionResponse(action));
   }
 
   /// Enrolled courses of the current semester from "Meine Kurse und Gruppen".
   Future<List<IliasCourse>> fetchCourses() async {
     final body = await _withSessionBody(() =>
         _getResp("$_base/ilias.php?baseClass=ilmembershipoverviewgui"));
-    return compute(_coursesFrom, body);
+    final courses = await compute(coursesFrom, body);
+    if (courses.isEmpty && body.contains("goto.php/crs/")) {
+      // 200 + live session + enrolment anchors on the page, yet nothing
+      // parsed: the "NNNNNNN - Title" shape drifted past the regex.
+      // Shout it - "0 courses" must never look like an honest empty term.
+      if (kDebugMode) {
+        print("ILIAS courses: anchors present but ZERO parsed - title regex drifted");
+      }
+    }
+    return courses;
   }
 
   /// Top-bar unread counters (notifications badge + mail text).
   Future<IliasUnread> fetchUnread() async {
     final body = await _withSessionBody(
         () => _getResp("$_base/ilias.php?baseClass=ilDashboardGUI"));
-    return compute(_unreadFrom, body);
+    return compute(unreadFrom, body);
   }
 
   /// Material files of a course: walks "Course Materials" and its
@@ -139,7 +116,7 @@ extension IliasScraper on IliasManager {
   Future<List<IliasAnnouncement>> fetchAnnouncements() async {
     final dash = await _withSessionBody(() =>
         _getResp("$_base/ilias.php?baseClass=ilDashboardGUI&cmd=jumpToNews"));
-    final node = await compute(_newsNodeFrom, dash);
+    final node = await compute(newsNodeFrom, dash);
     if (node == null) {
       if (kDebugMode) print("ILIAS news: no PDNews block on dashboard");
       return [];
@@ -152,7 +129,8 @@ extension IliasScraper on IliasManager {
 
 // ---- pure page parsers: top-level so compute() can run them off the UI ----
 
-List<IliasCourse> _coursesFrom(String body) {
+@visibleForTesting
+List<IliasCourse> coursesFrom(String body) {
   final doc = htmlparser.parse(body);
   final courses = <IliasCourse>[];
   final seen = <int>{};
@@ -173,9 +151,16 @@ List<IliasCourse> _coursesFrom(String body) {
   return courses;
 }
 
-IliasUnread _unreadFrom(String body) {
+/// The unread counters live in the top bar; a badge rendered EARLIER on
+/// the dashboard (tab markers etc.) must never be read as the count, so
+/// the search starts at the top bar marker - and only falls back to the
+/// whole document when that marker itself vanished (markup drift).
+@visibleForTesting
+IliasUnread unreadFrom(String body) {
+  final at = body.indexOf(RegExp("ilTopBar", caseSensitive: false));
+  final topBar = at < 0 ? body : body.substring(at);
   final badge =
-      RegExp(r'class="badge[^"]*"[^>]*>\s*(\d{1,4})').firstMatch(body);
+      RegExp(r'class="badge[^"]*"[^>]*>\s*(\d{1,4})').firstMatch(topBar);
   final mailRe = RegExp(r"(\d+)[^<]*neue[^<]*Mail");
   final mails =
       mailRe.hasMatch(body) ? int.parse(mailRe.firstMatch(body)!.group(1)!) : (body.contains("ungelesene Mail") ? 1 : 0);
@@ -249,7 +234,8 @@ DateTime? _parseGermanDate(String? s) {
   return null;
 }
 
-String? _newsNodeFrom(String body) {
+@visibleForTesting
+String? newsNodeFrom(String body) {
   final m = RegExp(r"cmdNode=([a-z0-9:]+)&cmdClass=ilPDNewsGUI&cmd=view")
       .firstMatch(body);
   return m?.group(1);

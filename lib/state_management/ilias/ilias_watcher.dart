@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../ilias/models/ilias_models.dart';
 import '../../l10n/l10n.dart';
 import '../../notifications/mei_notifications.dart';
+import '../../notifications/notification_payload.dart';
 
 /// Watches the agenda's ILIAS announcements and pushes new ones as heads-up
 /// notifications. The personal-news feed the agenda already fetches is the
@@ -24,11 +25,14 @@ class IliasWatcher {
   static const _maxSeen = 300;
   static const _maxNotify = 3;
 
-  /// Injection seam for tests; production uses the shared "changes" channel
-  /// and its agenda deep link, same as the timetable-diff pushes.
+  /// Injection seam for tests; production deep-links ILIAS pushes to the
+  /// PLAIN agenda - never the CHANGED band, whose pulse would highlight a
+  /// (possibly empty) timetable-diff section on a pure ILIAS push.
   @visibleForTesting
   static Future<void> Function(String title, String body) notify =
-      MeiNotifications.notifyChange;
+      (title, body) =>
+          MeiNotifications.notifyChange(title, body,
+              payload: NotificationPayload.agenda);
 
   /// Guards against two agenda refreshes (init + pull-to-refresh, or a
   /// re-entered route over an orphaned fetch) running the read-modify-write
@@ -62,19 +66,19 @@ class IliasWatcher {
         // first run (or unreadable store): seed, notify nothing
         await prefs.setString(seenKey, jsonEncode(_cap([
           for (final a in newOnes(fresh, const {})) idOf(a),
-        ])));
+        ], {for (final a in fresh) idOf(a)})));
         return;
       }
       final freshNew = newOnes(fresh, stored.toSet());
       if (freshNew.isEmpty) return;
-      // persist the seen-marking BEFORE notifying so a redelivered board
-      // never re-notifies; overflow-beyond-cap and the pushed prefix are
-      // all marked (they were not silently dropped, just batched)
       if (epoch != MeiNotifications.teardownEpoch) return;
-      final seen = [...stored, for (final a in freshNew) idOf(a)];
-      await prefs.setString(seenKey, jsonEncode(_cap(seen)));
-      // one failing push must not bury its siblings (their ids are already
-      // persisted, so skipping a throw is the only safe fallback)
+      // persist the seen-marking only AFTER pushing: a silent
+      // Android-side drop (plugin returns, nothing throws) used to mark
+      // the announcement forever-seen with no notification ever shown -
+      // lost, not delayed. A throw leaves the id unmarked too: the next
+      // refresh retries it, a late push beats a swallowed one.
+      final marked = <String>[];
+      // one failing push must not bury its siblings
       for (final a in freshNew.take(_maxNotify)) {
         if (epoch != MeiNotifications.teardownEpoch) return;
         try {
@@ -83,19 +87,44 @@ class IliasWatcher {
                   ? L10n.t("ilias.notifyFallbackTitle")
                   : a.courseTitle,
               _body(a));
+          marked.add(idOf(a));
         } on Object catch (e) {
           if (kDebugMode) print("ilias watcher notify: $e");
         }
       }
+      // overflow beyond the per-diff cap was batched, not dropped: mark
+      // it anyway, or a whole-board rename would re-notify it every run
+      marked.addAll(freshNew.skip(_maxNotify).map(idOf));
+      if (marked.isEmpty) return;
+      if (epoch != MeiNotifications.teardownEpoch) return;
+      final seen = [...stored, ...marked];
+      await prefs.setString(
+          seenKey, jsonEncode(_cap(seen, {for (final a in fresh) idOf(a)})));
     } on Object catch (e) {
       if (kDebugMode) print("ilias watcher: $e");
     }
   }
 
-  /// age-trim to the newest [_maxSeen] (list order = age).
-  static List<String> _cap(List<String> ids) => ids.length > _maxSeen
-      ? ids.sublist(ids.length - _maxSeen)
-      : ids;
+  /// age-trim to the newest [_maxSeen] (list order = age) - but ids still
+  /// on the current board ([onBoard]) are never evicted: trimming a live
+  /// announcement out of the seen list makes the next batch that still
+  /// carries it look NEW again, resurrecting it as a duplicate push. Only
+  /// when the board alone exceeds the cap does the plain age-trim apply.
+  static List<String> _cap(List<String> ids, Set<String> onBoard) {
+    final excess = ids.length - _maxSeen;
+    if (excess <= 0) return ids;
+    final dropped = <int>{};
+    for (var i = 0; i < ids.length && dropped.length < excess; i++) {
+      if (!onBoard.contains(ids[i])) dropped.add(i);
+    }
+    final kept = [
+      for (var i = 0; i < ids.length; i++)
+        if (!dropped.contains(i)) ids[i],
+    ];
+    return kept.length > _maxSeen
+        ? kept.sublist(kept.length - _maxSeen)
+        : kept;
+  }
 
   /// Stable identity: the news feed has no ids, so the ref id plus a
   /// normalized title stands in. Normalization is deliberately minimal -

@@ -29,6 +29,14 @@ class IliasManager extends KITLoginManager {
       await Future.delayed(const Duration(milliseconds: 500));
     }
 
+    if (isBusy) {
+      // the bounded wait expired with an authorize() chain still running:
+      // handing out "" or the stale pre-refresh cookie is a silent login
+      // wall for the webview, so join the in-flight chain instead -
+      // bounded, so a permanently wedged SSO does not grow a new dead end
+      await _authInFlight?.timeout(const Duration(minutes: 2));
+    }
+
     if (DateTime.now().isAfter(_lastUpdate.add(const Duration(minutes: 30)))) {
       if (kDebugMode) {
         print("Refetching ilias session...");
@@ -78,9 +86,12 @@ class IliasManager extends KITLoginManager {
       }
 
       if (retryIfFailed && !sessionContainsCookieNamed("PHPSESSID")) {
-        // recursion goes through the SINGLE-FLIGHT entry; awaiting
-        // _authorize() directly would deadlock on _authInFlight
-        await authorize(retryIfFailed: false, refreshSession: false);
+        // retry INSIDE the chain must bypass the single-flight entry:
+        // _authInFlight still holds THIS future, so authorize(...) would
+        // hand back the outer future and await itself forever. The memo
+        // guards against concurrent external chains only; this recursion
+        // is the tail of the chain it already joined.
+        await _authorize(retryIfFailed: false, refreshSession: false);
         return;
       }
 
@@ -102,14 +113,69 @@ class IliasManager extends KITLoginManager {
     }
   }
 
+  /// Logged-out detection from the RESPONSE, not the cookie jar: PHPSESSID
+  /// is a session cookie that survives server-side expiry inside the jar,
+  /// and several landing pages carry no "Lokale ILIAS-Anmeldung" marker -
+  /// a dead session used to scrape as "0 courses / no news" success.
+  /// Dead sessions always land on a login page after redirects.
+  bool _looksLoggedOut(http.Response response,
+      {required String Function() body}) {
+    // final URL after redirects (request.url is the original);
+    // BaseResponseWithUrl is matched via an Object receiver so the
+    // promotion sees the interface getter, not Response's absent one
+    final Object asObject = response;
+    final url = asObject is http.BaseResponseWithUrl
+        ? asObject.url.toString()
+        : (response.request?.url.toString() ?? "");
+    if (url.contains("login.php") ||
+        url.contains("cmd=force_login") ||
+        url.contains("SingleSignOn") ||
+        url.contains("sso.kit.edu") ||
+        url.contains("oauth2/authorize")) {
+      return true;
+    }
+    // marker hunt on HTML only: PDF downloads run through the same
+    // session wrapper and must not pay for (or choke on) a body decode;
+    // a missing content-type counts as HTML - scrapers rely on the marker
+    if (!(response.headers["content-type"] ?? "text/html").contains("html")) {
+      return false;
+    }
+    return body().contains("Lokale ILIAS-Anmeldung");
+  }
+
+  /// Re-runs SSO when the ILIAS session died, then retries once; if the
+  /// retried page still shows a login wall the session is NOT revived -
+  /// throwing beats parsing login HTML as empty data or caching it as a
+  /// ".pdf". Every ILIAS GET shares this recovery: the scraping
+  /// extension's _withSessionBody and [downloadFile].
+  Future<http.Response> withSessionResponse(
+      Future<http.Response> Function() action) async {
+    var response = await action();
+    if (!_looksLoggedOut(response, body: () => bodyOf(response))) {
+      return response;
+    }
+    if (kDebugMode) print("ILIAS session dead -> re-authorize");
+    await authorize(refreshSession: true);
+    response = await action();
+    if (_looksLoggedOut(response, body: () => bodyOf(response))) {
+      throw Exception("ILIAS session could not be revived");
+    }
+    return response;
+  }
+
   Future<PinnedFile> downloadFile(String srcUrl, File targetFile) async {
     if (kDebugMode) {
       print("Downloading file to ${targetFile.path} from $srcUrl");
     }
 
     // lecture PDFs can be tens of MB on campus wifi - the API timeout is too tight
-    final response = await netGet(Uri.parse(srcUrl),
-        timeout: const Duration(minutes: 2));
+    //
+    // routed through the same dead-session wrapper every scraper call uses:
+    // a session that died between page load and tap silently re-authorizes
+    // instead of 302-ing the login page into the magic-byte gate below
+    // (which only knows how to fail, not to recover)
+    final response = await withSessionResponse(() => netGet(Uri.parse(srcUrl),
+        timeout: const Duration(minutes: 2)));
     var bytes = response.bodyBytes;
 
     // a dead PHPSESSID makes ILIAS 302 to force_login which resolves to a

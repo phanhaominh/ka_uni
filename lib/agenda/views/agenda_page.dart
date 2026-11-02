@@ -88,10 +88,8 @@ class _AgendaPageState extends State<AgendaPage> {
   void initState() {
     super.initState();
     _refresh();
-    // live countdowns in the next-up banner
-    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(() {});
-    });
+    // the 30 s ticker is armed in didChangeDependencies: it must respect
+    // route visibility from the very first frame (C22)
     if (widget.scrollToToday) {
       // the today card doubles as the "now" anchor, but it is NOT at its
       // final position on the first frame: the changes band and the
@@ -99,6 +97,25 @@ class _AgendaPageState extends State<AgendaPage> {
       // Arm the flag instead; [_scheduleTodayScroll] re-runs
       // ensureVisible once the first data-driven rebuild has landed
       _todayScrollPending = true;
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // C22: the overlay disables TickerMode in this subtree while the agenda
+    // sits under an opaque route or is offstage. Reading the flag here (not
+    // only inside the tick) both stops the countdown while the user cannot
+    // see it AND registers the dependency, so the very rebuild that
+    // re-exposes the route re-arms the timer - no up-to-30 s stale banner
+    // after the way back.
+    if (TickerMode.valuesOf(context).enabled) {
+      _ticker ??= Timer.periodic(const Duration(seconds: 30), (_) {
+        if (mounted) setState(() {});
+      });
+    } else {
+      _ticker?.cancel();
+      _ticker = null;
     }
   }
 
@@ -127,7 +144,19 @@ class _AgendaPageState extends State<AgendaPage> {
     });
   }
 
-  Future<void> _refresh() async {
+  /// Single-flight: drag-spam would otherwise interleave full refresh
+  /// pipelines (double prefs writes, two pairs of 45 s waits) — the same
+  /// guard the ICS export applies for exactly this
+  Future<void>? _refreshInFlight;
+
+  Future<void> _refresh() {
+    final running = _refreshInFlight;
+    if (running != null) return running;
+    return _refreshInFlight =
+        _refreshOnce().whenComplete(() => _refreshInFlight = null);
+  }
+
+  Future<void> _refreshOnce() async {
     final vm = context.read<KITProvider>();
     final now = DateTime.now();
 
@@ -174,7 +203,11 @@ class _AgendaPageState extends State<AgendaPage> {
     String? iliasError;
     setState(() => _iliasLoading = true);
     try {
-      await vm.iliasAuth; // don't race the auto-login SSO
+      // don't race the auto-login SSO, but bound the wait: a slow SSO
+      // chain may only stall the ILIAS card's first render for so long -
+      // the TimeoutException lands in the existing catch below, which
+      // keeps the cached card visible or shows the unreachable line
+      await vm.iliasAuth.timeout(const Duration(seconds: 30));
       unread = await vm.iliasManager.fetchUnread();
       announcements = await vm.iliasManager.fetchAnnouncements();
       final prefs3 = await SharedPreferences.getInstance();
@@ -185,12 +218,11 @@ class _AgendaPageState extends State<AgendaPage> {
       // must never delay or poison the agenda rebuild behind it
       IliasWatcher.diffAndNotify(announcements);
     } catch (_) {
-      // a cached card stays visible instead of degrading to an error line;
-      // the error only surfaces when there is nothing cached to show
-      iliasError = (iliasCached == null ||
-              (iliasCached.$1 == null && iliasCached.$2.isEmpty))
-          ? L10n.t("agenda.iliasUnreachable")
-          : null;
+      // the bare error line replaces content only where nothing was ever
+      // cached; with a snapshot on screen the rows stay and the section
+      // adds a staleness note instead (see _iliasSection) — saved data
+      // must never masquerade as live
+      iliasError = L10n.t("agenda.iliasUnreachable");
     }
     if (!mounted) return;
     setState(() {
@@ -207,6 +239,16 @@ class _AgendaPageState extends State<AgendaPage> {
           fetchedAt: _load.fetchedAt);
     });
 
+    // the injectors land silently behind the visible content
+    unawaited(_followUpInjectors(vm));
+  }
+
+  /// Bounded tail for the synthetic-event injectors: SignMeUp groups and
+  /// exam sittings write into the ICS cache only after the agenda has
+  /// already rendered. Deliberately NOT awaited by [_refreshOnce] — the
+  /// RefreshIndicator must hide once the visible content is up, not after
+  /// two further 45 s waits; the re-render lands as soon as they do.
+  Future<void> _followUpInjectors(KITProvider vm) async {
     // assigned SignMeUp groups land in the ICS cache as synthetic events;
     // wait for that injection (bounded) and re-render today/tomorrow once
     final smu = vm.signMeUpDone;
@@ -271,8 +313,11 @@ class _AgendaPageState extends State<AgendaPage> {
             // include a lecture that started yesterday but still runs past
             // midnight: it belongs to today's list and the running banner
             (o.start.isBefore(nextStart) && o.end.isAfter(dayStart)) &&
-            // parallel groups share start+title: keep one row
-            seen.add("${o.title}|${o.start.toIso8601String()}"))
+            // one row per lecture; the room is part of the key so two
+            // genuinely parallel groups of one family ("Übung X" 14:00 in
+            // different rooms) keep their own rows and room lines
+            seen.add(
+                "${o.title}|${o.start.toIso8601String()}|${o.room}"))
         .toList()
       ..sort((a, b) => a.start.compareTo(b.start));
   }
@@ -319,6 +364,12 @@ class _AgendaPageState extends State<AgendaPage> {
       ..sort((a, b) =>
           (a.windowEnd ?? DateTime(2100)).compareTo(b.windowEnd ?? DateTime(2100)));
 
+    // C21: each SignMeUp row builder runs exactly ONCE per build - the
+    // old `isNotEmpty`-condition-plus-value shape sorted and filtered
+    // both row sets twice per 30 s ticker tick
+    final smuRows = _signMeUpRows(vm, now);
+    final myRegs = _myRegsRows(vm, now);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(L10n.t("agenda.title")),
@@ -357,14 +408,16 @@ class _AgendaPageState extends State<AgendaPage> {
                 !vm.campusManager.examsLoaded &&
                 !vm.campusManager.examsSurfaceBroken)
               _pendingCard(context, L10n.t("agenda.examsLoading")),
-            if (_signMeUpRows(vm, now).isNotEmpty)
-              _signMeUpSection(context, _signMeUpRows(vm, now)),
+            if (smuRows.isNotEmpty) _signMeUpSection(context, smuRows),
             // my registrations + outcomes directly below the open
             // procedures: offers and results belong together
-            if (_myRegsRows(vm, now).isNotEmpty)
-              SignMeUpMineCard(rows: _myRegsRows(vm, now), now: now),
-            _staleFooter(context),
-            if (_loading)
+            if (myRegs.isNotEmpty)
+              SignMeUpMineCard(rows: myRegs, now: now),
+            _staleFooter(context, now),
+            // tail spinner only while the cache has not proven itself: once
+            // real cached content renders above, a spinner for the live
+            // ILIAS/synthetic tail is pure noise
+            if (_loading && !_feedCached)
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Center(child: CircularProgressIndicator()),
@@ -470,11 +523,8 @@ class _AgendaPageState extends State<AgendaPage> {
                   child: Text(
                       next == null
                           ? L10n.t("agenda.noEvents")
-                          : L10n.t("agenda.noEventsUntil", [
-                              "${L10n.weekday(next.start.weekday)}, "
-                                  "${next.start.day}."
-                                  "${next.start.month}. · ${_hm(next.start)}"
-                            ]),
+                          : L10n.t("agenda.noEventsUntil",
+                              [L10n.stamp(next.start)]),
                       style: TextStyle(color: scheme.outline, fontSize: 13)),
                 );
               }),
@@ -501,8 +551,12 @@ class _AgendaPageState extends State<AgendaPage> {
                               fontFeatures: const [
                                 FontFeature.tabularFigures()
                               ])),
-                      if (occ[i].room.isNotEmpty)
-                        AgendaRoomLine(room: occ[i].room),
+                      // #17: a roomless personal-ICS event still needs its
+                      // source chip row, so the line renders for it too
+                      if (occ[i].room.isNotEmpty || occ[i].fromPersonalIcs)
+                        AgendaRoomLine(
+                            room: occ[i].room,
+                            ownCalendar: occ[i].fromPersonalIcs),
                     ],
                   ),
                 ),
@@ -646,8 +700,13 @@ class _AgendaPageState extends State<AgendaPage> {
       if (at != null && (bestAt == null || at.isBefore(bestAt))) {
         best = e;
         bestAt = at;
-        bestTerm = e.terms
-            .firstWhere((t) => t.startAt == at, orElse: () => e.terms.first);
+        // two pool sittings can share a start; showing the first match's
+        // room would misattribute a sibling term — label only when the
+        // best start resolves to exactly one room
+        final atTerms = e.terms.where((t) => t.startAt == at).toList();
+        bestTerm = atTerms.map((t) => t.room).toSet().length == 1
+            ? atTerms.first
+            : null;
       }
     }
     if (best == null || bestAt == null) return const SizedBox.shrink();
@@ -690,8 +749,10 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 
   /// "Stand: HH:MM" / orange stale warning — silent-fetch failures become
-  /// visible instead of rendering yesterday's feed as current.
-  Widget _staleFooter(BuildContext context) {
+  /// visible instead of rendering yesterday's feed as current. Takes the
+  /// build-level `now` (C22): one clock reading per build, never a footer
+  /// disagreeing with the banner of the same frame.
+  Widget _staleFooter(BuildContext context, DateTime now) {
     final scheme = Theme.of(context).colorScheme;
     final at = _load.fetchedAt;
     if (at == null) {
@@ -704,9 +765,10 @@ class _AgendaPageState extends State<AgendaPage> {
             style: TextStyle(fontSize: 11, color: scheme.error)),
       );
     }
-    final stale = DateTime.now().difference(at) > const Duration(hours: 6);
+    final age = now.difference(at);
+    final stale = age > const Duration(hours: 6);
     final label = stale
-        ? L10n.t("agenda.staleData", ["${DateTime.now().difference(at).inHours} h"])
+        ? L10n.t("agenda.staleData", ["${age.inHours} h"])
         : L10n.t("agenda.asOf", [_hm(at)]);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -738,7 +800,9 @@ class _AgendaPageState extends State<AgendaPage> {
               // fresh-install-only spinner: with a cached snapshot the card
               // shows it and swaps in the live data when the fetch lands
               _pendingRow(context, L10n.t("agenda.iliasLoading"))
-            else if (_load.iliasError != null)
+            else if (_load.iliasError != null &&
+                _load.unread == null &&
+                _load.announcements.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Text(_load.iliasError!,
@@ -763,14 +827,56 @@ class _AgendaPageState extends State<AgendaPage> {
                       ? null
                       : Text(L10n.stamp(a.when!),
                           style: const TextStyle(fontSize: 11)),
-                  trailing: const Icon(Icons.chevron_right, size: 18),
-                  onTap: () => launchUrl(Uri.parse(a.url),
-                      mode: LaunchMode.externalApplication),
+                  // F12 rule: a non-launchable payload (malformed or a
+                  // foreign scheme) gets no chevron and no tap target
+                  trailing: _launchableUrl(a.url) == null
+                      ? null
+                      : const Icon(Icons.chevron_right, size: 18),
+                  onTap: () => _launchExternal(a.url),
                 ),
+            if (_load.iliasError != null &&
+                (_load.unread != null || _load.announcements.isNotEmpty))
+              // refresh failed but a cached snapshot stays on screen: keep
+              // the rows and say what they are — same honesty rule as
+              // _staleFooter, no silent yesterday-presented-as-today
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Text(L10n.t("agenda.iliasStale"),
+                    style: TextStyle(color: scheme.error, fontSize: 12)),
+              ),
           ],
         ),
       ),
     );
+  }
+
+  /// Scheme gate for scraped announcement URLs (mirrors the Raum-Finder's
+  /// F12 hardening): only a well-formed http(s) URL reaches the external
+  /// launcher — a malformed "http:/broken" used to throw inside the tap,
+  /// and mailto:/javascript: must never reach a foreign application.
+  Uri? _launchableUrl(String raw) {
+    if (raw.isEmpty) return null;
+    try {
+      final uri = Uri.parse(raw);
+      return uri.host.isNotEmpty &&
+              (uri.scheme == "http" || uri.scheme == "https")
+          ? uri
+          : null;
+    } on Object catch (_) {
+      return null;
+    }
+  }
+
+  /// Error-handled external launch through the gate: a launcher that is
+  /// missing or refuses the URL stays a no-op instead of throwing inside
+  /// the tap.
+  void _launchExternal(String raw) {
+    final uri = _launchableUrl(raw);
+    if (uri == null) return;
+    try {
+      launchUrl(uri, mode: LaunchMode.externalApplication)
+          .catchError((_) => false);
+    } on Object catch (_) {}
   }
 
   Widget _examsSection(BuildContext context, List<ExamEntry> exams) {
@@ -803,13 +909,13 @@ class _AgendaPageState extends State<AgendaPage> {
               ),
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton(
+              // Filled CTA on the danger card: bare text hid the one
+              // action that still prevents a failed attempt
+              child: FilledButton(
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => const ExamsPage())),
-                // default primary-green label on the red container failed
-                // contrast; the container's own on-color is legible
-                style: TextButton.styleFrom(
-                    foregroundColor: scheme.onErrorContainer),
+                // label now sits on the button's own surface, so the old
+                // primary-green-on-red-container contrast problem is gone
                 child: Text(L10n.t("agenda.toRegistration")),
               ),
             ),
@@ -895,11 +1001,12 @@ class _AgendaPageState extends State<AgendaPage> {
               ),
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => launchUrl(
-                    Uri.parse("https://plus.campus.kit.edu/"),
-                    mode: LaunchMode.externalApplication),
-                child: Text(L10n.t("agenda.signmeupTitle")),
+              // tonal CTA with action wording: the old text button merely
+              // repeated the card title and read as a label, not a launch
+              child: FilledButton.tonal(
+                onPressed: () =>
+                    _launchExternal("https://plus.campus.kit.edu/"),
+                child: Text(L10n.t("agenda.signmeupOpen")),
               ),
             ),
           ],
@@ -922,12 +1029,19 @@ class _AgendaPageState extends State<AgendaPage> {
 /// the SAME string the walk hints resolve. Placeholder rooms ("-", "--",
 /// "ILIAS") would open a wall of 16-89 junk rows, so they stay plain
 /// Text (F1); a real room's label is tinted [ColorScheme.primary] to
-/// announce that it is tappable (F2, the tap target itself is silent).
+/// announce that it is tappable (F2; C26 additionally announces the tap
+/// target itself to screen readers as a button).
 class AgendaRoomLine extends StatelessWidget {
-  const AgendaRoomLine({super.key, required this.room});
+  const AgendaRoomLine(
+      {super.key, required this.room, this.ownCalendar = false});
 
   /// Raw ICS LOCATION of the occurrence.
   final String room;
+
+  /// #17: the occurrence comes from the student's OWN imported ICS
+  /// (IcsOccurrence.fromPersonalIcs) - renders a small "own calendar" chip
+  /// so the duplicate of a feed lecture stops being an unlabeled twin.
+  final bool ownCalendar;
 
   @override
   Widget build(BuildContext context) {
@@ -938,18 +1052,42 @@ class AgendaRoomLine extends StatelessWidget {
     // de-duplicated string fuzzy-matches the directory better. No
     // behavior risk: ICS matching/dedup keep using the raw room.
     final shown = IcsOccurrence.cleanRoom(room);
+    Widget? line;
     if (ExamTerm.isPlaceholderRoom(shown)) {
       // plain Text: nothing to open, nothing to tap
-      return Text(shown,
-          style: TextStyle(fontSize: 12, color: scheme.outline));
+      if (shown.isNotEmpty) {
+        line = Text(shown,
+            style: TextStyle(fontSize: 12, color: scheme.outline));
+      }
+    } else {
+      line = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (context) => PlaceSearchPage(
+                initialQuery: shown, fromRoom: shown))),
+        // C26: a tinted label alone is invisible to TalkBack - the tap
+        // target announces itself as a button carrying the room name
+        child: Semantics(
+          button: true,
+          label: shown,
+          child: Text(shown,
+              style: TextStyle(fontSize: 12, color: scheme.primary)),
+        ),
+      );
     }
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-          builder: (context) => PlaceSearchPage(
-              initialQuery: shown, fromRoom: shown))),
-      child: Text(shown,
-          style: TextStyle(fontSize: 12, color: scheme.primary)),
+    if (!ownCalendar) return line ?? const SizedBox.shrink();
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8)),
+      child: Text(L10n.t("agenda.ownCalendar"),
+          style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant)),
+    );
+    if (line == null) return chip;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [Flexible(child: line), const SizedBox(width: 6), chip],
     );
   }
 }

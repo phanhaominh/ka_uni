@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 class TutorialManager extends ChangeNotifier {
   final Map<String, List<Tutorial>> _tutorialsBySemester = {};
   final Set<String> _loadedSemesters = {};
-  final Set<String> _loadingSemesters = {};
 
   TutorialManager() {
     _loadSemester(KITProvider.currentSemesterString);
@@ -20,7 +19,6 @@ class TutorialManager extends ChangeNotifier {
   void clearAll() {
     _tutorialsBySemester.clear();
     _loadedSemesters.clear();
-    _loadingSemesters.clear();
     _loadFutures.clear();
     notifyListeners();
   }
@@ -121,7 +119,6 @@ class TutorialManager extends ChangeNotifier {
     if (rawList == null) {
       _tutorialsBySemester[semesterString] = [];
       _loadedSemesters.add(semesterString);
-      _loadingSemesters.remove(semesterString);
       notifyListeners();
       return;
     }
@@ -135,7 +132,6 @@ class TutorialManager extends ChangeNotifier {
     tutorials.sort(_tutorialComparator);
     _tutorialsBySemester[semesterString] = tutorials;
     _loadedSemesters.add(semesterString);
-    _loadingSemesters.remove(semesterString);
     notifyListeners();
   }
 

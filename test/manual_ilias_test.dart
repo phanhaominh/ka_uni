@@ -22,7 +22,9 @@ class _StubFetchManager extends CampusManager {
   /// choke point the real fetchModule runs before returning.
   @override
   Future<KITModule> fetchModule(HierarchicTableRow row,
-      {recursiveRetry = true, userInitiated = false}) async {
+      {recursiveRetry = true,
+      sessionRetried = false,
+      userInitiated = false}) async {
     final module = KITModule()
       ..id = "csbr-${row.id}"
       ..title = row.title
@@ -77,8 +79,7 @@ void main() {
 
       expect(cm.manualIliasUrlFor("advanced mathematics i (lecture)"), _am1Url);
       expect(cm.manualIliasUrlFor("ADVANCED MATHEMATICS I"), _am1Url);
-      expect(
-          cm.manualIliasUrlFor("Advanced Mathematics I (Lecture) - 0140000"),
+      expect(cm.manualIliasUrlFor("Advanced Mathematics I (Lecture) - 0140000"),
           _am1Url);
       // a different lecture must not inherit the link
       expect(cm.manualIliasUrlFor("Engineering Mechanics I"), isNull);
@@ -94,11 +95,9 @@ void main() {
       expect(fresh.manualIliasUrlFor("Advanced Mathematics I"), isNull);
     });
 
-    test("rejects plain http, foreign hosts and look-alike suffixes",
-        () async {
+    test("rejects plain http, foreign hosts and look-alike suffixes", () async {
       await expectLater(
-          cm.setManualIliasUrl(
-              "Advanced Mathematics I",
+          cm.setManualIliasUrl("Advanced Mathematics I",
               "http://ilias.studium.kit.edu/goto.php?target=crs_0140000"),
           throwsArgumentError);
       await expectLater(

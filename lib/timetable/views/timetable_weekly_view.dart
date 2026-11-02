@@ -27,15 +27,25 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
   _TimetableWeeklyViewState({Weekday? initialWeekday}) {
     _initialWeekday =
         initialWeekday ?? _initialWeekday.fromInt(DateTime.now().weekday - 1);
+    _currentRealPage = 10000 + _initialWeekday.idx;
   }
 
   final _weekdayHeight = 90 * 7 * 0.7 + 200;
   final CarouselSliderController _carouselSliderController = CarouselSliderController();
 
+  /// Fixed height of the date-heading band painted above the carousel
+  /// viewport (top padding + titleLarge row + gap to the card).
+  static const _dateBandHeight = 48.0;
+
+  /// The carousel page currently centered; with infinite scroll "today"
+  /// starts at 10000 + initial index, one step = ±1 day.
+  late int _currentRealPage;
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
+        _dateBand(context),
         CarouselSlider.builder(
             itemCount: 1,
             itemBuilder: _weekdayCarouselBuilder,
@@ -43,7 +53,14 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
             options: CarouselOptions(
               enableInfiniteScroll: true,
               initialPage: _initialWeekday.idx,
-              height: _weekdayHeight - 40,
+              // the header moved out of the pages into the fixed band,
+              // so subtract it here: total height and card placement
+              // stay exactly as before
+              height: _weekdayHeight - 40 - _dateBandHeight,
+              // feeds the REAL page index to the date band - with
+              // itemCount 1 the onPageChanged index is always 0 and
+              // useless
+              onScrolled: _onScrolled,
             )),
       ],
     );
@@ -53,17 +70,63 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
     final vm = Provider.of<KITProvider>(context);
     final theme = Theme.of(context);
 
-    final now = DateTime.now();
-
     final weekdayIdx = (w - 10000);
-    final todayWeekdayIdx = DateTime.now().weekday - 1;
-    final date = now.add(Duration(days: weekdayIdx - todayWeekdayIdx));
 
     final TimetableDaily? tt =
         weekdayIdx % 7 < 5 ? vm.timetable.days[weekdayIdx % 7] : null;
 
-    final monthStr = L10n.t("timetable.month${date.month}");
+    // The date heading now lives in the fixed band above the carousel
+    // viewport (see _dateBand); a page only paints its day blocks.
+    return BlockContainer(
+      innerPadding: EdgeInsets.zero,
+      child: tt != null
+          ? TimetableDailyView(tt: tt)
+          : Padding(
+              padding: EdgeInsets.symmetric(
+                  vertical: MediaQuery.of(context).size.height * 0.15),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: MediaQuery.of(context).size.width * 0.8,
+                    height: _weekdayHeight * 0.4,
+                  ),
+                  Column(
+                    children: [
+                      Icon(
+                        CupertinoIcons.zzz,
+                        color: theme.colorScheme.primary,
+                        size: 64,
+                      ),
+                      Padding(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 5),
+                        child: Text(
+                          L10n.t("timetable.weekend"),
+                          style: theme.textTheme.bodyLarge,
+                        ),
+                      )
+                    ],
+                  )
+                ],
+              )),
+    );
+  }
 
+  /// The "Montag · 2. November"/"Heute, …" heading of the centered page.
+  /// It paints in its OWN fixed band above the carousel viewport: the
+  /// pages used to draw their headings inside the viewport, so the
+  /// peeking neighbours' headings bled through behind the visible one -
+  /// ghost half-letters at both carousel edges.
+  Widget _dateBand(BuildContext context) {
+    final theme = Theme.of(context);
+    final now = DateTime.now();
+
+    final weekdayIdx = _currentRealPage - 10000;
+    final todayWeekdayIdx = now.weekday - 1;
+    final date = now.add(Duration(days: weekdayIdx - todayWeekdayIdx));
+
+    final monthStr = L10n.t("timetable.month${date.month}");
     final weekdayShortStr = L10n.weekday(weekdayIdx % 7 + 1);
 
     String dateTitle = L10n.t("timetable.dayMonth", [date.day, monthStr]);
@@ -76,88 +139,60 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
       dateTitle = L10n.t("agenda.tomorrowFull", [dateTitle]);
     }
 
-    return Stack(
-      children: [
-        Column(
+    return SizedBox(
+      height: _dateBandHeight,
+      child: Padding(
+        padding: EdgeInsets.only(left: 10, right: 10, top: 10),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              padding: EdgeInsets.only(left: 10, right: 10, top: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(
-                    weekdayShortStr,
-                    style: theme.textTheme.titleLarge?.copyWith(color: theme.isLightMode ? Colors.black26 : Colors.white30),
-                  ),
-
-                  Padding(padding: EdgeInsets.all(5)),
-
-                  Text(
-                    dateTitle,
-                    style: theme.textTheme.titleLarge,
-                  ),
-
-                  Padding(padding: EdgeInsets.all(5)),
-
-                  Text(
-                    weekdayShortStr,
-                    style: theme.textTheme.titleLarge?.copyWith(color: Colors.transparent),
-                  ),
-
-                  Spacer(),
-
-                  ShowTodayButton(
-                    relativeOffset: w - (10000 + _initialWeekday.idx),
-                    onPressed: () => _showToday(idx, w)
-                  ),
-
-                  Padding(padding: EdgeInsets.only(right: 5)),
-                ],
-              ),
+            Text(
+              weekdayShortStr,
+              style: theme.textTheme.titleLarge?.copyWith(color: theme.isLightMode ? Colors.black26 : Colors.white30),
             ),
+
             Padding(padding: EdgeInsets.all(5)),
-            BlockContainer(
-              innerPadding: EdgeInsets.zero,
-              child: tt != null
-                  ? TimetableDailyView(tt: tt)
-                  : Padding(
-                      padding: EdgeInsets.symmetric(
-                          vertical: MediaQuery.of(context).size.height * 0.15),
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          SizedBox(
-                            width: MediaQuery.of(context).size.width * 0.8,
-                            height: _weekdayHeight * 0.4,
-                          ),
-                          Column(
-                            children: [
-                              Icon(
-                                CupertinoIcons.zzz,
-                                color: theme.colorScheme.primary,
-                                size: 64,
-                              ),
-                              Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 5),
-                                child: Text(
-                                  L10n.t("timetable.weekend"),
-                                  style: theme.textTheme.bodyLarge,
-                                ),
-                              )
-                            ],
-                          )
-                        ],
-                      )),
-            )
+
+            Text(
+              dateTitle,
+              style: theme.textTheme.titleLarge,
+            ),
+
+            Padding(padding: EdgeInsets.all(5)),
+
+            // mirrors the faded leading weekday so the date keeps its
+            // horizontal seat while the short weekday name changes width
+            Text(
+              weekdayShortStr,
+              style: theme.textTheme.titleLarge?.copyWith(color: Colors.transparent),
+            ),
+
+            Spacer(),
+
+            ShowTodayButton(
+                relativeOffset:
+                    _currentRealPage - (10000 + _initialWeekday.idx),
+                onPressed: () => _showToday(_currentRealPage)),
+
+            Padding(padding: EdgeInsets.only(right: 5)),
           ],
-        )
-      ],
+        ),
+      ),
     );
   }
 
-  void _showToday(int idx, int w) {
+  /// Tracks which real carousel page is centered (one step = ±1 day);
+  /// only rebuilds when the rounded page actually changes.
+  void _onScrolled(double? page) {
+    if (page == null) return;
+    final centered = page.round();
+    if (centered != _currentRealPage) {
+      setState(() => _currentRealPage = centered);
+    }
+  }
+
+  void _showToday(int w) {
     int toPage = 10000 + _initialWeekday.index - w;
     toPage += toPage.sign;
     _carouselSliderController.animateToPage(toPage, curve: Curves.easeInOut);

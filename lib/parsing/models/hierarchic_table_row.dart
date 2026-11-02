@@ -3,8 +3,6 @@
 // die at RUNTIME with NoSuchMethodError (dynamic dispatch skips extension
 // methods) - which silently killed every course-tree row parse, leaving
 // rowsSorted empty ("no grade row") and login permanently broken.
-import 'dart:math';
-
 
 class HierarchicTableRow  {
   final int level;
@@ -30,6 +28,11 @@ class HierarchicTableRow  {
   int get relevancyRank {
     return isGradeEmpty ? 10 : 1;
   }
+
+  // "1,3" / "1 , 3" / "3,0 (versucht)": the German decimal of a grade cell,
+  // probed on entity/whitespace-stripped text. Dot decimals count too -
+  // the ledger's own _decimal accepts both shapes.
+  static final _gradeMark = RegExp(r"\d{1,3}[,.]\d{1,2}");
 
   static HierarchicTableRow? parseTr(element, Map<int, List<HierarchicTableRow>> rowsSorted) {
     int level = 0;
@@ -75,9 +78,22 @@ class HierarchicTableRow  {
       pointsAcquired: cells[6].innerHtml,
       pointsMax: cells[7].innerHtml,
     );
-    if (newRow.grade.contains(",")) {
-      final commaIndex = newRow.grade.lastIndexOf(",");
-      newRow.grade = newRow.grade.substring(max(0, commaIndex - 1), min(commaIndex + 2, newRow.grade.length));
+    // the grade cell wraps the mark in entities and scattered whitespace
+    // ("1,&nbsp;3" arrives as "1 , 3"). The old ±2-chars window around the
+    // LAST comma shredded exactly those spaced decimals into ", 3" garbage
+    // and minted prose cells ("keine Angabe, s. o.") into grade-shaped
+    // strings that then mis-ranked via isGradeEmpty. Probe the stripped
+    // cell for the decimal instead; with no decimal nothing was graded, so
+    // the cleaned cell survives whole ("bestanden", empty, "&nbsp;").
+    final gradeText = newRow.grade
+        .replaceAll(RegExp(r"&nbsp;", caseSensitive: false), " ")
+        .replaceAll(RegExp(r"\s+"), " ")
+        .trim();
+    final gradeMark = _gradeMark.firstMatch(gradeText.replaceAll(" ", ""));
+    if (gradeMark != null) {
+      newRow.grade = gradeMark.group(0)!;
+    } else {
+      newRow.grade = gradeText;
     }
 
     newRow.clearTitle();

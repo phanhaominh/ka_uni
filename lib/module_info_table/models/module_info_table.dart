@@ -1,3 +1,4 @@
+import 'package:html/dom.dart';
 import 'package:html/parser.dart';
 import 'package:kit_mobile/module/models/module.dart';
 import 'package:kit_mobile/module_info_table/models/module_info_table_cell.dart';
@@ -95,21 +96,30 @@ class ModuleInfoTable {
 
     List<ModuleInfoTable> tables = [];
 
-    final captions = document.getElementsByClassName("table-caption");
-
-    document.getElementsByClassName("table-container").forEach((tableContainerNode) {
-      final table = parseFromHtml(tableContainerNode.innerHtml);
+    // Captions attach by document position: each .table-caption belongs to
+    // the .table-container that follows it (cascampus templatecomponents
+    // print "<h2 class=table-caption>...</h2><div class=table-container>").
+    // The old length-equality pairing deserted EVERY caption as soon as one
+    // container failed to parse - caption-less tables lose their exam /
+    // milestone / appointment type detection and the caption-gated favorite
+    // stars die on the whole module page.
+    Element? pendingCaption;
+    document.querySelectorAll(".table-caption, .table-container").forEach((node) {
+      if (node.classes.contains("table-caption")) {
+        pendingCaption = node;
+        return;
+      }
+      final table = parseFromHtml(node.innerHtml);
       if (table != null) {
+        final caption = pendingCaption;
+        if (caption != null) {
+          removeHtmlChildren(caption);
+          table.caption = _clearTitle(caption.innerHtml);
+        }
         tables.add(table);
       }
+      pendingCaption = null;
     });
-
-    if (tables.length == captions.length) {
-      for (int i = 0; i < captions.length; ++i) {
-        removeHtmlChildren(captions[i]);
-        tables[i].caption = _clearTitle(captions[i].innerHtml);
-      }
-    }
 
     return tables;
   }

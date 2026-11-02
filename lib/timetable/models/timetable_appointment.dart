@@ -154,8 +154,19 @@ class TimetableAppointment {
       return null;
     }
 
-    appointment.begin = appointment.begin.copyWith(hour: int.tryParse(beginStringSplit[0]), minute: int.parse(beginStringSplit[1]));
-    appointment.end = appointment.end.copyWith(hour: int.tryParse(endStringSplit[0]), minute: int.parse(endStringSplit[1]));
+    final beginHour = int.tryParse(beginStringSplit[0]);
+    final beginMinute = int.tryParse(beginStringSplit[1]);
+    final endHour = int.tryParse(endStringSplit[0]);
+    final endMinute = int.tryParse(endStringSplit[1]);
+    if (beginHour == null || beginMinute == null || endHour == null || endMinute == null) {
+      if (kDebugMode) {
+        print("Failed to parse the appointment! malformed app-interval \"$intervalStr\"");
+      }
+      return null;
+    }
+
+    appointment.begin = appointment.begin.copyWith(hour: beginHour, minute: beginMinute);
+    appointment.end = appointment.end.copyWith(hour: endHour, minute: endMinute);
 
 
 

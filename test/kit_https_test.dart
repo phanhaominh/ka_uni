@@ -56,6 +56,40 @@ void main() {
     expect(pin(""), isNotNull); // resolves to the base itself
   });
 
+  test("sessionExpired sniffing is case-insensitive", () {
+    final m = KITLoginManager();
+    expect(
+        m.sessionExpired('<div class="Message Message-Error">Nicht '
+            'angemeldet.</div>'),
+        isTrue,
+        reason: "capitalised class or copy still counts");
+    expect(m.sessionExpired("Sitzung abgelaufen"), isFalse,
+        reason: "the error marker context is still required");
+  });
+
+  test("ILIAS stage0 clear drops only ilias-domain jar entries", () {
+    final m = KITLoginManager();
+    final store = m.session.cookieStore;
+    store.updateCookies("PHPSESSID=dead; path=/", "ilias.studium.kit.edu", "/");
+    store.updateCookies("JSESSIONID=idp; path=/", "idp.scc.kit.edu", "/idp");
+    store.updateCookies(
+        "ASP.NET_SessionId=cas; path=/", "campus.studium.kit.edu", "/");
+    store.updateCookies("idsrv=plus; path=/", "plus.campus.kit.edu", "/");
+    m.clearIliasSessionCookies();
+    final left = m.session.cookieStore.cookies
+        .map((c) => "${c.domain}/${c.name}")
+        .toList();
+    expect(left, isNot(contains("ilias.studium.kit.edu/PHPSESSID")));
+    expect(
+        left,
+        containsAll([
+          "idp.scc.kit.edu/JSESSIONID",
+          "campus.studium.kit.edu/ASP.NET_SessionId",
+          "plus.campus.kit.edu/idsrv",
+        ]),
+        reason: "the campus/plus/IdP sessions must survive an ILIAS refresh");
+  });
+
   test("hardcoded login seeds still pass the pin", () {
     // every url the chain itself navigates to must survive the check
     expect(

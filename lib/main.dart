@@ -52,6 +52,10 @@ void main() async {
     }
     await registerBackgroundPolling();
     await registerTestPollOnce();
+    // stale pre-update alarm ghosts must die BEFORE any boot-time reschedule
+    // can run: every scheduling path lives below runApp(), after this
+    // awaited cancel+rebuild from the cached timetable
+    await MeiNotifications.resyncOnStartup();
   } catch (e) {
     if (kDebugMode) print("notifications bootstrap failed: $e");
   }

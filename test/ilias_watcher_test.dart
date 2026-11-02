@@ -98,6 +98,43 @@ void main() {
     expect(pushed.length, 3); // and the cap still applies
   });
 
+  test("cap trim keeps ids still on the board: no resurrection re-notify",
+      () async {
+    SharedPreferences.setMockInitialValues({
+      IliasWatcher.seenKey:
+          jsonEncode([for (var i = 0; i < 299; i++) "9|alt$i"]),
+    });
+    // "9|alt0" is the oldest id AND still announced: a plain age-trim
+    // drops it, and the next batch that still carries it re-notifies it
+    final board = [
+      _a("alt0", ref: 9, course: "Altkurs"),
+      for (var i = 0; i < 5; i++) _a("neu $i"),
+    ];
+    await IliasWatcher.diffAndNotify(board);
+    final s = await stored();
+    expect(s.length, 300);
+    expect(s, contains("9|alt0"));
+    expect(s, isNot(contains("9|alt1"))); // off-board oldest dropped first
+    pushed.clear();
+    await IliasWatcher.diffAndNotify(board);
+    expect(pushed, isEmpty); // a plain trim resurrects alt0 right here
+  });
+
+  test("a failing push stays unmarked and is retried, not lost", () async {
+    await IliasWatcher.diffAndNotify([]); // seed past the first run
+    var down = true;
+    IliasWatcher.notify = (title, body) async {
+      if (down && body == "krank") throw Exception("channel down");
+      pushed.add((title, body));
+    };
+    await IliasWatcher.diffAndNotify([_a("krank")]);
+    expect(pushed, isEmpty);
+    expect(await stored(), isEmpty); // the failed attempt consumed nothing
+    down = false;
+    await IliasWatcher.diffAndNotify([_a("krank")]);
+    expect(pushed.map((p) => p.$2), ["krank"]); // late, not swallowed
+  });
+
   test("entries whose title is pure chrome are skipped entirely", () async {
     await IliasWatcher.diffAndNotify([]); // seed past the first run
     await IliasWatcher.diffAndNotify([_a(" – !! "), _a("Echt")]);

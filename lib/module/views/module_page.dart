@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:html/parser.dart' as html_parser;
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
@@ -33,6 +34,24 @@ class _ModuleViewState extends State<ModuleView> {
     return FutureBuilder(
       future: widget.module,
       builder: (BuildContext context, AsyncSnapshot<KITModule> moduleSnapshot) {
+        if (moduleSnapshot.hasError) {
+          // the info button hands the fetch future straight to this page
+          // without awaiting it: without an error branch a dead network
+          // left the spinner turning forever and the rejection surfaced
+          // nowhere (the ILIAS button beside it mounted-guards for years)
+          return Scaffold(
+            appBar: AppBar(
+              title: Text(L10n.t("module.title"), style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.normal),),
+            ),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(L10n.t("module.loadError"), textAlign: TextAlign.center, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error),),
+              ),
+            ),
+          );
+        }
+
         if (!moduleSnapshot.hasData || moduleSnapshot.data == null) {
           return Scaffold(
             appBar: AppBar(
@@ -239,27 +258,11 @@ class _ModuleViewState extends State<ModuleView> {
     }
   }
 
-  String _formatGrade(String grade) {
-    bool insideHTMLChar = false;
-    String result = "";
-
-    for (final c in grade.split("")) {
-      if (insideHTMLChar) {
-        if (c == ";") {
-          insideHTMLChar = false;
-        }
-      }
-      else {
-        if (c == "&") {
-          insideHTMLChar = true;
-        }
-        else {
-          result += c;
-        }
-      }
-    }
-
-    return result;
-  }
+  /// Campus grade cells arrive as HTML fragments ("sehr gut &nbsp;", named
+  /// entities, the occasional tag). Decode them with the same parser the
+  /// scrapers use: unlike the old hand-rolled stripper it decodes entities
+  /// properly, drops tags, and passes a stray '&' through untouched.
+  String _formatGrade(String grade) =>
+      (html_parser.parseFragment(grade).text ?? "").trim();
 
 }

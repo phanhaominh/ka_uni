@@ -30,12 +30,18 @@ class ExamsPage extends StatelessWidget {
     // cascampus lists the exam offers of the whole degree-programme
     // catalogue: exams of lectures that are NOT on the current timetable
     // are other semesters' business - keep them listed but never urgent.
+    // C38: the relevance gate runs exactly once per exam and the
+    // cross-section exclusions consult one-shot Sets - the five list
+    // scans used to re-run isTakingThisSemester and O(n) list.contains
+    // against the whole catalogue on every pass
+    final taking = {for (final e in exams) e: cm.isTakingThisSemester(e)};
     final catalog = exams
-        .where((e) => !e.registered && cm.isTakingThisSemester(e) == false)
+        .where((e) => !e.registered && taking[e] == false)
         .toList()
       ..sort(byWindowEnd);
+    final inCatalog = catalog.toSet();
     final open = exams
-        .where((e) => e.needsAction(now) && !catalog.contains(e))
+        .where((e) => e.needsAction(now) && !inCatalog.contains(e))
         .toList()
       ..sort(byWindowEnd);
     final registered = exams.where((e) => e.registered).toList()
@@ -43,18 +49,19 @@ class ExamsPage extends StatelessWidget {
     final upcoming = exams
         .where((e) =>
             !e.registered &&
-            !catalog.contains(e) &&
+            !inCatalog.contains(e) &&
             !e.needsAction(now) &&
             e.windowStart != null &&
             now.isBefore(e.windowStart!))
         .toList()
       ..sort(byWindowStart);
+    final upcomingSet = upcoming.toSet();
     final rest = exams
         .where((e) =>
             !e.registered &&
-            !catalog.contains(e) &&
+            !inCatalog.contains(e) &&
             !e.needsAction(now) &&
-            !upcoming.contains(e))
+            !upcomingSet.contains(e))
         .toList()
       ..sort(byWindowEnd);
 
@@ -171,9 +178,10 @@ class ExamsPage extends StatelessWidget {
             t.room.isNotEmpty ? "  •  ${t.room}" : "",
           ])),
       if (e.windowStart != null && e.windowEnd != null)
-        L10n.t("exams.detailWindow", [_fmt(e.windowStart!), _fmt(e.windowEnd!)])
+        L10n.t("exams.detailWindow",
+            [L10n.deadline(e.windowStart!), L10n.deadline(e.windowEnd!)])
       else if (e.windowEnd != null)
-        L10n.t("exams.detailDeadline", [_fmt(e.windowEnd!)]),
+        L10n.t("exams.detailDeadline", [L10n.deadline(e.windowEnd!)]),
       if (e.examiners.isNotEmpty)
           L10n.t("exams.detailExaminers", [e.examiners]),
       e.examType,
@@ -201,19 +209,21 @@ class ExamsPage extends StatelessWidget {
             Wrap(
               spacing: 6,
               children: [
-                _chip(
-                    e.registered
-                        ? L10n.t("exams.chipRegistered")
-                        : urgent
-                            ? L10n.t("exams.chipNotRegisteredNow")
-                            : L10n.t("exams.chipNotRegistered"),
-                    e.registered
-                        ? scheme.tertiary
-                        : urgent
-                            ? scheme.error
-                            : scheme.outline),
+                if (e.registered)
+                  _chip(L10n.t("exams.chipRegistered"), scheme.tertiary)
+                else if (urgent)
+                  // #11: filled - the one chip on the page meaning "act
+                  // now" must not differ from its benign sibling only by
+                  // a red-vs-grey tint of the same thin outline
+                  _urgentChip(L10n.t("exams.chipNotRegisteredNow"), scheme)
+                else
+                  _chip(L10n.t("exams.chipNotRegistered"), scheme.outline),
                 if (e.examNumber.isNotEmpty)
-                  _chip(e.examNumber, scheme.secondary),
+                  // plain caption, not a second pill: an identical chip
+                  // for the module number invites taps that do nothing
+                  Text(e.examNumber,
+                      style: TextStyle(
+                          fontSize: 11, color: scheme.outline)),
               ],
             ),
           ],
@@ -231,7 +241,16 @@ class ExamsPage extends StatelessWidget {
         side: BorderSide(color: color.withValues(alpha: 0.6)),
       );
 
-  static String _fmt(DateTime d) =>
-      "${d.day.toString().padLeft(2, "0")}.${d.month.toString().padLeft(2, "0")}.${d.year} "
-      "${d.hour.toString().padLeft(2, "0")}:${d.minute.toString().padLeft(2, "0")}";
+  Widget _urgentChip(String label, ColorScheme scheme) => Chip(
+        visualDensity: VisualDensity.compact,
+        // errorContainer is the solid M3 destructive surface - unmistakable
+        // against the outline chips and contrast-safe in both brightnesses
+        label: Text(label,
+            style: TextStyle(
+                fontSize: 11,
+                color: scheme.onErrorContainer,
+                fontWeight: FontWeight.w700)),
+        backgroundColor: scheme.errorContainer,
+        side: BorderSide(color: scheme.error),
+      );
 }

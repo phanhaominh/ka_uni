@@ -12,6 +12,10 @@ const Map<String, String> de_files = {
   "files.save": "Speichern",
   "files.errorWithReason": "Fehler: {0}",
   "files.noneFound": "Keine Dateien gefunden.",
+  "files.cacheEmpty":
+      "Keine Dateien im Cache – öffne ILIAS zum Synchronisieren",
+  "files.cachedFileCountOne": "{0} Datei",
+  "files.cachedFileCountOther": "{0} Dateien",
   "files.renameFile": "Datei umbenennen",
   "files.newName": "Neuer Name",
   "files.removeFile": "Datei entfernen",
@@ -20,6 +24,7 @@ const Map<String, String> de_files = {
   "files.noModules": "Keine Module verfügbar",
   "files.fileSaved": "Datei gespeichert",
   "files.saveFailed": "Speichern fehlgeschlagen",
+  "files.unpinFailed": "Entfernen fehlgeschlagen – bitte erneut versuchen",
   "files.selectModule": "Modul auswählen",
   "files.selectModuleHint": "Bitte wähle das Modul für die Datei aus.",
   "files.nameFile": "Datei benennen",
@@ -37,6 +42,7 @@ const Map<String, String> de_files = {
   "module.addToTimetableFailed": "Fehler beim Hinzufügen von {0} zum Stundenplan",
   "module.addedToTimetable": "Wurde zum Stundenplan hinzugefügt!",
   "module.removedFromTimetable": "Wurde vom Stundenplan entfernt!",
+  "module.loadError": "Modul konnte nicht geladen werden",
 };
 
 const Map<String, String> en_files = {
@@ -51,6 +57,9 @@ const Map<String, String> en_files = {
   "files.save": "Save",
   "files.errorWithReason": "Error: {0}",
   "files.noneFound": "No files found.",
+  "files.cacheEmpty": "No cached files - open ILIAS to sync",
+  "files.cachedFileCountOne": "{0} file",
+  "files.cachedFileCountOther": "{0} files",
   "files.renameFile": "Rename file",
   "files.newName": "New name",
   "files.removeFile": "Remove file",
@@ -59,6 +68,7 @@ const Map<String, String> en_files = {
   "files.noModules": "No modules available",
   "files.fileSaved": "File saved",
   "files.saveFailed": "Saving failed",
+  "files.unpinFailed": "Remove failed - please try again",
   "files.selectModule": "Select module",
   "files.selectModuleHint": "Choose the module for this file.",
   "files.nameFile": "Name the file",
@@ -76,4 +86,5 @@ const Map<String, String> en_files = {
   "module.addToTimetableFailed": "Failed to add {0} to the timetable",
   "module.addedToTimetable": "Added to the timetable!",
   "module.removedFromTimetable": "Removed from the timetable!",
+  "module.loadError": "Could not load the module",
 };

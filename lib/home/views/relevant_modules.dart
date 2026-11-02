@@ -83,6 +83,10 @@ class RelevantModulesView extends StatelessWidget {
                 if (module == null) {
                   module = KITModule();
                   module.title = prettifyTemporaryModuleTitle(rowID);
+                  // keep the raw row id on the placeholder: the prettified
+                  // title never round-trips back to it, and _getModuleToShow
+                  // binds the card to its real row by EXACT id
+                  module.hierarchicalTableRowId = rowID;
                 }
 
                 return RelevantModuleView(module: module);

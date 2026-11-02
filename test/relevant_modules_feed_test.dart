@@ -90,7 +90,9 @@ class _StubTreeManager extends CampusManager {
 
   @override
   Future<KITModule> fetchModule(HierarchicTableRow row,
-      {recursiveRetry = true, userInitiated = false}) async {
+      {recursiveRetry = true,
+      sessionRetried = false,
+      userInitiated = false}) async {
     final module = KITModule()
       ..id = "csbr-${row.id}"
       ..title = row.title

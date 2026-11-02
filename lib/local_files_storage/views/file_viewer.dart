@@ -65,13 +65,27 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
             },
           ),
           IconButton(
-              onPressed: () {
-                Provider.of<KITProvider>(context, listen: false)
-                    .iliasFileManager
-                    .unpinFile(
-                        semesterString: KITProvider.currentSemesterString,
-                        urlString: widget.iliasFile.urlString);
+              onPressed: () async {
+                final iliasFileManager =
+                    Provider.of<KITProvider>(context, listen: false)
+                        .iliasFileManager;
+                final toastsProvider =
+                    Provider.of<ToastsProvider>(context, listen: false);
+                try {
+                  // unpin BEFORE deleting on disk: a failing unpin used to
+                  // leave an orphan prefs entry pointing at a deleted file
+                  // (a dead tile in the pinned list); on failure the file
+                  // stays and the screen stays open for a retry
+                  await iliasFileManager.unpinFile(
+                      semesterString: KITProvider.currentSemesterString,
+                      urlString: widget.iliasFile.urlString);
+                } on Object catch (e) {
+                  toastsProvider.showTextToast(L10n.t("files.unpinFailed"));
+                  if (kDebugMode) print("ILIAS unpin failed: $e");
+                  return;
+                }
                 File(widget.path).deleteSync();
+                if (!mounted) return;
                 Navigator.pop(context);
               },
               icon: Icon(CupertinoIcons.delete))

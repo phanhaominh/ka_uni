@@ -28,6 +28,7 @@ class KITProvider extends ChangeNotifier {
 
   late final CampusManager campusManager;
   late final IliasManager iliasManager;
+
   /// In-flight (or last) ILIAS SSO; the agenda awaits it before scraping.
   Future<void> iliasAuth = Future.value();
   late final KITTopographyManager topographyManager;
@@ -62,10 +63,13 @@ class KITProvider extends ChangeNotifier {
       // FIRST refresh after a cold start the login stages may still be in
       // flight (or the token simply expired). Retry once with a delay - but
       // only once per process: fetchMine returns false for perfectly normal
-      // steady states (semester break, no plus account) and an unconditional
-      // 20 s sleep made every pull-to-refresh hang that long.
+      // steady states (semester break) and an unconditional 20 s sleep
+      // made every pull-to-refresh hang that long. A PROVEN missing plus
+      // account is a definite miss, not a session race - skip the sleep.
       var mine = await signMeUpManager.fetchMine(campusManager);
-      if (!mine && !_signMeUpColdRetryDone) {
+      if (!mine &&
+          !_signMeUpColdRetryDone &&
+          !campusManager.plusAccountMissing) {
         _signMeUpColdRetryDone = true;
         await Future.delayed(const Duration(seconds: 20));
         mine = await signMeUpManager.fetchMine(campusManager);
@@ -139,7 +143,10 @@ class KITProvider extends ChangeNotifier {
     // fetchSchedule();
 
     topographyManager = KITTopographyManager();
-    unawaited(topographyManager.fetchPlaces()); // self-contained errors
+    unawaited(topographyManager
+        .fetchPlaces() // self-contained errors
+        .then((_) =>
+            notifyListeners())); // C18: walk hints + Raum-Finder refresh when the directory lands
 
     iliasFileManager = IliasFilesProvider();
   }
@@ -156,8 +163,9 @@ class KITProvider extends ChangeNotifier {
     // (iliasAuth is kicked off by the caller AFTER credsVM.login: login's
     // clearCookiesAndCache would wipe this SSO's jar mid-redirect)
     // campus data is fetched by the caller AFTER the login stages complete:
-    // stage0 does clearCookiesAndCache(), so anything raced against login
-    // either fails outright or burns the cascampus bot-challenge quota.
+    // stage0 resets the ilias-domain jar entries while the IdP redirect
+    // chain churns, so anything raced against login either fails outright
+    // or burns the cascampus bot-challenge quota.
     // SignMeUp is independent of the campus SP session and may start now.
     unawaited(fetchSignMeUp().catchError((_) {}));
 
@@ -173,20 +181,23 @@ class KITProvider extends ChangeNotifier {
     final inflight = _refetchInFlight;
     if (inflight != null) return inflight;
     final future = (() async {
-      await campusManager
-          .forceRefetchEverything(allModulesAsWell: allModulesAsWell);
+      await campusManager.forceRefetchEverything(
+          allModulesAsWell: allModulesAsWell);
       await fetchSignMeUp();
     })();
     _refetchInFlight = future;
     return future.whenComplete(() => _refetchInFlight = null);
   }
 
-  HierarchicTableRow? fuzzyFindHierarchicTableRowSimilarTo(HierarchicTableRow exampleRow) {
+  HierarchicTableRow? fuzzyFindHierarchicTableRowSimilarTo(
+      HierarchicTableRow exampleRow) {
     int bestMatch = 0;
     HierarchicTableRow? bestMatchRow;
 
     for (final row in campusManager.moduleRows) {
-      final currentMatch = ratio(row.title, exampleRow.title) + ratio(row.id, exampleRow.id) + ratio(row.type, exampleRow.type);
+      final currentMatch = ratio(row.title, exampleRow.title) +
+          ratio(row.id, exampleRow.id) +
+          ratio(row.type, exampleRow.type);
       if (currentMatch >= bestMatch) {
         bestMatch = currentMatch;
         bestMatchRow = row;
@@ -228,7 +239,8 @@ class KITProvider extends ChangeNotifier {
 
   Future<bool> toggleIsFavorite(ModuleInfoTableCell cell, KITModule inModule,
       {visual = true}) async {
-    return await campusManager.toggleIsFavorite(cell, inModule, anticipate: visual);
+    return await campusManager.toggleIsFavorite(cell, inModule,
+        anticipate: visual);
   }
 
   /// A fuzzywuzzy ratio below this effectively means "some other lecture".
@@ -236,7 +248,8 @@ class KITProvider extends ChangeNotifier {
   /// bail out with false than to add/remove a completely wrong lecture.
   static const int _minFuzzyAcceptScore = 70;
 
-  Future<bool> toggleIsFavoriteFuzzy(String targetRowTitleCellBody, String targetTableCaption, String targetModuleTitle) async {
+  Future<bool> toggleIsFavoriteFuzzy(String targetRowTitleCellBody,
+      String targetTableCaption, String targetModuleTitle) async {
     // 1. try to find the module
     int bestMatchScore = 0, currentScore = 0;
     KITModule? bestMatchModule;
@@ -255,13 +268,15 @@ class KITProvider extends ChangeNotifier {
 
     if (bestMatchModule == null || bestMatchScore < _minFuzzyAcceptScore) {
       if (kDebugMode) {
-        print("Could not find module with title $targetModuleTitle, best score: $bestMatchScore");
+        print(
+            "Could not find module with title $targetModuleTitle, best score: $bestMatchScore");
       }
       return false;
     }
 
     if (kDebugMode) {
-      print("Found module with title $targetModuleTitle, score: $bestMatchScore");
+      print(
+          "Found module with title $targetModuleTitle, score: $bestMatchScore");
     }
 
     // 2. try to find the table
@@ -279,13 +294,15 @@ class KITProvider extends ChangeNotifier {
 
     if (bestMatchTable == null || bestMatchTableScore < _minFuzzyAcceptScore) {
       if (kDebugMode) {
-        print("Could not find table with caption $targetTableCaption, best score: $bestMatchTableScore");
+        print(
+            "Could not find table with caption $targetTableCaption, best score: $bestMatchTableScore");
       }
       return false;
     }
 
     if (kDebugMode) {
-      print("Found table with caption $targetTableCaption, score: $bestMatchTableScore");
+      print(
+          "Found table with caption $targetTableCaption, score: $bestMatchTableScore");
     }
 
     // 3. try to find the cell
@@ -302,7 +319,8 @@ class KITProvider extends ChangeNotifier {
 
         continue;
       }
-      currentScore = ratio(row.cells[titleCellIndex].body, targetRowTitleCellBody);
+      currentScore =
+          ratio(row.cells[titleCellIndex].body, targetRowTitleCellBody);
 
       if (currentScore > bestMatchRowScore && row.favoriteToggleCell != null) {
         bestMatchRowScore = currentScore;
@@ -312,7 +330,8 @@ class KITProvider extends ChangeNotifier {
 
     if (bestMatchCell == null || bestMatchRowScore < _minFuzzyAcceptScore) {
       if (kDebugMode) {
-        print("Could not find row with title $targetRowTitleCellBody, score: $bestMatchRowScore");
+        print(
+            "Could not find row with title $targetRowTitleCellBody, score: $bestMatchRowScore");
       }
       return false;
     }

@@ -10,7 +10,9 @@ const liquidAssEverywhereKey = "PREF_liquidAssEverywhere";
 const showingAvgMarkKey = "PREF_showingAvgMark";
 const showingProfileKey = "PREF_showingProfile";
 const defaultIliasPageKey  = "PREF_defaultIliasPage";
-const languageKey = "PREF_language";
+// the language pref is read by L10n.reload() directly: one constant only,
+// a private duplicate could silently drift from the key that has the effect
+const languageKey = L10n.languagePrefKey;
 const themeModeKey = "PREF_themeMode";
 
 class SettingsProvider extends ChangeNotifier {

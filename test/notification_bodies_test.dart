@@ -44,8 +44,7 @@ void main() {
 
   test("exam-only digest day says 'Klausur um HH:MM', not the count", () {
     final (title, body) = MeiNotifications.digestTexts(
-        [_occ("Klausur: EM I", 9), _occ("Klausur: EM II", 14)],
-        changesFresh: false);
+        [_occ("Klausur: EM I", 9), _occ("Klausur: EM II", 14)]);
     expect(title, "Heute: Klausur");
     expect(body, contains("Klausur um 09:00"));
     expect(body, isNot(contains("Veranstaltungen")));
@@ -53,10 +52,22 @@ void main() {
 
   test("mixed day keeps the classic count body", () {
     final (title, body) = MeiNotifications.digestTexts(
-        [_occ("Klausur: EM I", 9), _occ("Analysis I (V)", 12)],
-        changesFresh: true);
+        [_occ("Klausur: EM I", 9), _occ("Analysis I (V)", 12)]);
     expect(title, "Heute: 2 Veranstaltungen");
     expect(body, contains("Erste um 09:00"));
-    expect(body, contains("Stundenplan geändert"));
+    expect(body, isNot(contains("geändert"))); // C65: stale hint dropped
+  });
+
+  test("mirrored lectures (same title+start) get exactly one alarm slot", () {
+    final mirrored = [
+      _occ("Analysis I", 8),
+      _occ("Analysis I", 8), // personal-ICS mirror of the CAS event
+      _occ("Analysis I (Übung)", 8),
+      _occ("Analysis I", 10),
+    ];
+    final deduped = MeiNotifications.dedupOccurrences(mirrored);
+    expect(deduped.length, 3);
+    expect(deduped.map((o) => o.title),
+        ["Analysis I", "Analysis I (Übung)", "Analysis I"]);
   });
 }

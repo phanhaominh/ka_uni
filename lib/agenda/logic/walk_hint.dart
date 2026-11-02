@@ -8,13 +8,34 @@ final RegExp _buildingNumber = RegExp(r"\b\d{1,2}\.\d{1,2}\b");
 
 const double _walkSpeedMs = 1.3; // calm campus walking speed
 
+/// Address tokens for the fuzzy-bind gate: lower-case runs of letters
+/// and digits where an inner dot stays part of the token ("30.11"), so
+/// "1001" and "1011" are DIFFERENT tokens. Bare short letter runs
+/// carry no signal - single digits do: they ARE room numbers ("HS 1").
+final RegExp _addressToken = RegExp(r"[a-zäöüß0-9]+(?:\.[a-zäöüß0-9]+)*");
+final RegExp _digitToken = RegExp(r"[0-9]");
+
+Set<String> _addressTokens(String s) => _addressToken
+    .allMatches(s.toLowerCase())
+    .map((m) => m.group(0)!)
+    .where((t) => t.length >= 2 || _digitToken.hasMatch(t))
+    .toSet();
+
 /// Resolves an ICS room string ("Geb. 30.11, Hörsaal", "Audimax") to a
-/// campus place. Building numbers win over fuzzy names: numbers are exact.
+/// campus place. Building numbers win over fuzzy names: numbers are
+/// exact - and matched only as whole tokens. The fuzzy fallback needs a
+/// shared address token with its winner before a room is certified.
 KITPlace? resolveRoomPlace(List<KITPlace> places, String room) {
   if (room.trim().isEmpty || places.isEmpty) return null;
   final number = _buildingNumber.firstMatch(room)?.group(0);
   if (number != null) {
-    final hits = places.where((p) => p.title.contains(number)).toList();
+    // bounded token match: "1.2" must NOT hit the "21.2" inside
+    // "Gebäude 21.2" - a digit or dot next to the number makes it a
+    // different building. The old unbounded contains() let directory
+    // order certify the WRONG building's walk time.
+    final bounded =
+        RegExp("(?<![.\\d])${number.replaceAll(".", r"\.")}(?![.\\d])");
+    final hits = places.where((p) => bounded.hasMatch(p.title)).toList();
     if (hits.isNotEmpty) return hits.first;
   }
   KITPlace? best;
@@ -30,7 +51,29 @@ KITPlace? resolveRoomPlace(List<KITPlace> places, String room) {
       }
     }
   }
-  return bestScore >= 75 ? best : null;
+  if (best == null || bestScore < 75) return null;
+  // A lone ratio certifies WRONG rooms: typo'd numbers score high
+  // against each other, so "SR 1001" can bind "Seminarraum 1011". The
+  // fuzzy bind must also share real address tokens with the winning
+  // place - no hint is better than a confidently wrong walk time.
+  final roomTokens = _addressTokens(room);
+  final bestTokens = {
+    for (final c in [best.title, ...best.aliasList]) ..._addressTokens(c)
+  };
+  final shared = roomTokens.intersection(bestTokens);
+  if (shared.isEmpty) return null;
+  // with digits in play the shared token has to be one: differing
+  // number-like tokens ("30.11" vs "30.12") are never noise - a
+  // generic word must not certify the neighbouring building
+  if (roomTokens.any(_digitToken.hasMatch)) {
+    return shared.any(_digitToken.hasMatch) ? best : null;
+  }
+  // purely literal binds need a token of substance: three letters
+  // ("hs", "geb") are furniture, not identity - unless the room string
+  // carries the place's category ("Hörsaal", "Bibliothek", ...)
+  if (shared.any((t) => t.length >= 4)) return best;
+  final categoryTokens = _addressTokens(best.category);
+  return categoryTokens.intersection(roomTokens).isNotEmpty ? best : null;
 }
 
 class WalkHint {

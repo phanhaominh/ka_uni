@@ -85,11 +85,17 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     SettingRow(
                         title: L10n.t("settings.showProfile"),
+                        // tapping the card toggles the switch, as on the
+                        // platform's own settings rows
+                        onTap: () => settingsVM.showingProfile
+                            .set(!settingsVM.showingProfile.value),
                         trailing: CupertinoSwitch(
                             value: settingsVM.showingProfile.value,
                             onChanged: settingsVM.showingProfile.set)),
                     SettingRow(
                         title: L10n.t("settings.showAvgGrade"),
+                        onTap: () => settingsVM.showingAvgMark
+                            .set(!settingsVM.showingAvgMark.value),
                         trailing: CupertinoSwitch(
                             value: settingsVM.showingAvgMark.value,
                             onChanged: settingsVM.showingAvgMark.set)),
@@ -145,58 +151,107 @@ class _SettingsPageState extends State<SettingsPage> {
               SettingsSectionTitle(title: L10n.t("settings.sectionFileCache")),
 
               BlockContainer(
-                child: Column(
-                  children: [
-                    SettingRow(
-                      title: L10n.t("settings.cacheSize"),
-                      trailing: const _CacheSizeText(),
+                // the whole card opens the cache manager: before, only the
+                // small "Manage" label responded; it stays as the visual
+                // affordance for the same action
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (BuildContext context) => FilesCachePage())),
+                  child: ConstrainedBox(
+                    // >= 48 dp tap target
+                    constraints: const BoxConstraints(minHeight: 48),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        SettingRow(
+                          title: L10n.t("settings.cacheSize"),
+                          trailing: const _CacheSizeText(),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              L10n.t("settings.manage"),
+                              style: TextStyle(
+                                  color:
+                                      Theme.of(context).colorScheme.primary),
+                            ),
+                            Icon(CupertinoIcons.chevron_forward,
+                                size: 14,
+                                color:
+                                    Theme.of(context).colorScheme.primary),
+                          ],
+                        ),
+                      ],
                     ),
-                    CupertinoButton(
-                        child: Text(L10n.t("settings.manage")),
-                        onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                                builder: (BuildContext context) =>
-                                    FilesCachePage())))
-                  ],
+                  ),
                 ),
               ),
 
-              SettingsSectionTitle(title: "Debug"),
+              // internal fetch telemetry (full Studienverlauf tree with
+              // admission verdicts) must not ship in release builds
+              if (kDebugMode) ...[
+                SettingsSectionTitle(title: "Debug"),
 
-              BlockContainer(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SettingRow(
-                      title: L10n.t("settings.debugFetch"),
-                      trailing: CupertinoButton(
-                          padding: EdgeInsets.zero,
-                          child: const Icon(CupertinoIcons.chevron_forward),
-                          onPressed: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (BuildContext context) =>
-                                      ModuleTreeDebugPage(
-                                          campusManager:
-                                              vm.campusManager)))),
+                BlockContainer(
+                  // whole card (row and hint text) opens the debug page;
+                  // the chevron is decoration inheriting this action
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (BuildContext context) =>
+                                ModuleTreeDebugPage(
+                                    campusManager: vm.campusManager))),
+                    child: ConstrainedBox(
+                      // >= 48 dp tap target
+                      constraints: const BoxConstraints(minHeight: 48),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SettingRow(
+                            title: L10n.t("settings.debugFetch"),
+                            trailing: const Icon(
+                                CupertinoIcons.chevron_forward),
+                          ),
+                          Text(
+                            L10n.t("settings.debugFetchHint"),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .outline),
+                          ),
+                        ],
+                      ),
                     ),
-                    Text(
-                      L10n.t("settings.debugFetchHint"),
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Theme.of(context).colorScheme.outline),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
 
-              CupertinoButton(
+              const SizedBox(height: 16),
+              OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                    side:
+                        BorderSide(color: Theme.of(context).colorScheme.error),
+                  ),
                   child: Text(L10n.t("settings.logout")),
                   // logout is a 5-10 s multi-vendor wipe; a second tap
                   // mid-flight would re-enter the wipe half-done
                   onPressed: _loggingOut
                       ? null
                       : () async {
+                          // destructive action: never start the wipe
+                          // without an explicit confirmation (same dialog
+                          // pattern as the file deletion confirm)
+                          if (!await _confirmLogout(context)) return;
+                          // the dialog stays open for user latency; the
+                          // page may be gone when it closes
+                          if (!mounted) return;
                           final toastsProvider = Provider.of<ToastsProvider>(
                               context,
                               listen: false);
@@ -205,7 +260,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             await credsVM.logout(
                                 vm, context.read<TutorialManager>());
                             // logout is a 5-10 s multi-vendor wipe; without a
-                            // confirmation the button looks broken mid-flight
+                            // toast the button looks broken mid-flight
                             if (context.mounted) {
                               toastsProvider.showTextToast(
                                   L10n.t("settings.loggedOut"));
@@ -233,6 +288,29 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
       ),
     );
+  }
+
+  /// Confirmation gate for the destructive logout; mirrors the file
+  /// deletion confirm in FilesCachePage. Returns false on cancel/dismiss.
+  Future<bool> _confirmLogout(BuildContext context) async {
+    final confirmed = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+              title: Text(L10n.t("settings.logoutConfirmTitle")),
+              content: Text(L10n.t("settings.logoutConfirmBody")),
+              actions: [
+                CupertinoDialogAction(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: Text(L10n.t("settings.cancel")),
+                ),
+                CupertinoDialogAction(
+                  isDestructiveAction: true,
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: Text(L10n.t("settings.logout")),
+                ),
+              ],
+            ));
+    return confirmed ?? false;
   }
 
   // Widget _settingRow(String title, Widget trailing) =>
@@ -265,6 +343,12 @@ class _OwnIcsSectionState extends State<_OwnIcsSection> {
         });
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _url.dispose();
+    super.dispose();
   }
 
   String _loadedStatus(CampusManager cm) {
@@ -417,13 +501,19 @@ class SettingRow extends StatelessWidget {
   final String title;
   final Widget trailing;
 
-  const SettingRow({super.key, required this.title, required this.trailing});
+  /// Row-wide tap target for rows whose action lives in (or behind) the
+  /// trailing widget: the whole card must respond, not just the small
+  /// chevron/switch (TalkBack found the title nodes dead before).
+  final VoidCallback? onTap;
+
+  const SettingRow(
+      {super.key, required this.title, required this.trailing, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Row(
+    final row = Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
@@ -435,6 +525,17 @@ class SettingRow extends StatelessWidget {
         ),
         trailing
       ],
+    );
+    if (onTap == null) return row;
+    // opaque: taps in the space between title and trailing must count too;
+    // the trailing control still wins hit-tests inside its own bounds
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: row,
+      ),
     );
   }
 }
@@ -462,6 +563,27 @@ class SettingsSectionTitle extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Popup-menu row for dropdowns: a leading check marks the active value,
+/// because while the menu is open it covers the row that shows it.
+Widget _dropdownItemLabel(
+    BuildContext context, {required String label, required bool selected}) {
+  return Row(
+    children: [
+      selected
+          ? const Icon(Icons.check, size: 18)
+          : const SizedBox(width: 18),
+      const SizedBox(width: 6),
+      Expanded(
+        child: Text(
+          label,
+          textAlign: TextAlign.end,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ),
+    ],
+  );
 }
 
 class MultipleChoiceSettingDropdown extends StatelessWidget {
@@ -493,9 +615,10 @@ class MultipleChoiceSettingDropdown extends StatelessWidget {
                 .map((el) => DropdownMenuItem(
                       value: el,
                       alignment: Alignment.centerRight,
-                      child: Text(
-                        labels?["$el"] ?? "$el",
-                        style: theme.textTheme.bodyMedium,
+                      child: _dropdownItemLabel(
+                        context,
+                        label: labels?["$el"] ?? "$el",
+                        selected: el == _multipleChoiceSetting.value,
                       ),
                     ))
                 .toList(),
@@ -529,9 +652,10 @@ class LanguageDropdown extends StatelessWidget {
                 .map((el) => DropdownMenuItem(
                       value: el,
                       alignment: Alignment.centerRight,
-                      child: Text(
-                        labels[el] ?? el,
-                        style: theme.textTheme.bodyMedium,
+                      child: _dropdownItemLabel(
+                        context,
+                        label: labels[el] ?? el,
+                        selected: el == languageSetting.value,
                       ),
                     ))
                 .toList(),

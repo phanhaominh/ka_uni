@@ -90,61 +90,74 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
                           setState(() {
                             _isBusy = true;
                           });
-                          // final toggleSuccessful = await vm.toggleIsFavorite(row.favoriteToggleCell!, table.parentModule);
-                          final toggleSuccessful = await vm.toggleIsFavoriteFuzzy(titleCell.body, table.caption, table.parentModule.title);
-                          if (!mounted) return; // network outlives the page pop
-                          if (!toggleSuccessful) {
-                            toastsProvider.showTextToast(L10n.t("module.sessionExpired"));
-                            // retry ONE MORE TIME after refetching everything
-                            await vm.forceRefetchEverything(allModulesAsWell: false);
-                            if (!mounted) return;
+                          try {
+                            // final toggleSuccessful = await vm.toggleIsFavorite(row.favoriteToggleCell!, table.parentModule);
+                            final toggleSuccessful = await vm.toggleIsFavoriteFuzzy(titleCell.body, table.caption, table.parentModule.title);
+                            if (!mounted) return; // network outlives the page pop
+                            if (!toggleSuccessful) {
+                              toastsProvider.showTextToast(L10n.t("module.sessionExpired"));
+                              // retry ONE MORE TIME after refetching everything
+                              await vm.forceRefetchEverything(allModulesAsWell: false);
+                              if (!mounted) return;
 
-                            if (table.parentModule.row == null) {
-                              await Haptics.vibrate(HapticsType.error);
-                              toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
-                              if (mounted) setState(() {
-                                _isBusy = false;
-                              });
-                              await vm.campusManager.fetchAllModules();
-                              return;
-                            }
+                              if (table.parentModule.row == null) {
+                                await Haptics.vibrate(HapticsType.error);
+                                toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
+                                if (mounted) setState(() {
+                                  _isBusy = false;
+                                });
+                                await vm.campusManager.fetchAllModules();
+                                return;
+                              }
 
-                            final newRowEntry = vm.fuzzyFindHierarchicTableRowSimilarTo(table.parentModule.row!);
+                              final newRowEntry = vm.fuzzyFindHierarchicTableRowSimilarTo(table.parentModule.row!);
 
-                            if (newRowEntry == null) {
-                              await Haptics.vibrate(HapticsType.error);
-                              toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
-                              if (mounted) setState(() {
-                                _isBusy = false;
-                              });
-                              await vm.campusManager.fetchAllModules();
-                              return;
-                            }
+                              if (newRowEntry == null) {
+                                await Haptics.vibrate(HapticsType.error);
+                                toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
+                                if (mounted) setState(() {
+                                  _isBusy = false;
+                                });
+                                await vm.campusManager.fetchAllModules();
+                                return;
+                              }
 
-                            // we only fetch the needed module for now (all the others later)
-                            await vm.getOrFetchModuleForRow(newRowEntry);
+                              // we only fetch the needed module for now (all the others later)
+                              await vm.getOrFetchModuleForRow(newRowEntry);
 
-                            // the url or other data could have been changed after refetching everything,
-                            // although we assume that we can still find this entry by the module title,
-                            // caption (aka name) of the table and the title of this "row"
-                            final secondToggleSuccessful = await vm.toggleIsFavoriteFuzzy(titleCell.body, table.caption, table.parentModule.title);
+                              // the url or other data could have been changed after refetching everything,
+                              // although we assume that we can still find this entry by the module title,
+                              // caption (aka name) of the table and the title of this "row"
+                              final secondToggleSuccessful = await vm.toggleIsFavoriteFuzzy(titleCell.body, table.caption, table.parentModule.title);
 
-                            if (!secondToggleSuccessful) {
-                              await Haptics.vibrate(HapticsType.error);
-                              toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
+                              if (!secondToggleSuccessful) {
+                                await Haptics.vibrate(HapticsType.error);
+                                toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
+                              } else {
+                                _onToggleFavoriteSuccess(!row.favoriteToggleCell!.isFavorite, toastsProvider);
+                              }
+
+                              // background sweep: nobody awaits this one,
+                              // so a failure must not leave a zone error
+                              vm.campusManager.fetchAllModules().catchError((_) {});
                             } else {
-                              _onToggleFavoriteSuccess(!row.favoriteToggleCell!.isFavorite, toastsProvider);
+                              _onToggleFavoriteSuccess(row.favoriteToggleCell!.isFavorite, toastsProvider);
                             }
-
-                            vm.campusManager.fetchAllModules();
-                          } else {
-                            _onToggleFavoriteSuccess(row.favoriteToggleCell!.isFavorite, toastsProvider);
+                          } on Object {
+                            // the button callback's future is nobody's to await:
+                            // a throw anywhere in the retry chain (dead network
+                            // mid-refetch) used to die as an unhandled zone
+                            // error and leave the spinner running - settle it
+                            // like the other failures of this flow
+                            await Haptics.vibrate(HapticsType.error);
+                            toastsProvider.showTextToast(L10n.t("module.sessionExpired"));
+                          } finally {
+                            if (mounted) {
+                              setState(() {
+                                _isBusy = false;
+                              });
+                            }
                           }
-
-                          if (!mounted) return;
-                          setState(() {
-                            _isBusy = false;
-                          });
                         }
                     )
                   ],

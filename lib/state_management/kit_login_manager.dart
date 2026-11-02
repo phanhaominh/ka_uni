@@ -91,6 +91,12 @@ class KITLoginManager {
   Future<bool> passBotChallenge(Uri url) async {
     var posted = false;
     for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        // a wrong answer under a changed algorithm is indistinguishable
+        // from a human failing the puzzle - pause 2 s between attempts so a
+        // KIT-side change cannot get the account rate-limited
+        await Future.delayed(const Duration(seconds: 2));
+      }
       final challenge = await netGet(url);
       if (challenge.statusCode != 503 ||
           !challenge.body.contains("botchallenge")) {
@@ -107,7 +113,13 @@ class KITLoginManager {
       for (var hop = 0;
           hop < 6 && cur.statusCode == 302 && loc != null;
           hop++) {
-        final next = loc.startsWith("http") ? Uri.parse(loc) : url.resolve(loc);
+        final next = kitHttps(url, loc);
+        if (next == null) {
+          if (kDebugMode) {
+            print("  challenge chain refusing off-KIT hop $loc");
+          }
+          return false;
+        }
         cur = await netGet(next);
         url = next; // any new challenge lives at the current hop
         loc = cur.headers["location"];
@@ -205,10 +217,19 @@ class KITLoginManager {
       if (formData.isEmpty || action == null) {
         continue;
       }
-      final actionUri = from.resolve(action);
+      // the cascampus chain is not kitHttps-pinned like the stage2 login
+      // hops: an unexpected page shape must never get its fields POSTed
+      // to an off-KIT action
+      final actionUri = kitHttps(from, action);
+      if (actionUri == null) {
+        if (kDebugMode) {
+          print("first-form action escapes KIT https ($action). Skipping.");
+        }
+        continue;
+      }
       final posted = await netPost(actionUri, body: formData);
       if (posted.statusCode == 302 && posted.headers.containsKey("location")) {
-        return actionUri.resolve(posted.headers["location"]!);
+        return kitHttps(actionUri, posted.headers["location"]!);
       }
       return actionUri;
     }
@@ -244,7 +265,14 @@ class KITLoginManager {
         // redirect.php / Shibboleth hand off via 302; session.get does not
         // follow redirects, so hop manually (relative Location possible).
         final loc = response.headers["location"]!;
-        uri = loc.startsWith("http") ? Uri.parse(loc) : uri.resolve(loc);
+        final next = kitHttps(uri, loc);
+        if (next == null) {
+          if (kDebugMode) {
+            print("boot hop $hop refusing off-KIT redirect $loc");
+          }
+          return false;
+        }
+        uri = next;
         continue;
       }
       if (response.statusCode == 503 &&
@@ -272,11 +300,15 @@ class KITLoginManager {
   }
 
   bool sessionExpired(String body) {
-    final i = body.indexOf("message message-error");
+    // the error marker class and the German copy can come back from a KIT
+    // redesign in other capitalisation ("Message message-error", "Nicht
+    // angemeldet"), so sniff the lower-cased page
+    final lower = body.toLowerCase();
+    final i = lower.indexOf("message message-error");
     if (i < 0) {
       return false;
     }
-    final t = body.substring(i, (i + 260).clamp(0, body.length));
+    final t = lower.substring(i, (i + 260).clamp(0, lower.length));
     return t.contains("abgelaufen") || t.contains("nicht angemeldet");
   }
 
@@ -285,6 +317,26 @@ class KITLoginManager {
     tguid = null;
     plusReady = false;
     cascampusReady = false;
+  }
+
+  /// Narrow stand-in for [clearCookiesAndCache] on the periodic ILIAS
+  /// re-auth (fetchStage0_Init): drops only the ilias.studium.kit.edu jar
+  /// entries - a stale PHPSESSID makes ILIAS reject the fresh SAMLResponse -
+  /// while provably leaving the campus SP, Campus+ and IdP cookies (all on
+  /// other hosts) intact; the unconditional full clear used to log out
+  /// cascampus/plus mid-session every 30 minutes. The webview is
+  /// deliberately untouched: WebViewCookieManager can only clear ALL
+  /// domains at once (including the SSO cookies), and the ILIAS page view
+  /// re-injects a fresh PHPSESSID before every load anyway.
+  void clearIliasSessionCookies() {
+    final store = session.cookieStore;
+    store.cookies =
+        store.cookies.where((c) => !_isIliasDomain(c.domain)).toList();
+  }
+
+  static bool _isIliasDomain(String domain) {
+    final host = domain.toLowerCase();
+    return host == "ilias.studium.kit.edu" || host == ".ilias.studium.kit.edu";
   }
 
   String get cookiesString {
@@ -313,9 +365,14 @@ class KITLoginManager {
   // raw client; the resulting identity cookie is merged back into the
   // shared session and all later API calls use it normally.
   bool plusReady = false;
+  /// Last ensurePlusSession() ended with "SSO chain completed, plus issued
+  /// no identity cookie" -> the account has no Campus+ subscription, not a
+  /// transient failure (a caller hint like botChallengeAlgorithmChanged).
+  bool plusAccountMissing = false;
 
   Future<bool> ensurePlusSession({bool force = false}) async {
     if (plusReady && !force) return true;
+    plusAccountMissing = false;
     final probe = await netGet(
         Uri.parse("https://plus.campus.kit.edu/api/user/info"),
         headers: {"Accept": "application/json"});
@@ -394,6 +451,7 @@ class KITLoginManager {
       var url = Uri.parse("https://plus.campus.kit.edu/api/user/oidc-login"
           "?returnUrl=/plus/");
       var resp = await step("GET", url, null);
+      var sawCredentialForm = false;
       for (var hop = 0; hop < 14; hop++) {
         if (resp.statusCode == 200) {
           final doc = parse(resp.body);
@@ -410,7 +468,10 @@ class KITLoginManager {
               }
               if (n != null) fields[n] = inp.attributes["value"] ?? "";
             }
-            if (credentialForm || action == null || fields.isEmpty) continue;
+            if (credentialForm || action == null || fields.isEmpty) {
+              sawCredentialForm |= credentialForm;
+              continue;
+            }
             url = url.resolve(action);
             resp = await step("POST", url, fields);
             advanced = true;
@@ -428,8 +489,14 @@ class KITLoginManager {
 
       final plusJar = jar["plus.campus.kit.edu"] ?? const {};
       if (!plusJar.keys.any((k) => k.contains(".AspNetCore.Identity"))) {
+        // the chain ran through the IdP SSO without ever landing on the
+        // credential page and plus still issued no identity cookie -> this
+        // account simply has no Campus+ subscription (a lost IdP session or
+        // an error page stays "failed", where retrying can still help)
+        plusAccountMissing = resp.statusCode == 200 && !sawCredentialForm;
         if (kDebugMode) {
-          print("plus OIDC chain ended at ${resp.statusCode} without identity");
+          print("plus OIDC chain ended at ${resp.statusCode} without "
+              "identity${plusAccountMissing ? " (no plus account)" : ""}");
         }
         return false;
       }
@@ -443,7 +510,7 @@ class KITLoginManager {
       final check = await netGet(
           Uri.parse("https://plus.campus.kit.edu/api/user/info"),
           headers: {"Accept": "application/json"});
-      plusReady = check.statusCode == 200 && check.body.trim().trim() != "null";
+      plusReady = check.statusCode == 200 && check.body.trim() != "null";
       if (kDebugMode && !plusReady) {
         print("plus session check failed: ${check.statusCode}");
       }
@@ -488,7 +555,7 @@ class KITLoginManager {
     // logged-in user onto LoginPage although the stored credentials were
     // fine. Only a *definitive* auth failure (login() -> credentials.valid
     // == false) or logout tears the session down now.
-    await clearCookiesAndCache();
+    clearIliasSessionCookies();
 
     // if (notify) {
     //   notifyListeners();

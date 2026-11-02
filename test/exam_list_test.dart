@@ -83,4 +83,25 @@ void main() {
     expect(t("Fr, 16.04.2027, 2. Termin").startAt,
         DateTime(2027, 4, 16, 10, 0));
   });
+
+  test('examListHasRows separates the empty state from a cell reflow', () {
+    // real data page: rows present => a zero-entry parse must count as
+    // breakage, not the valid empty state the old gate waved through
+    final raw = File('test/fixtures/possibleexams.html').readAsStringSync();
+    expect(ExamListParser.examListHasRows(raw), isTrue);
+
+    // well-formed empty state: table stays, only a colspan notice inside
+    expect(
+        ExamListParser.examListHasRows(
+            '<table id="EXAMLIST"><tbody class="tablehead"><tr><th>x</th>'
+            '</tr></tbody><tbody class="tablecontent"><tr>'
+            '<td colspan="8">Keine Einträge</td></tr></tbody></table>'),
+        isFalse);
+
+    // no table at all (login bounce): no rows - the gate's marker check
+    // alone decides there
+    expect(
+        ExamListParser.examListHasRows('<html><body>nope</body></html>'),
+        isFalse);
+  });
 }

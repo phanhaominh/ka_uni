@@ -42,6 +42,10 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   List<KITPlace> _places = const [];
   KITPlace? _refPlace;
   List<PlaceMatch> _results = const [];
+  // C92: true while the 200 ms settle timer for the newest keystroke is
+  // still running - `_results` then belong to the PREVIOUS query and are
+  // rendered dim instead of lingering looking current
+  bool _staleResults = false;
   String? _expandedKey;
 
   // (localized label key, German query): the directory itself is German
@@ -93,8 +97,10 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
   /// Recompute results from the current field text; relevance only, never
   /// distance-sorted.
-  void _search() =>
-      _results = rankPlaces(_places, _controller.text, from: _refPlace);
+  void _search() {
+    _results = rankPlaces(_places, _controller.text, from: _refPlace);
+    _staleResults = false;
+  }
 
   /// Keystrokes only cancel/restart a 200 ms settle timer around the
   /// rank (F3: 16-22 ms per full rank > frame budget), so rapid typing
@@ -104,7 +110,10 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   /// live; quick chips seed the field through the very same path.
   void _onChanged() {
     _debounce?.cancel();
-    setState(() => _expandedKey = null);
+    setState(() {
+      _expandedKey = null;
+      _staleResults = true;
+    });
     _debounce = Timer(const Duration(milliseconds: 200), () {
       if (mounted) setState(_search);
     });
@@ -145,10 +154,18 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                     ? const SizedBox.shrink()
                     : _results.isEmpty
                         ? _noResults(context)
-                        : ListView.builder(
-                            itemCount: _results.length,
-                            itemBuilder: (context, i) =>
-                                _resultRow(_results[i]),
+                        : AnimatedOpacity(
+                            // C92: previous-keystroke results stay
+                            // readable but visibly dim while the new rank
+                            // debounces - never a blank flash, and a tap
+                            // on them is still a valid (slightly old) hit
+                            duration: const Duration(milliseconds: 120),
+                            opacity: _staleResults ? 0.45 : 1,
+                            child: ListView.builder(
+                              itemCount: _results.length,
+                              itemBuilder: (context, i) =>
+                                  _resultRow(_results[i]),
+                            ),
                           ),
           ),
         ],

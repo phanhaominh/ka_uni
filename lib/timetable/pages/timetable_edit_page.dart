@@ -463,6 +463,11 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
         );
       },
     );
+
+    // the notes TextField is commented out, but the controller is still
+    // freshly allocated on every dialog open - without this it leaks one
+    // per open
+    notesController.dispose();
   }
 
   Future<void> _confirmRemoveTutorial(

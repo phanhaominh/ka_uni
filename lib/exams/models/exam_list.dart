@@ -207,6 +207,25 @@ class ExamListParser {
     return result;
   }
 
+  /// True when the #EXAMLIST table carries data-shaped rows (a <tr> with
+  /// at least two <td>s; header rows are pure <th>, "no records" notices a
+  /// single colspan cell). The fetch gate uses this to tell a genuinely
+  /// empty list from a markup reflow that [parse] reads as ZERO rows while
+  /// the table is still full of data.
+  static bool examListHasRows(String html) {
+    final document = htmlparser.parse(html);
+    final table = document.getElementById("EXAMLIST");
+    if (table == null) {
+      return false;
+    }
+    for (final tr in table.getElementsByTagName("tr")) {
+      if (tr.getElementsByTagName("td").length >= 2) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// "Do, 25.03.2027" -> sortable DateTime; unparsable dates sort last
   /// without shifting otherwise-valid ones relative to each other wrongly.
   static DateTime _date(String dayLabel) {

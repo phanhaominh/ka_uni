@@ -12,6 +12,7 @@ class KITModule {
   String assignmentType = "";
   String examDateStr = "unbekannt";
   DateTime examDate = DateTime.now();
+  bool examDateParsed = false;
   String grade = "0,0";
   String pointsAcquired = "0,0";
   String pointsAvailable = "0,0";
@@ -51,7 +52,7 @@ class KITModule {
     // get exam date
     elements = document.getElementById("cagr_examdate-field")?.getElementsByClassName("element");
     if (elements != null && elements.isNotEmpty) {
-      examDateStr = elements.first.innerHtml;
+      examDateStr = elements.first.innerHtml.trim();
     }
 
     // get grade
@@ -95,7 +96,8 @@ class KITModule {
       }
     }
 
-    if (dateSplitInt.length == 3) {
+    examDateParsed = dateSplitInt.length == 3;
+    if (examDateParsed) {
       examDate = DateTime(dateSplitInt[2], dateSplitInt[1], dateSplitInt[0]);
     }
 
@@ -132,7 +134,11 @@ class KITModule {
   }
 
   bool get examDateKnown {
-    return examDateStr != "unbekannt";
+    // only a string that really parsed to a DateTime may drive the
+    // countdown: any other scrape text ("k.A.", WS wording drift) used to
+    // pass the old string comparison and rendered the now() default as
+    // "Prüfung in 0 Tagen"
+    return examDateParsed;
   }
 
   bool get isEmpty => id == "";

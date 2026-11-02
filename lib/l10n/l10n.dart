@@ -59,16 +59,32 @@ class L10n {
   static String weekday(int w) =>
       (isEnglish ? _enWeekdays : _deWeekdays)[w - 1];
 
-  /// "So, 25.10. 00:00" / "Sun, 25.10. 00:00" — shared agenda stamp format.
-  static String stamp(DateTime d) =>
-      "${weekday(d.weekday)}, ${d.day.toString().padLeft(2, "0")}."
-      "${d.month.toString().padLeft(2, "0")}. "
-      "${d.hour.toString().padLeft(2, "0")}:"
-      "${d.minute.toString().padLeft(2, "0")}";
+  /// "So, 25.10. 08:00" / "Sun, 25.10. 08:00" — shared agenda stamp format.
+  /// Date-only occurrences (all-day VALUE=DATE events, midnight stamps)
+  /// DROP the " HH:mm" tail: "00:00" is a parsing artifact of a date-only
+  /// source, not information — the "#12" "Sun, 25.10. 00:00" bug.
+  static String stamp(DateTime d) {
+    final date = "${weekday(d.weekday)}, ${d.day.toString().padLeft(2, "0")}."
+        "${d.month.toString().padLeft(2, "0")}.";
+    if (d.hour == 0 && d.minute == 0) return date;
+    return "$date ${d.hour.toString().padLeft(2, "0")}:"
+        "${d.minute.toString().padLeft(2, "0")}";
+  }
 
   /// "bis 22.11.2026" / "until 22.11.2026" — deadline suffix.
   static String until(DateTime d) => t(isEnglish ? "dates.until" : "dates.bis",
       ["${d.day}.${d.month}.${d.year}"]);
+
+  /// "07.02.2027 23:59" — padded full-date deadline stamp: the ONE long
+  /// form (exam registration rows need day+month+year+time; `stamp` drops
+  /// the year, `until` the time). The exams page previously shipped a
+  /// private copy of this format; #12 funnels it back in here.
+  static String deadline(DateTime d) =>
+      "${d.day.toString().padLeft(2, "0")}."
+      "${d.month.toString().padLeft(2, "0")}."
+      "${d.year} "
+      "${d.hour.toString().padLeft(2, "0")}:"
+      "${d.minute.toString().padLeft(2, "0")}";
 
   /// Whole calendar days from [now] to [at] (not 24-h windows): an exam
   /// tomorrow at 08:00 seen at 23:00 is "tomorrow", not "today".
@@ -117,6 +133,7 @@ class L10n {
     "agenda.iliasLoading": "Meldungen werden geladen…",
     "agenda.iliasUnreachable": "ILIAS gerade nicht erreichbar",
     "agenda.iliasNone": "Keine neuen Meldungen",
+    "agenda.iliasStale": "ILIAS nicht erreichbar – gespeicherter Stand",
     "agenda.nNew": "{0} neu",
     "agenda.examsOpen": "Prüfungsanmeldung offen",
     "agenda.examsLoading": "Prüfungsanmeldungen werden geprüft…",
@@ -141,6 +158,11 @@ class L10n {
     "ilias.downloading": "Wird heruntergeladen...",
     "ilias.downloadFailed": "Download fehlgeschlagen – bitte erneut versuchen",
     "ilias.refreshError": "Fehler beim Aktualisieren!",
+    "ilias.authFailed": "ILIAS-Anmeldung fehlgeschlagen – bitte erneut versuchen.",
+    "ilias.retry": "Erneut versuchen",
+    "ilias.backTooltip": "Zurück",
+    "ilias.forwardTooltip": "In ILIAS eine Seite vor",
+    "ilias.refreshTooltip": "ILIAS-Sitzung aktualisieren (erneut anmelden)",
     "easter.currywerk": "Currywerk ist überschätzt",
     // round 1: next-up banner
     "agenda.nowRunning": "läuft · bis {0}",
@@ -161,12 +183,15 @@ class L10n {
     "home.modulesEmpty": "Noch keine Module geladen",
     "home.modulesEmptyBtn": "Jetzt aktualisieren",
     "home.lastUpdated": "Zuletzt aktualisiert: {0}",
+    "home.profileLoading": "Profil wird geladen…",
     // round 3: SignMeUp
     "agenda.signmeupTitle": "SignMeUp-Anmeldungen",
     "agenda.signmeupEnds": "{0} · bis {1}",
     "agenda.signmeupOpens": "{0} · ab {1}",
     "agenda.signmeupUntil": "bis {0}",
     "agenda.signmeupFrom": "ab {0}",
+    "agenda.signmeupOpen": "In SignMeUp öffnen",
+    "agenda.ownCalendar": "eigener Kalender",
     "notifs.signmeupTitle": "SignMeUp-Frist endet bald",
     "notifs.signmeupBody": "{0} – Anmeldung endet um {1}",
     // SignMeUp "Meine Anmeldungen" status card
@@ -179,7 +204,6 @@ class L10n {
     // round 3: morning digest
     "notifs.digestTitle": "Heute: {0} Veranstaltungen",
     "notifs.digestBody": " Erste um {0}{1}",
-    "notifs.digestChanges": " · Stundenplan geändert",
     // round 4: exam sittings as calendar events
     "notifs.digestTitleExam": "Heute: Klausur",
     "notifs.digestBodyExam": " Klausur um {0}{1}",
@@ -195,6 +219,8 @@ class L10n {
     "export.empty":
         "Noch kein Stundenplan gespeichert – auf der Startseite nach unten ziehen, um ihn zu laden",
     "export.failed": "Export fehlgeschlagen – bitte erneut versuchen",
+    "export.inFlight":
+        "Export läuft bereits – zuerst den Freigabedialog schließen",
   };
 
   static const Map<String, String> _en = {
@@ -221,6 +247,7 @@ class L10n {
     "agenda.iliasLoading": "Loading messages…",
     "agenda.iliasUnreachable": "ILIAS currently unreachable",
     "agenda.iliasNone": "No new messages",
+    "agenda.iliasStale": "ILIAS unreachable – showing saved data",
     "agenda.nNew": "{0} new",
     "agenda.examsOpen": "Exam registration open",
     "agenda.examsLoading": "Checking exam registrations…",
@@ -247,6 +274,11 @@ class L10n {
     "ilias.downloading": "Downloading...",
     "ilias.downloadFailed": "Download failed - please try again",
     "ilias.refreshError": "Refresh failed!",
+    "ilias.authFailed": "ILIAS sign-in failed - please try again.",
+    "ilias.retry": "Try again",
+    "ilias.backTooltip": "Back",
+    "ilias.forwardTooltip": "Forward a page in ILIAS",
+    "ilias.refreshTooltip": "Refresh the ILIAS session (sign in again)",
     "easter.currywerk": "Currywerk is overrated",
     "agenda.nowRunning": "running · until {0}",
     "agenda.startsSoon": "starting soon",
@@ -263,11 +295,14 @@ class L10n {
     "home.modulesEmpty": "No modules loaded yet",
     "home.modulesEmptyBtn": "Refresh now",
     "home.lastUpdated": "Last updated: {0}",
+    "home.profileLoading": "Loading profile…",
     "agenda.signmeupTitle": "SignMeUp registrations",
     "agenda.signmeupEnds": "{0} · until {1}",
     "agenda.signmeupOpens": "{0} · from {1}",
     "agenda.signmeupUntil": "until {0}",
     "agenda.signmeupFrom": "from {0}",
+    "agenda.signmeupOpen": "Open in SignMeUp",
+    "agenda.ownCalendar": "own calendar",
     "notifs.signmeupTitle": "SignMeUp deadline approaching",
     "notifs.signmeupBody": "{0} – registration ends at {1}",
     "agenda.signmeupMineTitle": "My registrations",
@@ -278,7 +313,6 @@ class L10n {
     "agenda.signmeupMineMore": "+{0} more",
     "notifs.digestTitle": "Today: {0} classes",
     "notifs.digestBody": " First at {0}{1}",
-    "notifs.digestChanges": " · timetable changed",
     // round 4: exam sittings as calendar events
     "notifs.digestTitleExam": "Today: exam",
     "notifs.digestBodyExam": " Exam at {0}{1}",
@@ -292,5 +326,7 @@ class L10n {
     "export.empty":
         "No timetable stored yet – pull down on the home page to load it",
     "export.failed": "Export failed – please try again",
+    "export.inFlight":
+        "Export already running – close the share sheet first",
   };
 }

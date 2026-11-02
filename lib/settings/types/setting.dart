@@ -17,7 +17,10 @@ class Setting<T> {
     Object? stored = prefs.get(valueKey);
 
     if (stored == null) {
-      await set(_value);
+      // first run: persist the default WITHOUT notifying - nothing changes
+      // from the value widgets already render, and firing every setting's
+      // callback on a fresh install was a spurious rebuild burst
+      await _persist(_value);
       return;
     }
 
@@ -30,13 +33,23 @@ class Setting<T> {
       // theme/language arrived silently without any rebuild
       if (changed) notifyCallback?.call();
     } else {
-      await set(_value); // fallback to default if type mismatch
+      // fallback to default if type mismatch (also non-notifying: the
+      // in-memory value never left the default)
+      await _persist(_value);
     }
   }
 
   Future<void> set(T newValue) async {
-    final prefs = await SharedPreferences.getInstance();
     _value = newValue;
+    await _persist(newValue);
+
+    if (notifyCallback != null) {
+      notifyCallback!();
+    }
+  }
+
+  Future<void> _persist(T newValue) async {
+    final prefs = await SharedPreferences.getInstance();
 
     if (newValue is bool) {
       await prefs.setBool(valueKey, newValue);
@@ -49,11 +62,7 @@ class Setting<T> {
     } else if (newValue is List<String>) {
       await prefs.setStringList(valueKey, newValue);
     } else {
-      throw UnsupportedError('Unsupported type: ${value.runtimeType}');
-    }
-
-    if (notifyCallback != null) {
-      notifyCallback!();
+      throw UnsupportedError('Unsupported type: ${newValue.runtimeType}');
     }
   }
 

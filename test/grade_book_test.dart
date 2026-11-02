@@ -1,3 +1,4 @@
+import 'package:html/parser.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kit_mobile/grades/models/grade_book.dart';
 import 'package:kit_mobile/parsing/models/hierarchic_table_row.dart';
@@ -119,6 +120,18 @@ void main() {
       expect(book.passedEcts, 12.0);
     });
 
+    test("titles differing only after a comma stay distinct modules", () {
+      // lectureTitleKey cut both of these at the first ", " (past position
+      // 10) into one key - the second module silently vanished from the
+      // ledger along with its CP; the ledger keys on the exact title now
+      final book = _book([
+        _row(level: 3, title: "Wahlpflichtbereich, Energie", grade: "1,0"),
+        _row(level: 3, title: "Wahlpflichtbereich, Produktion", grade: "1,0"),
+      ]);
+      expect(book.modules, hasLength(2));
+      expect(book.passedEcts, 12.0);
+    });
+
     test("EM I and EM III stay distinct modules", () {
       final book = _book([
         _row(level: 3, title: "Engineering Mechanics I", grade: "1,0"),
@@ -210,6 +223,39 @@ void main() {
         _row(level: 3, title: "Normal", grade: "1,0", pointsMax: "6,00"),
       ]).modules.single;
       expect(m.moduleEcts, 6.0);
+    });
+  });
+
+  group("grade cell parsing (parseTr)", () {
+    // the corrupting extraction used to happen HERE, before the ledger
+    // could see anything: the raw cell was cut to a 3-char window around
+    // the last comma
+    HierarchicTableRow? row(String gradeCell) {
+      final doc = parse('<table><tr class="hierarchy3">'
+          '<td></td><td><a href="x">Analysis 1</a></td><td>V</td><td></td>'
+          '<td>$gradeCell</td><td></td><td>6,00</td><td>6,00</td></tr></table>');
+      return HierarchicTableRow.parseTr(
+          doc.getElementsByTagName("tr").single, {});
+    }
+
+    test("spaced and padded decimals keep the mark", () {
+      expect(row("1,&nbsp;3")!.grade, "1,3");
+      expect(row("1 , 3")!.grade, "1,3");
+      expect(row("  5 , 0 ")!.grade, "5,0");
+      expect(row("2,7")!.grade, "2,7");
+    });
+
+    test("prose cells survive whole instead of becoming garbage", () {
+      expect(row("keine Angabe, s. o.")!.grade, "keine Angabe, s. o.");
+      expect(row("bestanden")!.grade, "bestanden");
+      expect(row("&nbsp;")!.grade, "");
+      expect(row("")!.grade, "");
+      expect(row("0,0")!.grade, "0,0");
+    });
+
+    test("a parsed spaced decimal still classifies in the ledger", () {
+      final book = _book([row("5 , 0")!]);
+      expect(book.failed.single.numericGrade, 5.0);
     });
   });
 

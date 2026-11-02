@@ -98,10 +98,16 @@ class RelevantModuleView extends StatelessWidget {
 
   Future<KITModule> _getModuleToShow(KITProvider vm) async {
     Future<KITModule> moduleToShow = Future.value(module);
-    if (module.hierarchicalTableRowId.isEmpty) {
+    // placeholder card (row not fetched yet, no row data): resolve it by
+    // the stored row id with an EXACT match - the prettified title is not
+    // a substring of the raw "level_title_year" id, and a contains() test
+    // on short titles could bind a different row's module
+    if (module.row == null) {
       HierarchicTableRow? rowToShow;
       for (final row in vm.campusManager.moduleRows) {
-        if (row.id.contains(module.title)) {
+        if (module.hierarchicalTableRowId.isNotEmpty
+            ? row.id == module.hierarchicalTableRowId
+            : row.id.contains(module.title)) {
           rowToShow = row;
           break;
         }

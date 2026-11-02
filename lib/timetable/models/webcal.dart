@@ -6,6 +6,26 @@ import 'timetable_weekly.dart';
 import '../../geo/models/kit_place.dart';
 import '../../l10n/l10n.dart';
 
+/// SharedPreferences records of the WebCal pipeline. The foreground fetch
+/// (CampusManager) and the background poll isolate write the SAME records -
+/// string literals copied into both only ever drift while the app is
+/// closed, the hardest place to notice. Single source of truth.
+class WebcalKeys {
+  WebcalKeys._();
+
+  static const url = "DATA_webcalUrl";
+  static const icsCache = "DATA_webcalIcsCache";
+  static const fingerprint = "DATA_webcalFingerprint";
+  static const changes = "DATA_webcalChanges";
+
+  /// fingerprint of the feed URL the cached ICS/fingerprint came from; a
+  /// different source (re-provisioned token URL, test-seam build) means the
+  /// stored baseline describes ANOTHER calendar - diffing across sources
+  /// produced a 50-delta phantom CHAINED band during E2E runs
+  static const feedSource = "DATA_webcalFeedSource";
+  static const fetchedAt = "DATA_webcalFetchedAt";
+}
+
 /// One concrete dated occurrence of a calendar entry (RRULE already expanded).
 class IcsOccurrence {
   final DateTime start;
@@ -25,6 +45,14 @@ class IcsOccurrence {
   /// start-only instead.
   final bool endGuessed;
 
+  /// True when the originating VEVENT came from the student's OWN imported
+  /// personal/faculty ICS block, i.e. it sits between the
+  /// `X-PERSONAL-ICS-BEGIN`/`END` sentinel markers CampusManager embeds in
+  /// the merged cache. The agenda renders an "own calendar" chip on these
+  /// rows so a feed lecture and its imported duplicate are tellable apart;
+  /// display-only - matching, fingerprint and dedup ignore it.
+  final bool fromPersonalIcs;
+
   IcsOccurrence(
       {required this.start,
       required this.end,
@@ -32,7 +60,8 @@ class IcsOccurrence {
       required this.room,
       required this.uid,
       this.seriesEnd,
-      this.endGuessed = false});
+      this.endGuessed = false,
+      this.fromPersonalIcs = false});
 
   /// Faculty ICS exports append the course number to SUMMARY
   /// ("... - 3161011", "... - 2145191/2145192") and stuff duplicated tokens
@@ -77,6 +106,19 @@ class WebcalFeed {
   WebcalFeed({required this.occurrences, required this.raw});
 
   static final _dt = RegExp(r'^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$');
+  // UTC form: bare `Z` or a numeric offset (RFC 5545 writes "+0200", the
+  // colon variant appears in the wild); converted to device-local below
+  static final _dtUtc = RegExp(
+      r'^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(?:Z|([+-]\d{2}:?\d{2}))$');
+  // VALUE=DATE all-day stamp (hand-written personal ICS files)
+  static final _date = RegExp(r'^(\d{4})(\d{2})(\d{2})$');
+
+  /// Sentinel line pair around the student's own imported ICS block in the
+  /// merged cache: the SAME discriminator `CampusManager.stripPersonalIcs`
+  /// keys on. Literals duplicated from campus_manager.dart after the
+  /// ics_export.dart precedent, keeping this parser free of the state layer.
+  static const personalBegin = "X-PERSONAL-ICS-BEGIN";
+  static const personalEnd = "X-PERSONAL-ICS-END";
 
   static List<String> _unfold(String raw) {
     final out = <String>[];
@@ -98,19 +140,50 @@ class WebcalFeed {
       .replaceAll(r"\n", " ")
       .replaceAll(r"\\", r"\");
 
+  /// Tolerant timestamp reader: the feed's naive wall time, UTC `Z` and
+  /// offset stamps (converted to device-local), and `VALUE=DATE` all-day
+  /// stamps (local midnight). A value NONE of the shapes matches returns
+  /// null - the caller then SKIPS the whole VEVENT explicitly rather than
+  /// guessing, so a TZ-aware feed variant can no longer shift every time
+  /// silently or drop all-day events on the regex.
   static DateTime? _dtOf(String v) {
-    final m = _dt.firstMatch(v.trim());
-    if (m == null) {
-      return null;
+    final s = v.trim();
+    var m = _dt.firstMatch(s);
+    if (m != null) {
+      // feed is Europe/Berlin wall time; local device timezone is Berlin for us
+      return DateTime(
+          int.parse(m.group(1)!),
+          int.parse(m.group(2)!),
+          int.parse(m.group(3)!),
+          int.parse(m.group(4)!),
+          int.parse(m.group(5)!),
+          int.parse(m.group(6)!));
     }
-    // feed is Europe/Berlin wall time; local device timezone is Berlin for us
-    return DateTime(
-        int.parse(m.group(1)!),
-        int.parse(m.group(2)!),
-        int.parse(m.group(3)!),
-        int.parse(m.group(4)!),
-        int.parse(m.group(5)!),
-        int.parse(m.group(6)!));
+    m = _dtUtc.firstMatch(s);
+    if (m != null) {
+      final utc = DateTime.utc(
+          int.parse(m.group(1)!),
+          int.parse(m.group(2)!),
+          int.parse(m.group(3)!),
+          int.parse(m.group(4)!),
+          int.parse(m.group(5)!),
+          int.parse(m.group(6)!));
+      final offset = m.group(7);
+      if (offset == null) return utc.toLocal();
+      final digits = offset.substring(1).replaceAll(":", "");
+      final skew = Duration(
+          hours: int.parse(digits.substring(0, 2)),
+          minutes: int.parse(digits.substring(2)));
+      // wall time = UTC instant minus the stamp's own offset from UTC
+      return (offset.startsWith("-") ? utc.add(skew) : utc.subtract(skew))
+          .toLocal();
+    }
+    m = _date.firstMatch(s);
+    if (m != null) {
+      return DateTime(int.parse(m.group(1)!), int.parse(m.group(2)!),
+          int.parse(m.group(3)!));
+    }
+    return null;
   }
 
   static WebcalFeed? parse(String raw, {DateTime? now, int horizonDays = 56}) {
@@ -124,13 +197,31 @@ class WebcalFeed {
     // Pass 1: parse every VEVENT into its full expanded series.
     final seriesByKey = <String, List<IcsOccurrence>>{};
 
+    // True between the personal-ICS sentinel lines; occurrences whose
+    // VEVENT started there are the student's own imported entries. The
+    // sentinels only ever appear BETWEEN VEVENTs (injected blocks), so
+    // latching on BEGIN:VEVENT is enough.
+    var inPersonalBlock = false;
+    var blockPersonal = false;
     List<String>? block;
     for (final line in lines) {
+      // the cache is \r\n-terminated and LineSplitter keeps the trailing
+      // \r, so sentinel codes are compared trimmed
+      final code = line.trimRight();
+      if (code == personalBegin) {
+        inPersonalBlock = true;
+        continue;
+      }
+      if (code == personalEnd) {
+        inPersonalBlock = false;
+        continue;
+      }
       if (line.startsWith("BEGIN:VEVENT")) {
         block = [];
+        blockPersonal = inPersonalBlock;
       } else if (line.startsWith("END:VEVENT")) {
         if (block != null) {
-          final ev = _parseEvent(block);
+          final ev = _parseEvent(block, personal: blockPersonal);
           block = null;
           if (ev == null || ev.isEmpty) {
             continue;
@@ -155,8 +246,10 @@ class WebcalFeed {
     // UNTIL (observed: Advanced Mathematics I - two snapshots dead at
     // 30.10, one alive to 19.02.2027). Only the longest-living series
     // survives its group, so a dead snapshot can neither mask future
-    // instances nor leak stale past ones. Distinct parallel groups carry
-    // distinct titles; genuine byte-identical dupes merge trivially.
+    // instances nor leak stale past ones. Grouping is title+DTSTART only:
+    // the feed alternates LOCATION between the clone snapshots of ONE real
+    // series (wc_now.ics fixture), so room must NOT join the key - it
+    // would split one course into parallel groups and let a dead clone win.
     final occurrences = <IcsOccurrence>[];
     for (final series in seriesByKey.values) {
       // The horizonEnd clamp exists to BOUND RRULE EXPANSION - unbounded
@@ -185,7 +278,8 @@ class WebcalFeed {
     return WebcalFeed(occurrences: occurrences, raw: raw);
   }
 
-  static List<IcsOccurrence>? _parseEvent(List<String> block) {
+  static List<IcsOccurrence>? _parseEvent(List<String> block,
+      {bool personal = false}) {
     String? uid, summary, startStr, endStr, rrule, location;
     final exdates = <String>{};
     for (final prop in block) {
@@ -247,13 +341,14 @@ class WebcalFeed {
             room: room,
             uid: uid ?? title,
             seriesEnd: start,
-            endGuessed: endGuessed)
+            endGuessed: endGuessed,
+            fromPersonalIcs: personal)
       ];
     }
 
     // weekly expansion; UNTIL is naive wall time in the feed
     var until = horizonDefault;
-    final m = RegExp(r"UNTIL=(\d{8}T\d{6})").firstMatch(rrule);
+    final m = RegExp(r"UNTIL=(\d{8}T\d{6}Z?)").firstMatch(rrule);
     if (m != null) {
       until = _dtOf(m.group(1)!) ?? until;
     }
@@ -288,12 +383,16 @@ class WebcalFeed {
             room: room,
             uid: uid ?? title,
             seriesEnd: seriesEnd,
-            endGuessed: endGuessed)
+            endGuessed: endGuessed,
+            fromPersonalIcs: personal)
     ];
   }
 
   /// RRULE expansion safety ceiling; parse() clamps with its own horizon.
-  static final DateTime horizonDefault =
+  /// Recomputed per access: a `static final` pinned it to first use for
+  /// the whole process lifetime, so UNTIL-less weekly series stopped
+  /// expanding at a stale now+365 d during long-lived sessions.
+  static DateTime get horizonDefault =>
       DateTime.now().add(const Duration(days: 365));
 
   static String _fmt(DateTime d) =>
@@ -415,7 +514,12 @@ class WebcalFeed {
         removedUnpaired.add(o);
         continue;
       }
-      if (twin.room != o.room || twin.end != o.end) {
+      // title included: a RENAMED lecture keeps its UID and time, so the
+      // twin pairing above matches it - comparing room/end only let the
+      // rename pass as "nothing happened"
+      if (twin.room != o.room ||
+          twin.end != o.end ||
+          twin.title != o.title) {
         changes.add(IcsChange(
             kind: IcsChangeKind.changed,
             title: twin.title,

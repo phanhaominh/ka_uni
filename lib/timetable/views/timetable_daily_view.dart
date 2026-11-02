@@ -116,7 +116,12 @@ class TimetableDailyView extends StatelessWidget {
                             ? null
                             : deviceWidth * 0.8,
                         child: Container(
-                          padding: EdgeInsets.symmetric(horizontal: 15),
+                          // asymmetric: the HH:MM badge is Positioned at
+                          // the top-right of this Stack, so the text column
+                          // reserves the badge's footprint on the right -
+                          // long titles used to run under it and cut
+                          // mid-word
+                          padding: const EdgeInsets.only(left: 15, right: 72),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -137,6 +142,7 @@ class TimetableDailyView extends StatelessWidget {
                                             ?.copyWith(
                                                 fontWeight: FontWeight.bold),
                                         maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
                                       ))
                                   : Text(
                                       appointment.displayTitle,
@@ -144,6 +150,7 @@ class TimetableDailyView extends StatelessWidget {
                                           ?.copyWith(
                                               fontWeight: FontWeight.bold),
                                       maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
 
                               appointment.place.title.isNotEmpty
@@ -153,6 +160,7 @@ class TimetableDailyView extends StatelessWidget {
                                       child: Text(
                                         appointment.displayPlace,
                                         maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
                                       ))
                                   : SizedBox(
                                       height: 0,
@@ -164,6 +172,7 @@ class TimetableDailyView extends StatelessWidget {
                                   ? Text(
                                       appointment.notes!,
                                       maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
                                     )
                                   : const SizedBox.shrink(),
 

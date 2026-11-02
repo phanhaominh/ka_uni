@@ -469,6 +469,20 @@ void main() {
       expect(ExamTerm("Di, 16.04.2027", "10:00", "--").roomLabel, isEmpty);
     });
   });
+
+  test("alias ties resolve deterministically: alphabetically first wins", () {
+    // two aliases scoring identically on "xy": without the tie-break the
+    // first in directory order claimed the displayed "auch:" hint, and
+    // that order shifts across KIT data refreshes
+    final tie = KITPlace(
+      id: "tie",
+      title: "Testgebäude",
+      aliasList: const ["Beta-Xy", "Alpha-Xy"],
+    );
+    final match = rankPlaces([tie], "xy").single;
+    expect(match.tier, PlaceMatchTier.alias);
+    expect(match.matchedAlias, "Alpha-Xy");
+  });
 }
 
 // plain title-only fixture for the fuzzy-cap test

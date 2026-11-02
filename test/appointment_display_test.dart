@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:html/dom.dart';
+import 'package:html/parser.dart' as html_parser;
 import 'package:kit_mobile/timetable/models/timetable_appointment.dart';
 import 'package:kit_mobile/timetable/models/webcal.dart';
 import 'package:kit_mobile/geo/models/kit_place.dart';
@@ -59,5 +61,26 @@ void main() {
         "Thermodynamics II");
     expect(IcsOccurrence.cleanRoom("Lecture Hall HS HS 76.41"),
         "Lecture Hall HS 76.41");
+  });
+
+  test("parseFromHtmlTr rejects malformed interval tokens, never throws", () {
+    Element tr(String interval) => html_parser
+        .parse('<table><tr class="appointment" app-interval="$interval">'
+            '<td><a href="#">4711 – Thermodynamics II</a></td>'
+            '<td><a href="sp/campus/10.21">Audimax</a></td></tr></table>')
+        .getElementsByClassName("appointment")
+        .first;
+
+    // one bad token must drop that row only - a bare int.parse on the
+    // minutes threw out of the whole scrape parse
+    expect(TimetableAppointment.parseFromHtmlTr(tr("08:15 10:xx")), isNull);
+    expect(TimetableAppointment.parseFromHtmlTr(tr("ab:15 10:00")), isNull);
+
+    final ok = TimetableAppointment.parseFromHtmlTr(tr("08:15 10:00"))!;
+    expect(ok.begin.hour, 8);
+    expect(ok.begin.minute, 15);
+    expect(ok.end.hour, 10);
+    expect(ok.end.minute, 0);
+    expect(ok.title, "Thermodynamics II");
   });
 }

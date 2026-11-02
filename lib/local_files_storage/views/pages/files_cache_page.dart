@@ -23,30 +23,72 @@ class FilesCachePage extends StatefulWidget {
 class _FilesCachePageState extends State<FilesCachePage> {
   String expandedSemesterString = "";
   List<String> expandedSemesterStringFiles = [];
+  // the sole cached semester auto-expands until the student taps a row
+  bool userToggledExpansion = false;
+  bool autoExpandScheduled = false;
 
   @override
   Widget build(BuildContext context) {
     final filesVM = Provider.of<IliasFilesProvider>(context);
     final theme = Theme.of(context);
 
-    final semestersListFuture =
-        filesVM.localFileStorageManager.getSemestersWithCachedFiles();
+    // semester -> its cached files: one scan feeds the per-row file
+    // counts and the expansion list
+    final cacheFuture = _loadCachedFiles(filesVM);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(L10n.t("files.cacheTitle")),
       ),
       body: FutureBuilder(
-          future: semestersListFuture,
+          future: cacheFuture,
           builder: (context, snapshot) {
             if (snapshot.hasData && snapshot.data != null) {
+              final semestersToFiles = snapshot.data!;
+              final semesters = semestersToFiles.keys.toList();
+
+              if (semesters.isEmpty) {
+                // an empty cache used to render a blank page: say what
+                // the student can do about it
+                return Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(defaultPagePadding * 2),
+                    child: Text(
+                      L10n.t("files.cacheEmpty"),
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                );
+              }
+
+              // exactly one semester: don't make the student tap to see it
+              if (semesters.length == 1 &&
+                  !userToggledExpansion &&
+                  expandedSemesterString.isEmpty &&
+                  !autoExpandScheduled) {
+                autoExpandScheduled = true;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && !userToggledExpansion) {
+                    _expandSemester(
+                        semesters.first, semestersToFiles[semesters.first]!);
+                  }
+                });
+              }
+
               return ListView.builder(
-                  itemCount: snapshot.data!.length,
+                  itemCount: semesters.length,
                   itemBuilder: (context, index) {
-                    final currentSemesterString = snapshot.data![index];
+                    final currentSemesterString = semesters[index];
                     final iAmSelected = expandedSemesterString
                             .compareTo(currentSemesterString) ==
                         0;
+                    // the expanded row tracks live deletions; collapsed rows
+                    // read their count straight off the loaded cache map
+                    final cachedFiles = iAmSelected
+                        ? expandedSemesterStringFiles
+                        : semestersToFiles[currentSemesterString]!;
 
                     return Padding(
                       padding: EdgeInsets.all(defaultPagePadding),
@@ -60,6 +102,18 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                   _prettifySemesterString(currentSemesterString),
                                   style: theme.textTheme.titleMedium,
                                 ),
+                                Text(
+                                  L10n.t(
+                                      cachedFiles.length == 1
+                                          ? "files.cachedFileCountOne"
+                                          : "files.cachedFileCountOther",
+                                      [cachedFiles.length]),
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: theme.colorScheme
+                                          .onSurfaceVariant),
+                                ),
+                                SizedBox(width: 8),
                                 Spacer(),
                                 AnimatedRotation(
                                   curve: defaultChevronRotationAnimationCurve,
@@ -67,15 +121,18 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                   duration: defaultChevronRotationAnimationDuration,
                                   child: CupertinoButton(
                                     onPressed: () => _expandSemester(
-                                        currentSemesterString, filesVM),
+                                        currentSemesterString,
+                                        semestersToFiles[
+                                            currentSemesterString]!),
                                     padding: EdgeInsets.zero,
                                     child: Icon(CupertinoIcons.chevron_down),
                                   ),
                                 )
                               ],
                             ),
-                            onTap: () =>
-                                _expandSemester(currentSemesterString, filesVM),
+                            onTap: () => _expandSemester(
+                                currentSemesterString,
+                                semestersToFiles[currentSemesterString]!),
                           ),
                           !iAmSelected
                               ? SizedBox.shrink()
@@ -84,7 +141,31 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                         Padding(padding: EdgeInsets.all(5)),
                                         Divider(),
                                       ] +
-                                      expandedSemesterStringFiles
+                                        // the semester index can outlive its
+                                        // files (everything deleted): an
+                                        // expanded zero-file semester used
+                                        // to be blank space
+                                        (cachedFiles.isEmpty
+                                            ? <Widget>[
+                                                Padding(
+                                                  padding: EdgeInsets
+                                                      .symmetric(
+                                                          vertical: 16,
+                                                          horizontal: 8),
+                                                  child: Text(
+                                                    L10n.t("files.cacheEmpty"),
+                                                    textAlign: TextAlign.center,
+                                                    style: theme.textTheme
+                                                        .bodyMedium
+                                                        ?.copyWith(
+                                                            color: theme
+                                                                .colorScheme
+                                                                .onSurfaceVariant),
+                                                  ),
+                                                ),
+                                              ]
+                                            : <Widget>[]) +
+                                      cachedFiles
                                           .map<Widget>((semFile) {
                                         final fileDisplayName =
                                             semFile.substring(semFile.indexOf(
@@ -202,6 +283,20 @@ class _FilesCachePageState extends State<FilesCachePage> {
     );
   }
 
+  /// semester string -> the file paths cached for it; a single scan feeds
+  /// both the per-row file counts and the expansion list
+  Future<Map<String, List<String>>> _loadCachedFiles(
+      IliasFilesProvider filesVM) async {
+    final semesters = await filesVM.localFileStorageManager
+        .getSemestersWithCachedFiles();
+    final filesPerSemester = await Future.wait(semesters
+        .map(filesVM.localFileStorageManager.getFilesForSemesterString));
+    return {
+      for (var i = 0; i < semesters.length; i++)
+        semesters[i]: filesPerSemester[i],
+    };
+  }
+
   Future<bool?> _confirmFileDeletion(String filename) async {
     return await showCupertinoDialog<bool>(context: context, builder: (dialogContext) => CupertinoAlertDialog(
       title: Text(L10n.t("files.confirmDeletionTitle")),
@@ -247,23 +342,17 @@ class _FilesCachePageState extends State<FilesCachePage> {
     return fileDisplayName;
   }
 
-  void _expandSemester(
-      String currentSemesterString, IliasFilesProvider filesVM) {
+  void _expandSemester(String currentSemesterString, List<String> files) {
     setState(() {
+      userToggledExpansion = true;
       if (expandedSemesterString == currentSemesterString) {
         // deselect
         expandedSemesterString = "";
+        expandedSemesterStringFiles = [];
         return;
       }
       expandedSemesterString = currentSemesterString;
-    });
-
-    filesVM.localFileStorageManager
-        .getFilesForSemesterString(currentSemesterString)
-        .then((filesList) {
-      setState(() {
-        expandedSemesterStringFiles = filesList;
-      });
+      expandedSemesterStringFiles = files;
     });
   }
 }

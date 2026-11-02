@@ -11,10 +11,18 @@ String sanitizeModuleTitle(String title) {
   // the initial split by "-"
   final split = title.split("-");
 
+  // a fragment only counts as an exam annotation when one of the words
+  // appears STANDALONE: a plain substring test also dropped legit
+  // fragments such as "Klausurplanung"
+  final filterOutRegexps = [
+    for (final ignored in filterOutLower)
+      RegExp("(^|[^a-zäöüß0-9])$ignored([^a-zäöüß0-9]|\$)"),
+  ];
+
   split.removeWhere((entry) {
     final entryLower = entry.toLowerCase();
-    for (final ignored in filterOutLower) {
-      if (entryLower.contains(ignored)) {
+    for (final filterRegexp in filterOutRegexps) {
+      if (filterRegexp.hasMatch(entryLower)) {
         // ignore immediately
         return true;
       }
@@ -23,7 +31,9 @@ String sanitizeModuleTitle(String title) {
     return false;
   });
 
-  return split.join("-");
+  // trimming: when the first (or last) fragment is dropped, the space
+  // it was separated with must not survive as a leading-space artifact
+  return split.join("-").trim();
 }
 
 String prettifyTemporaryModuleTitle(String title) {

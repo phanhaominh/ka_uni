@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:fuzzywuzzy/fuzzywuzzy.dart';
 import 'package:async_locks/async_locks.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:html/parser.dart';
 import 'package:http/http.dart' as http;
 import 'package:kit_mobile/module_info_table/models/module_info_table.dart';
@@ -29,6 +28,10 @@ const _studentDataKey = "DATA_student";
 class CampusManager extends KITLoginManager {
   List<HierarchicTableRow> moduleRows = [];
   Map<String, KITModule> rowModules = {}; // INDEXING AS row_id: module
+  // C12: a module page fetch is a full scrape; while one runs for a row,
+  // every other caller (double tap, prefetch sweep) joins THIS future
+  // instead of firing a second scrape of the same page
+  final Map<String, Future<KITModule>> _moduleInFlight = {};
   final Set<String> _moduleRefreshInProgress = {};
 
   TimetableWeekly timetable = TimetableWeekly();
@@ -200,11 +203,37 @@ class CampusManager extends KITLoginManager {
 
   Future<void> forceRefetchEverything({bool allModulesAsWell = true}) async {
     await clearEverything();
-    await fetchSchedule();
-    await fetchTimetable();
-    await fetchExams();
+    // Stage-isolated, cookie-less stage FIRST: clearEverything() leaves
+    // nothing behind, and the strict sequence used to let the FIRST
+    // stage's SSO failure abort every later one - home pull-refresh
+    // during a dead/expired session then updated NOTHING. The ICS feed
+    // needs no session, so it leads; failures are collected and rethrown
+    // combined at the end, so the caller's toast keeps firing.
+    final failures = <String>[];
+    try {
+      await fetchTimetable();
+    } on Object catch (e) {
+      failures.add("timetable: $e");
+    }
+    try {
+      await fetchSchedule();
+    } on Object catch (e) {
+      failures.add("schedule: $e");
+    }
+    try {
+      await fetchExams();
+    } on Object catch (e) {
+      failures.add("exams: $e");
+    }
     if (allModulesAsWell) {
-      await fetchAllModules();
+      try {
+        await fetchAllModules();
+      } on Object catch (e) {
+        failures.add("modules: $e");
+      }
+    }
+    if (failures.isNotEmpty) {
+      throw StateError(failures.join(", "));
     }
   }
 
@@ -221,11 +250,17 @@ class CampusManager extends KITLoginManager {
     await clearCookiesAndCache();
   }
 
+  /// Bumped by [wipeAccountMemory]; async chains capture it before their
+  /// awaits and drop account-derived writes when it changed mid-flight
+  /// (the OLD account must not bleed into the NEW one's memory or prefs).
+  int _teardownEpoch = 0;
+
   /// Drops every piece of account-derived in-memory state. CampusManager
   /// (via KITProvider) is created once and SURVIVES logout, so anything not
   /// listed here keeps rendering the previous student's data to the next
   /// account on a shared device until every refetch happens to succeed.
   void wipeAccountMemory() {
+    _teardownEpoch++;
     scheduleFetchingTimer?.cancel();
     scheduleFetchingTimer = null;
     moduleRows = [];
@@ -296,26 +331,41 @@ class CampusManager extends KITLoginManager {
     return response;
   }
 
+  Future<void>? _scheduleInFlight;
+
   Future<void> fetchSchedule(
       {notify = true,
       retryIfFailed = true,
       secondRetryIfFailed = true,
       refreshSession = true,
-      startRefreshTimer = true}) async {
-    if (isFetchingSchedule) {
-      await HapticFeedback.lightImpact();
-      Future.delayed(Duration(milliseconds: 200))
-          .whenComplete(HapticFeedback.mediumImpact);
-      if (kDebugMode) {
-        print("Rejected fetchSchedule call: already being fetched");
-      }
-      return;
-    }
+      startRefreshTimer = true}) {
+    // memoize the in-flight fetch (the exam chain does the same): the
+    // grades pull-refresh right after login's automatic schedule fetch
+    // used to be REJECTED with an already-completed future and marched
+    // on over stale data, grading itself as done
+    final inflight = _scheduleInFlight;
+    if (inflight != null) return inflight;
+    final future = _fetchScheduleGuarded(
+        notify: notify,
+        retryIfFailed: retryIfFailed,
+        secondRetryIfFailed: secondRetryIfFailed,
+        refreshSession: refreshSession,
+        startRefreshTimer: startRefreshTimer);
+    _scheduleInFlight = future;
+    return future.whenComplete(() => _scheduleInFlight = null);
+  }
 
+  Future<void> _fetchScheduleGuarded({
+    required bool notify,
+    required bool retryIfFailed,
+    required bool secondRetryIfFailed,
+    required bool refreshSession,
+    required bool startRefreshTimer,
+  }) async {
     // isFetchingSchedule must be cleared on EVERY exit: the login flow
     // (login -> fetchSchedule) and every retry run INSIDE this call stack,
     // so a held flag deadlocks the login future forever (the reported
-    // "app is not responding" freeze). No re-entrancy is possible anyway.
+    // "app is not responding" freeze).
     isFetchingSchedule = true;
     try {
       await _fetchScheduleInner(
@@ -443,11 +493,11 @@ class CampusManager extends KITLoginManager {
         print("No grade row; profile fields left as-is. Retrying once...");
       }
       if (retryIfFailed) {
-        // Retry in the inner directly: the public entry is unreachable from
-        // here (isFetchingSchedule is held by *this* frame, so its guard
-        // rejected every retry and made this path a no-op haptic twitch).
-        // Direct recursion is safe now - the flag stays owned by this frame
-        // and the inner call is awaited.
+        // Retry in the inner directly: the public entry is unreachable
+        // from here (its in-flight memo returns *this* frame's future -
+        // awaiting it would deadlock this fetch and the login riding on
+        // it forever). Direct recursion is safe now - the flag stays
+        // owned by this frame and the inner call is awaited.
         await _fetchScheduleInner(
             notify: true,
             retryIfFailed: secondRetryIfFailed,
@@ -611,7 +661,9 @@ class CampusManager extends KITLoginManager {
   }
 
   Future<KITModule> fetchModule(HierarchicTableRow row,
-      {recursiveRetry = true, userInitiated = false}) async {
+      {recursiveRetry = true,
+      userInitiated = false,
+      sessionRetried = false}) async {
     final url = row.href;
 
     final response = await guardedCasGet(url);
@@ -623,11 +675,17 @@ class CampusManager extends KITLoginManager {
     // visible failure. Detect first, re-boot, retry once, and parse into a
     // fresh instance that only replaces the cache when non-empty.
     if (response.statusCode == 200 && sessionExpired(response.body)) {
-      if (cascampusReady) {
+      // per-CHAIN flag, not the session flag: bootCascampusSession() below
+      // re-arms cascampusReady, so a server that keeps serving expired
+      // pages ping-ponged boot<->parse forever under the old guard -
+      // the "retry once" is now actually enforced per page fetch
+      if (!sessionRetried) {
         cascampusReady = false;
         await bootCascampusSession();
         return fetchModule(row,
-            recursiveRetry: recursiveRetry, userInitiated: userInitiated);
+            recursiveRetry: recursiveRetry,
+            userInitiated: userInitiated,
+            sessionRetried: true);
       }
     }
 
@@ -703,10 +761,18 @@ class CampusManager extends KITLoginManager {
       return readyModule;
     }
 
-
-    final fetchedModule = await fetchModule(row,
+    // C12: join the running scrape for this row instead of firing a
+    // second one (double tap / prefetch overlap)
+    final running = _moduleInFlight[row.id];
+    if (running != null) return await running;
+    final future = fetchModule(row,
         recursiveRetry: retryIfFailed, userInitiated: userInitiated);
-    return fetchedModule;
+    _moduleInFlight[row.id] = future;
+    try {
+      return await future;
+    } finally {
+      _moduleInFlight.remove(row.id);
+    }
   }
 
   /// Best module title known for a row id: fetched page title first, then
@@ -1176,7 +1242,17 @@ class CampusManager extends KITLoginManager {
 
     for (final row in moduleRows) {
       if (row.id == inModule.hierarchicalTableRowId) {
-        fetchModule(row, userInitiated: true).then((_) => fetchTimetable());
+        // fire-and-forget means any throw becomes an unhandled zone error:
+        // swallow it after logging and rebuild, so the stars settle even
+        // when the post-toggle refetch chain died
+        fetchModule(row, userInitiated: true)
+            .then((_) => fetchTimetable())
+            .catchError((Object e) {
+          if (kDebugMode) {
+            print("Post-toggle refetch failed: $e");
+          }
+          notificationCallback();
+        });
         break;
       }
     }
@@ -1199,15 +1275,11 @@ class CampusManager extends KITLoginManager {
   }
   // ---- WebCal ICS timetable source (primary; token URL, no bot wall) ----
 
-  static const _webcalUrlKey = "DATA_webcalUrl";
-  static const _webcalIcsCacheKey = "DATA_webcalIcsCache";
-  static const _webcalFingerprintKey = "DATA_webcalFingerprint";
-  static const _webcalChangesKey = "DATA_webcalChanges";
-  // fingerprint of the feed URL the cached ICS/fingerprint came from; a
-  // different source (re-provisioned token URL, test-seam build) means the
-  // stored baseline describes ANOTHER calendar - diffing across sources
-  // produced a 50-delta phantom CHAINED band during E2E runs
-  static const _webcalFeedSourceKey = "DATA_webcalFeedSource";
+  static const _webcalUrlKey = WebcalKeys.url;
+  static const _webcalIcsCacheKey = WebcalKeys.icsCache;
+  static const _webcalFingerprintKey = WebcalKeys.fingerprint;
+  static const _webcalChangesKey = WebcalKeys.changes;
+  static const _webcalFeedSourceKey = WebcalKeys.feedSource;
 
   bool timetableChanged = false;
 
@@ -1400,7 +1472,6 @@ class CampusManager extends KITLoginManager {
         DateTime.now().difference(last) < const Duration(minutes: 30)) {
       return;
     }
-    _lastPersonalIcsRefresh = DateTime.now();
     try {
       final response =
           await netGet(Uri.parse(url)).timeout(const Duration(seconds: 20));
@@ -1408,6 +1479,10 @@ class CampusManager extends KITLoginManager {
           !response.body.contains("BEGIN:VEVENT")) {
         return;
       }
+      // stamp on SUCCESS only: stamping before the fetch burned the quiet
+      // 30-min slot on every transient 404/timeout, so one flaky attempt
+      // made the next - possibly good - retry wait another half hour
+      _lastPersonalIcsRefresh = DateTime.now();
       final blocks = RegExp("BEGIN:VEVENT.*?END:VEVENT", dotAll: true)
           .allMatches(response.body)
           .map((m) => m.group(0)!);
@@ -1492,7 +1567,18 @@ class CampusManager extends KITLoginManager {
   /// deterministic (DTSTAMP derived from the sitting, exam_synth.dart) it
   /// still fires on every routine refetch.
   Future<void> reapplyExamSynth(String block) async {
+    final epoch = _teardownEpoch;
     final prefs = await SharedPreferences.getInstance();
+    if (epoch != _teardownEpoch) return; // logout mid-await
+    // teardown fence, same as the background poll: an OLD account's exam
+    // chain completing after a logout must not write its sittings (and
+    // arm examSynth for every later cache write) into the NEW account's
+    // prefs behind the logout sweep's back. The test seam never
+    // provisions DATA_webcalUrl, so it stays exempt.
+    if (testWebcalUrl.isEmpty &&
+        (prefs.getString(_webcalUrlKey) ?? "").isEmpty) {
+      return; // logged out (or not provisioned yet)
+    }
     final cached = prefs.getString(_webcalIcsCacheKey);
     if (cached == null || !cached.contains("BEGIN:VCALENDAR")) {
       examSynth = block;
@@ -1526,6 +1612,51 @@ class CampusManager extends KITLoginManager {
           raw: feed.raw)
       .toWeeklyTemplate();
 
+  /// Drops VEVENTs whose END has passed from a carried-over exam block -
+  /// DTEND when the emitter wrote one, DTSTART+90' otherwise (the same
+  /// default the parser guesses). A sitting that ended while the app
+  /// stayed closed is history by the next cold start, yet the cached
+  /// block would resurrect it (agenda row, digest, alarm) and keep it
+  /// alive through every later cache write until the exam list gets
+  /// proven again. The emitter itself never emits finished sittings
+  /// (exam_synth.dart) - this mirrors that rule at carry-over time. A
+  /// VEVENT whose DTSTART cannot be read is kept: dropping real events
+  /// beats guessing about malformed.
+  static String _dropFinishedExamSynth(String block, DateTime now) {
+    final events =
+        RegExp("BEGIN:VEVENT.*?END:VEVENT\r\n", dotAll: true).allMatches(block);
+    if (events.isEmpty) return block;
+    // line-anchored: an unanchored DTSTART would also fire inside the
+    // DTSTAMP line ("DT"+"START"+"AMP") and poison the start with the
+    // emitter's midnight stamp
+    final stamp =
+        RegExp(r"^(DTSTART|DTEND)[^:]*:(\d{8})T(\d{6})", multiLine: true);
+    final kept = <String>[];
+    for (final m in events) {
+      final ev = m.group(0)!;
+      DateTime? start, end;
+      for (final s in stamp.allMatches(ev)) {
+        final at = DateTime(
+            int.parse(s.group(2)!.substring(0, 4)),
+            int.parse(s.group(2)!.substring(4, 6)),
+            int.parse(s.group(2)!.substring(6, 8)),
+            int.parse(s.group(3)!.substring(0, 2)),
+            int.parse(s.group(3)!.substring(2, 4)),
+            int.parse(s.group(3)!.substring(4, 6)));
+        if (s.group(1) == "DTSTART") {
+          start ??= at;
+        } else {
+          end ??= at;
+        }
+      }
+      if (start == null ||
+          !(end ?? start.add(const Duration(minutes: 90))).isBefore(now)) {
+        kept.add(ev);
+      }
+    }
+    return kept.join();
+  }
+
   /// Cold-start carry-over, mirroring [ensurePersonalIcsLoaded]'s
   /// tri-state: until this process has PROVEN the exam list (a successful
   /// fetchExams) it has no veto over the block - the in-memory copy is
@@ -1536,8 +1667,9 @@ class CampusManager extends KITLoginManager {
   Future<void> carryExamSynthFromCache() async {
     if (examsLoaded || examSynth.isNotEmpty) return;
     final prefs = await SharedPreferences.getInstance();
-    final carried =
-        extractExamSynth(prefs.getString(_webcalIcsCacheKey) ?? "");
+    final carried = _dropFinishedExamSynth(
+        extractExamSynth(prefs.getString(_webcalIcsCacheKey) ?? ""),
+        DateTime.now());
     if (carried.isNotEmpty) examSynth = carried;
   }
 
@@ -1830,13 +1962,14 @@ class CampusManager extends KITLoginManager {
       String.fromEnvironment("TEST_WEBCAL_URL");
 
   Future<bool> fetchWebcalTimetable() async {
-    await ensurePersonalIcsLoaded();
-    await carryExamSynthFromCache();
-    // Contain EVERY failure (incl. TimeoutException from _ensureWebcalUrl /
-    // netGet): when this threw, fetchTimetable's HTML fallback never ran and
-    // forceRefetchEverything aborted mid-pipeline *after* clearEverything()
-    // had already wiped the caches - half-reset app, no error shown.
+    // Contain EVERY failure (incl. TimeoutException from _ensureWebcalUrl
+    // / netGet, and anything the two prefs loads throw): when this threw,
+    // fetchTimetable's HTML fallback never ran and forceRefetchEverything
+    // aborted mid-pipeline *after* clearEverything() had already wiped
+    // the caches - half-reset app, no error shown.
     try {
+      await ensurePersonalIcsLoaded();
+      await carryExamSynthFromCache();
       final url = testWebcalUrl.isNotEmpty
           ? testWebcalUrl
           : await _ensureWebcalUrl();
@@ -1901,7 +2034,7 @@ class CampusManager extends KITLoginManager {
       // age stamp for the agenda stale-data footer (also written by the
       // background poll after it rewrites the cache)
       await prefs.setString(
-          "DATA_webcalFetchedAt", DateTime.now().toIso8601String());
+          WebcalKeys.fetchedAt, DateTime.now().toIso8601String());
 
       final merged = WebcalFeed.parse(injectPersonalIcs(
           injectSignMeUpSynth(
@@ -2003,6 +2136,10 @@ class CampusManager extends KITLoginManager {
   }
 
   Future<bool> _fetchExamsInner({required bool retryIfFailed}) async {
+    // account-bound chain: a logout mid-flight (epoch bump in
+    // wipeAccountMemory) makes everything this fetch is about to publish
+    // belong to the WIPED account - reapplyExamSynth fences itself again
+    final epoch = _teardownEpoch;
     if (kDebugMode) {
       print("Fetching exam registration list...");
     }
@@ -2027,8 +2164,30 @@ class CampusManager extends KITLoginManager {
 
     if (response.statusCode == 200 && !sessionExpired(response.body)) {
       final parsed = ExamListParser.parse(response.body);
-      // a well-formed page with zero rows is a valid empty state, not breakage
-      if (parsed.isNotEmpty || response.body.contains("EXAMLIST")) {
+      // a well-formed page with zero rows is a valid empty state, not
+      // breakage - but DATA rows plus zero parsed entries is a cell reflow:
+      // the old bare "EXAMLIST" string gate waved that through, leaving
+      // exams empty with examsLoaded true and the seal icon dead quietly
+      if (parsed.isNotEmpty ||
+          (response.body.contains("EXAMLIST") &&
+              !ExamListParser.examListHasRows(response.body))) {
+
+        // RUNBOOK's seal-icon row promises "possibleexams + sqassign": the
+        // ÜQ/SQ-Leistungen tab carries its own rows in the same view under
+        // view=sqassign - fetched here (BEFORE the teardown fence below, so
+        // a logout also fences it off) and merged by exam number; without
+        // it those windows/registrations were silently missing from exams,
+        // synth events and deadline reminders.
+        final examNumbers = parsed.map((e) => e.examNumber).toSet();
+        for (final extra in await _fetchSqAssignExams()) {
+          if (examNumbers.add(extra.examNumber)) parsed.add(extra);
+        }
+        if (epoch != _teardownEpoch) {
+          // logout happened while this page was in flight: publishing its
+          // exams, synth block and reminder alarms into the NEW account
+          // is exactly the post-logout write bleed - drop it
+          return false;
+        }
         examsSurfaceBroken = false;
         exams = parsed;
         examsLoaded = true;
@@ -2066,6 +2225,28 @@ class CampusManager extends KITLoginManager {
     examsSurfaceBroken = true;
     notificationCallback();
     return false;
+  }
+
+  /// The ÜQ/SQ-Leistungen tab of the exam list (the "sqassign" half of the
+  /// RUNBOOK seal-icon row): same template and parser as possibleexams,
+  /// its own row set. Best-effort by design - a dead or reflowed sqassign
+  /// page must not mark the main exam surface broken.
+  Future<List<ExamEntry>> _fetchSqAssignExams() async {
+    try {
+      final response = await guardedCasGet(
+          "https://cascampus.studium.kit.edu/campus/student/contractview.asp?view=sqassign&tguid=${tguid ?? ""}");
+      if (response.statusCode == 200 && !sessionExpired(response.body)) {
+        return ExamListParser.parse(response.body);
+      }
+      if (kDebugMode) {
+        print("sqassign view unavailable (${response.statusCode})");
+      }
+    } on Object catch (e) {
+      if (kDebugMode) {
+        print("sqassign view failed: $e");
+      }
+    }
+    return const [];
   }
 
   Future<bool> updateTimetableFromStrSrc(String src, {cacheSrc = true}) async {

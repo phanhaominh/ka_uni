@@ -126,10 +126,11 @@ void main() {
     expect(IcsChange.decode("not json"), isEmpty);
   });
 
-  test('same-UID series with different UNTIL: live one survives', () {
+  test('clone series of one course: longest-living one survives', () {
     // Real feed quirk: Advanced Mathematics I was re-registered, so the
-    // calendar carries three same-UID/same-DTSTART weekly series differing
-    // only in RRULE. Two die on 30.10; one lives until 19.02.2027. Keying
+    // calendar carries three clone series sharing SUMMARY + series DTSTART
+    // while UID, LOCATION and RRULE UNTIL ALL differ (verified in fixture).
+    // Two die on 30.10; one lives until 19.02.2027. Keying
     // dedup without the series end let a dead clone win, and the course
     // vanished from every date after its last past occurrence.
     final raw = File('test/fixtures/wc_now.ics').readAsStringSync();
@@ -239,5 +240,54 @@ void main() {
     expect(guessed.end.difference(guessed.start), const Duration(minutes: 90));
     final real = feed.occurrences.firstWhere((o) => o.uid == "realend");
     expect(real.endGuessed, isFalse);
+  });
+
+  test('changesSince flags a pure rename as changed', () {
+    // C73: renamed lecture keeps UID and time - the twin pairing matches
+    // it, and the comparison must not stay blind to the title
+    final now = DateTime(2026, 11, 2, 8);
+    final before = WebcalFeed.parse(ics([
+      ev("1@kit", "20261103T080000", "20261103T100000", "AdM V", "HS1"),
+    ]), now: now);
+    final after = WebcalFeed.parse(ics([
+      ev("1@kit", "20261103T080000", "20261103T100000",
+          "Advanced Mathematics V", "HS1"),
+    ]), now: now);
+    final changes = after!.changesSince(before);
+    expect(changes.length, 1);
+    expect(changes.single.kind, IcsChangeKind.changed);
+    expect(changes.single.title, "Advanced Mathematics V");
+  });
+
+  test('Z, UTC-offset and all-day DATE stamps parse; garbage skips', () {
+    // C75: tolerant _dtOf - hand-written personal ICS variants used to
+    // shift silently or drop their VEVENT entirely
+    final now = DateTime(2026, 11, 2, 8);
+    final feed = WebcalFeed.parse(ics([
+      "BEGIN:VEVENT\nUID:9@kit\nDTSTART:20261103T080000Z\n"
+          "DTEND:20261103T100000Z\nSUMMARY:UTC Lab\nLOCATION:HS9\n"
+          "END:VEVENT\n",
+      "BEGIN:VEVENT\nUID:12@kit\nDTSTART:20261104T100000+0200\n"
+          "DTEND:20261104T120000+0200\nSUMMARY:Offset\nLOCATION:HS8\n"
+          "END:VEVENT\n",
+      "BEGIN:VEVENT\nUID:10@kit\nDTSTART;VALUE=DATE:20261105\n"
+          "SUMMARY:Abgabe\nEND:VEVENT\n",
+      "BEGIN:VEVENT\nUID:11@kit\nDTSTART:tBD\nSUMMARY:Ghost\nEND:VEVENT\n",
+    ]), now: now);
+    expect(feed, isNotNull);
+    expect(
+        feed!.occurrences
+            .firstWhere((o) => o.title == "UTC Lab")
+            .start,
+        DateTime.utc(2026, 11, 3, 8).toLocal());
+    expect(
+        feed.occurrences
+            .firstWhere((o) => o.title == "Offset")
+            .start,
+        DateTime.utc(2026, 11, 4, 8).toLocal());
+    final allDay = feed.occurrences.firstWhere((o) => o.title == "Abgabe");
+    expect(allDay.start, DateTime(2026, 11, 5));
+    expect(allDay.endGuessed, isTrue); // no DTEND -> +90' default
+    expect(feed.occurrences.any((o) => o.title == "Ghost"), isFalse);
   });
 }

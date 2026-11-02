@@ -15,10 +15,6 @@ class GradesPage extends StatelessWidget {
 
   static const routeName = "/grades";
 
-  /// hard KIT milestone: past this date "SOP not reached yet" is no longer
-  /// a neutral "noch offen" but a real problem (error tint).
-  static final _sopDeadline = DateTime(2027, 3, 31);
-
   @override
   Widget build(BuildContext context) {
     final vm = Provider.of<KITProvider>(context);
@@ -76,7 +72,7 @@ class GradesPage extends StatelessWidget {
     final green =
         CupertinoDynamicColor.resolve(CupertinoColors.systemGreen, context);
     final overdue =
-        !book.sopReached && !DateTime.now().isBefore(_sopDeadline);
+        !book.sopReached && !DateTime.now().isBefore(GradeBook.sopDeadline);
     final (statusLabel, statusColor) = book.sopReached
         ? (L10n.t("grades.sopReached"), green)
         : overdue
@@ -141,8 +137,11 @@ class GradesPage extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: [
-              _chip(L10n.t("grades.countPassed", [book.passed.length]), green),
-              // a zero count stays grey: only real failures may shout red
+              // a zero count stays grey: a fresh student must not get a
+              // confident green "0 passed"; only real results colour
+              _chip(L10n.t("grades.countPassed", [book.passed.length]),
+                  book.passed.isEmpty ? scheme.outline : green),
+              // only real failures may shout red
               _chip(
                   L10n.t("grades.countFailed", [book.failed.length]),
                   book.failed.isEmpty ? scheme.outline : scheme.error),

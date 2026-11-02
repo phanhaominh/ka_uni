@@ -50,8 +50,19 @@ class ProfileView extends StatelessWidget {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Hero(tag: "student_name_repr", child: Text(vm.student.name.repr, style: theme.textTheme.headlineSmall)),
-                            Text(vm.student.matriculationNumber),
+                            // the headline name used to slice mid-glyph on
+                            // long names; Flexible lets the ellipsis
+                            // actually render while the matriculation
+                            // number keeps its place
+                            Flexible(
+                              child: Hero(
+                                  tag: "student_name_repr",
+                                  child: Text(vm.student.name.repr,
+                                      style:
+                                          theme.textTheme.headlineSmall,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis)),
+                            ),
                           ],
                         ),
                       ),

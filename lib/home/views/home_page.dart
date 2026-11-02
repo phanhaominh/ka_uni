@@ -62,7 +62,12 @@ class _KITHomePageState extends State<KITHomePage> {
             bottomRight: Radius.circular(10),
           )),
           // surfaceTintColor: Colors.transparent,
-          leading: vm.profileReady ? SizedBox.shrink() : KITProgressIndicator(),
+          // the label names what is loading: the bare spinner is reused
+          // app-wide and otherwise announces nothing at all
+          leading: vm.profileReady
+              ? SizedBox.shrink()
+              : KITProgressIndicator(
+                  semanticsLabel: L10n.t("home.profileLoading")),
           // leading: !kDebugMode
           //     ? null
           //     : CupertinoButton(
@@ -151,6 +156,10 @@ class _KITHomePageState extends State<KITHomePage> {
                 toastsProvider
                     .showTextToast(L10n.t("common.refreshFailed"));
               }),
+              // park the disc in the header gap below the app bar; at the
+              // default 40 it settled right on the profile card's name row
+              // (and the agenda banner), obscuring what it covers
+              displacement: 20,
               child: SingleChildScrollView(
                 // pull-down works even when the page fits the screen
                 physics: const AlwaysScrollableScrollPhysics(),

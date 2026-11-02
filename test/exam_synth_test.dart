@@ -305,6 +305,7 @@ void main() {
       // F4: on restart block==examSynth=="" while the PERSISTED cache still
       // embeds last run's events - the no-op guard must not spare them
       SharedPreferences.setMockInitialValues({
+        "DATA_webcalUrl": "https://cascampus.invalid/wc.ics",
         "DATA_webcalIcsCache": CampusManager.injectExamSynth(stub, stale),
       });
       await cm.reapplyExamSynth("");
@@ -315,7 +316,10 @@ void main() {
     });
 
     test("deterministic identical block re-injection is a true no-op", () async {
-      SharedPreferences.setMockInitialValues({"DATA_webcalIcsCache": stub});
+      SharedPreferences.setMockInitialValues({
+        "DATA_webcalUrl": "https://cascampus.invalid/wc.ics",
+        "DATA_webcalIcsCache": stub,
+      });
       final block = buildExamSynthBlock(
           [_exam(terms: [_term("Di, 23.03.2027", "17:30 - 19:00")])]);
       await cm.reapplyExamSynth(block);
@@ -351,6 +355,43 @@ void main() {
       cm.examSynth = "BEGIN:VEVENT\r\nEND:VEVENT\r\n";
       await cm.carryExamSynthFromCache();
       expect(cm.examSynth, "BEGIN:VEVENT\r\nEND:VEVENT\r\n");
+    });
+
+    test("carry drops sittings that ended while the app was closed",
+        () async {
+      // C29: a finished Klausur is history, not an appointment - it must
+      // not ride the cached block back into memory on a cold start
+      const withEnd = "BEGIN:VEVENT\r\n"
+          "UID:kauni-exam-01-A-9001-20250115T140000@ka_uni\r\n"
+          "DTSTART;TZID=Europe/Berlin:20250115T140000\r\n"
+          "DTEND;TZID=Europe/Berlin:20250115T153000\r\n"
+          "SUMMARY:Klausur: Lineare Algebra\r\nEND:VEVENT\r\n";
+      const pastNoEnd = "BEGIN:VEVENT\r\n"
+          "UID:kauni-exam-01-A-9001-20240505T080000@ka_uni\r\n"
+          "DTSTART;TZID=Europe/Berlin:20240505T080000\r\n"
+          "SUMMARY:Klausur: Algorithmen\r\nEND:VEVENT\r\n";
+      SharedPreferences.setMockInitialValues({
+        "DATA_webcalIcsCache":
+            CampusManager.injectExamSynth(stub, withEnd + pastNoEnd + stale),
+      });
+      await cm.carryExamSynthFromCache();
+      // only the future sitting survives (DTEND and DTSTART+90' both honoured)
+      expect(cm.examSynth, stale);
+    });
+
+    test("reapply refuses an unprovisioned (logged-out) account", () async {
+      // C78: after the logout sweep wiped DATA_webcalUrl, the OLD
+      // account's late exam chain must not re-seed its sittings
+      SharedPreferences.setMockInitialValues({
+        "DATA_webcalIcsCache": CampusManager.injectExamSynth(stub, stale),
+      });
+      final block = buildExamSynthBlock(
+          [_exam(terms: [_term("Di, 23.03.2027", "17:30 - 19:00")])]);
+      await cm.reapplyExamSynth(block);
+      expect(cm.examSynth, isEmpty);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString("DATA_webcalIcsCache"),
+          CampusManager.injectExamSynth(stub, stale));
     });
   });
 }
