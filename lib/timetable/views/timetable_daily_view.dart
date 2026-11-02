@@ -219,10 +219,22 @@ class TimetableDailyView extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
     );
 
+    // duration-pinned height doubles as the geometry the now-line walks,
+    // so a 60-min block must give up text lines instead of pushing its
+    // words over the neighbour's first row (what an unbounded text
+    // column inside a fixed SizedBox did: AUDIT-test bled into KLAUSUR)
+    final boxH = appointment.duration * factor;
+    final textScale = MediaQuery.textScalerOf(context);
+    final titleLineH = textScale.scale(14) * 1.45;
+    final placeLineH = textScale.scale(12) * 1.45;
+    final titleMaxLines = boxH >= 2 * titleLineH + placeLineH + 24 ? 2 : 1;
+    final showPlace =
+        boxH >= titleMaxLines * titleLineH + placeLineH + 24;
     return Container(
       decoration: BoxDecoration(border: border),
-      child: SizedBox(
-        height: appointment.duration * factor,
+      child: ClipRect(
+        child: SizedBox(
+          height: boxH,
         child: Stack(
           alignment: Alignment.topLeft,
           children: [
@@ -257,17 +269,17 @@ class TimetableDailyView extends StatelessWidget {
                                   : titleText,
                               style: theme.textTheme.titleSmall
                                   ?.copyWith(fontWeight: FontWeight.bold),
-                              maxLines: 2,
+                              maxLines: titleMaxLines,
                               overflow: TextOverflow.ellipsis,
                             ))
                         : Text(
                             titleText,
                             style: theme.textTheme.titleSmall
                                 ?.copyWith(fontWeight: FontWeight.bold),
-                            maxLines: 2,
+                            maxLines: titleMaxLines,
                             overflow: TextOverflow.ellipsis,
                           ),
-                    if (hasPlace || deltaText != null)
+                    if ((hasPlace || deltaText != null) && showPlace)
                       appointment.id.isNotEmpty
                           ? Hero(
                               tag:
@@ -279,6 +291,7 @@ class TimetableDailyView extends StatelessWidget {
                     else
                       const SizedBox(height: 0),
                     isTut &&
+                        boxH >= 140 &&
                             appointment is Tutorial &&
                             (appointment.notes ?? "").isNotEmpty
                         ? Text(
@@ -323,6 +336,7 @@ class TimetableDailyView extends StatelessWidget {
               ),
             ),
           ],
+        ),
         ),
       ),
     );
@@ -496,6 +510,12 @@ class _NowLinePainter extends CustomPainter {
       required this.textStyle})
       : super(repaint: NowClock.minutesOfDay);
 
+  // RenderCustomPaint.hitTestSelf consults the PAINTER: `hitTest(pos) ??
+  // true` - the default null already means "swallow", so the full-column
+  // overlay would silently eat every row tap under it (measured: taps on
+  // rows die with the line on, work with it off). Answer explicitly false.
+  @override
+  bool? hitTest(Offset position) => false;
   @override
   void paint(Canvas canvas, Size size) {
     // read the live value here - the minute arrives via the repaint

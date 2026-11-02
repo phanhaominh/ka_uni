@@ -30,6 +30,7 @@ workers=1) to coexist with a busy desktop.
 | Round 10: post-review hardening | 8-file review round after Wave-B commit | **splices are line-anchored**: strip/extract of the three sentinel blocks only honour whole-line sentinels (a byte indexOf desyncs from the parse side — one smuggled END line silently dropped every event after it from re-injection, a forged BEGIN cut the FEED short); `sanitizeSentinels` strips sentinel-carrying lines from ALL external ICS bytes at every entry (foreground parse, poll body, personal-ICS import); foreground webcal fetch fenced like the poll (teardown-epoch + live-URL probe) so a logout mid-GET can no longer reseed the purged store; `fetchModulesForRows` uses `_fetchModuleForChain` (ready-shortcut kept, per-row memo NEVER joined — the owner-refetch chain joining the tap memo it serves was a deadlock until restart); exam scheduler + snapshot gated on logged-in state, resyncOnStartup rebuilds nothing logged-out, poll→reminder rebuild staggered 12 s behind cold-start resync (R101 initialDelay race), changeSeq seeded from epoch-ms (30-min-bucket seed collided across isolates, pushes replaced each other); ILIAS auth-join timeout no longer escapes as unhandled zone error; single launch path after refreshSession (gate retry had double-loaded); agenda a11y (named merge-only button, non-launchable rows lose chevron+tap), sigmeup CTA shows deadline DATE not invented "23:59"; weekly/daily views scale with system text (band reserve, HH:MM badge width, ghost columns); profile restored matriculation-number line |
 | Round 11: background ILIAS diff (C28 closed) | `mei-webcal-poll` callback now also runs `_iliasBackgroundDiff()` | ILIAS new-material pushes used to depend on OPENING the agenda; the 30-min poll now piggy-backs the same announcements diff: fresh `IliasManager` per run (jar is per-instance in-memory -> one full SAML chain ~4 requests per cycle, the same cadence CampusKIT's session keeps), creds from `FlutterSecureStorage` (**iOS accountName `kit-student` MUST stay mirrored**), PHPSESSID-proved session required before the fetch (an unproved empty board never seeds `DATA_iliasWatchSeen`), and `IliasWatcher.diffAndNotify(stillOurs:)` re-probes the live webcal URL before seed/push/persist — the static `teardownEpoch` is invisible across isolates, platform prefs are the only cross-isolate logout fence; diff itself (ids, caps, seed-silently, late-never-lost) unchanged and covered by `ilias_watcher_test` |
 | Round 12: now-line + polish (C29) | NEW `lib/timetable/logic/now_clock.dart` (static `NowClock`: one shared minute heartbeat — refcounted `arm()`/`disarm()`, aligned to wall-minute boundaries, AppLifecycleListener republishes on resume, `timeSource` seam + `debugPublish` for tests; NEVER per-tick whole-screen setState — consumers use ValueNotifier/repaint) + `now_line.dart` (pure `nowLineY`/`dayColumnFactor`: piecewise y across blocks incl. the 1px border rows and 2–5min gap seams; column factor 0.9 cap, shrinks to `(vp−borders)/Σdur` so Large-font columns FIT instead of clipping the evening block). Daily view: now-line overlay (2px+dots+HH:MM chip, `repaint: NowClock.minutesOfDay` via CustomPainter super — SDK removed CustomPaint.repaint), ghost-cancelled cards + room-delta lines from the CHANGED feed (`IcsChangeIndex.byDayKey/blockKeys/removedOrMovedBlocks`, W3, keyed yyyy-MM-dd), free-gap minutes, all-day-empty zzz, `MITTAGSPAUSE` now l10n `timetable.mittagspause`, running-lecture `läuft · bis` chip reusing `agenda.nowRunning`, Hero tags carry `_{weekday.index}` (pageView keeps 7 same-tagged heroes alive; detail ctor `heroSuffix`). Weekly: pageDate helper, midnight rolls today-page via ONE listener on `NowClock.dateOfDay`, past pages dim 0.45, lectureFree week state, ghost-column tap → animateToPage. Nav: KITNavContainer → **IndexedStack** (Settings round-trip no longer wipes carousel page; C13-audited: settings has zero Timers, accepted cold-start of its 2 one-shot loads). Home: NextUp hero card shared via NEW `lib/agenda/logic/next_up.dart` (pure compute + NextUpCard, agenda delegates), agenda's 30s setState ticker → one minute-tick setState (TickerMode-gated). Deep links: `IcsOccurrence.url` (campus.studium.kit.edu/ev/<token> per VEVENT, token stable across one-shot→RRULE flip — fixture-proven; NOT in fingerprint/dedupeKey) → "Kursseite öffnen" in agenda rows + lecture sheet. roomVaries: template post-pass flags alternating-room courses (fixture: 3173008 Thu 11:30 40.50↔20.40 — grid previously showed October's room forever) → "Raum wchs." chip. Notifications: digest payload → agendaToday, T−15 CHANGED-rearm band ids **410–499** (`_cancelRange(410,499)` INCLUSIVE — 500 is exam band, contract's (410,500) was an off-by-one caught by W4), badge restored from prefs in `loadCachedTimetable` (cold-start CHANGED-but-dark-badge fixed). animateToPage under `itemCount:1` is DELTA-based (carousel_controller folds getRealIndex) — use `_animateDelta`, never absolute pages. W1 ghost-tap/hero/w1-w4 IRC handoffs all landed; 318 tests green. |
+| Round 13: dead daily-view row taps (C29 follow-up) | `timetable_daily_view.dart` row `GestureDetector` → `HitTestBehavior.opaque` + height-clipped text | taps on lecture blocks did nothing while the now-line overlay was mounted: the row's GestureDetector wrapped a `Stack` whose children are mostly non-opaque, so hit-testing slipped through to the page; `opaque` claims the full block rect. Device-verified end-to-end (sheet opens, "Open course page" row launches `campus.studium.kit.edu/events/catalog.php#!campus/all/event.asp?gguid=…` — the R12 "missing course link" was never missing: URL arrives (drill print), row sits below the sheet's map fold and only became reachable once taps worked). Regression tests promoted to `test/timetable_daily_view_tap_test.dart` (tap opens sheet with AND without now-line, faked `NowClock`) |
 
 ## Build
 
@@ -52,6 +53,36 @@ keytool -genkeypair -storetype PKCS12 -keystore android/mei-release.jks \
 ```
 
 Losing the keystore means uninstall/reinstall (signature mismatch).
+
+### Remote builds (Trinity HPC, optional)
+
+A slurm job (name MUST start with `staging-` for the ais-cpu partition) runs
+`kbagent.sh`: polls `/beegfs/home/a.phan/kbtasks/*.task`, executes each serially,
+streams to `kbtasks/<name>.out`, renames to `kbout/<name>.out.<rc>` on finish,
+logs TASK-BEGIN/END to `kblobs/`. Submit: `sbatch` an sb-file with the agent
+loop (see `git log` for 8519149); drop tasks as base64-over-ssh.
+
+Node constraints learned the hard way (all worked around inside the task
+scripts, `/dev/shm/aphan/` layout):
+- compute nodes: **glibc 2.17 (CentOS 7)** — Flutter's dart/gen_snapshot binaries need ≥2.18 → run builds inside
+  `apptainer exec --bind /dev/shm/aphan --bind $HOME --bind /beegfs /dev/shm/aphan/u24`
+  (Ubuntu 24.04 sandbox, glibc 2.39; `apptainer build --sandbox` docker://ubuntu:24.04, ~1 min)
+- **Dart TLS is dead from this egress** (middlebox kills Dart's handshake to pub.dev AND the flutter-io mirror;
+  curl + Java TLS are fine). Gradle/Maven therefore fetch natively; pub needs `pubrelay.py`
+  (in `kbfiles/`): plain-HTTP shim on :8642, Python TLS egress, `PUB_HOSTED_URL=http://127.0.0.1:8642`.
+  CAVEATS: the 3.6-safe port dropped `content-encoding` forwarding (gzip bodies misparse → resolution hangs —
+  add the header back before trusting it) and re-TLS-handshakes per request (~3 s × hundreds = slow cold path).
+  Warm alternative that works today: rsync `~/.pub-cache` → node `/dev/shm/aphan/pubcache` and build
+  `--offline`; flutter's SDK self-bootstrap for `packages/flutter` ignores `--offline` (first-run only —
+  one online run via relay fixes it permanently)
+- JDK: Adoptium 21 tarball on tmpfs; keystore: copy `android/{key.properties,mei-release.jks}`
+  from `kbfiles/` into the project tree (rsync excludes them via .gitignore)
+- NEVER `pkill -f <pattern>` on the node — the ssh wrapper's own argv matches and kills itself; use
+  `pkill -x <comm>` or kill by exact PID. An orphans `starter-suid` deadlocks every later apptainer start →
+  `pkill -x starter-suid` to recover.
+
+Warm incremental on the NUC is ~80 s; prefer local builds for single iterations and the cluster only to keep
+the laptop responsive during long/batch builds.
 
 ## Sideload
 
