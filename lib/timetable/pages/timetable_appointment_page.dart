@@ -39,6 +39,24 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
   ScrollController? _sheetController;
   VoidCallback? _sheetOffsetListener;
 
+  /// The panel opens EXPANDED (details readable on arrival, no drag tax)
+  /// and collapses to a peek via the header chevron or a drag. min==peek,
+  /// max==initial so there is exactly one meaningful "open" height.
+  static const _peekExtent = 0.28;
+  static const _openExtent = 0.55;
+  final DraggableScrollableController _dragCtrl =
+      DraggableScrollableController();
+  bool _expanded = true;
+
+  void _toggleSheet() {
+    if (!_dragCtrl.isAttached) return;
+    _dragCtrl.animateTo(
+      _expanded ? _peekExtent : _openExtent,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   /// Room/building code embedded in the place string ("10.91", "30.30").
   static final _roomPattern = RegExp(r"\d{1,2}\.\d{2,4}");
 
@@ -126,6 +144,7 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
     if (listener != null) {
       _sheetController?.removeListener(listener);
     }
+    _dragCtrl.dispose();
     super.dispose();
   }
 
@@ -136,15 +155,6 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
 
     return Scaffold(
       appBar: AppBar(),
-      // an online lecture has no place to walk to: no button
-      floatingActionButton: widget.appointment.displayPlace.isEmpty
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: () => _openDirections(),
-              icon: const Icon(Icons.directions),
-              label: Text(L10n.t("timetable.directions")),
-            ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: Stack(
         children: [
           Center(
@@ -257,9 +267,10 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
             ),
           )),
           DraggableScrollableSheet(
-              minChildSize: 0.15,
-              initialChildSize: 0.2,
-              maxChildSize: 0.4,
+              controller: _dragCtrl,
+              minChildSize: _peekExtent,
+              initialChildSize: _openExtent,
+              maxChildSize: _openExtent,
               builder: (context, controller) {
                 if (_sheetOffsetListener == null) {
                   _sheetController = controller;
@@ -271,7 +282,17 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                   controller.addListener(_sheetOffsetListener!);
                 }
 
-                return Padding(
+                return NotificationListener<DraggableScrollableNotification>(
+                  // manual drags must keep the chevron honest; the exact
+                  // extent only matters as "nearer to open than to peek"
+                  onNotification: (n) {
+                    final open = n.extent > (_peekExtent + _openExtent) / 2;
+                    if (open != _expanded) {
+                      setState(() => _expanded = open);
+                    }
+                    return false;
+                  },
+                  child: Padding(
                   padding: EdgeInsets.symmetric(
                       horizontal: 15 * max(0, 1 - _draggableSheetOffset / 100)),
                   child: ClipRRect(
@@ -286,8 +307,25 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                           // padding: EdgeInsets.all(15),
                           color:
                               theme.colorScheme.surface.withValues(alpha: 0.5),
-                          child: ListView(
-                            controller: controller,
+                          child: Column(
+                            children: [
+                              // visible grab bar: the rounded top corner was
+                              // the entire drag affordance before
+                              Align(
+                                alignment: Alignment.topCenter,
+                                child: Container(
+                                  width: 36,
+                                  height: 4,
+                                  margin: const EdgeInsets.only(top: 10),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.outlineVariant,
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: ListView(
+                                  controller: controller,
                             // last row must never sit flush on the panel
                             // edge - and the system bar is below it
                             padding: EdgeInsets.only(
@@ -297,22 +335,81 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                               // Text("data"),
                               Padding(
                                 padding: EdgeInsets.symmetric(horizontal: 15),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    SizedBox(height: 15,),
-                                    Hero(
-                                        tag:
-                                            "appointmentTitle_${widget.appointment.title}_${widget.appointment.id}${widget.heroSuffix}",
-                                        child: Text(
-                                          widget.appointment.displayTitle,
-                                          style: theme.textTheme.titleLarge
-                                              ?.copyWith(
-                                                  fontWeight: FontWeight.bold),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        )),
-                                    SizedBox(height: spaceLg),
+                                  child: Align(
+                                    // on landscape tablets the full-width
+                                    // frosted panel read as a stretched
+                                    // column over dead blur; cap the content
+                                    alignment: Alignment.topCenter,
+                                    child: ConstrainedBox(
+                                      constraints:
+                                          const BoxConstraints(maxWidth: 560),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          SizedBox(height: 12),
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Expanded(
+                                                child: Hero(
+                                                    tag:
+                                                        "appointmentTitle_${widget.appointment.title}_${widget.appointment.id}${widget.heroSuffix}",
+                                                    child: Text(
+                                                      widget.appointment
+                                                          .displayTitle,
+                                                      style: theme
+                                                          .textTheme
+                                                          .titleLarge
+                                                          ?.copyWith(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold),
+                                                      maxLines: 2,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    )),
+                                              ),
+                                              IconButton(
+                                                onPressed: _toggleSheet,
+                                                tooltip: L10n.t(_expanded
+                                                    ? "timetable.collapseDetails"
+                                                    : "timetable.expandDetails"),
+                                                icon: Icon(_expanded
+                                                    ? Icons.expand_more
+                                                    : Icons.expand_less),
+                                              ),
+                                            ],
+                                          ),
+                                      SizedBox(height: spaceLg),
+                                    // WHERE first: the room and the way
+                                    // there sit above the collapsed peek,
+                                    // so "hide details" never hides them
+                                    if (widget
+                                        .appointment
+                                        .displayPlace
+                                        .isNotEmpty) ...[
+                                      placeDetail(
+                                          L10n.t("timetable.placeLabel"),
+                                          widget.appointment.displayPlace,
+                                          theme),
+                                      SizedBox(height: spaceMd),
+                                      // the CTA attaches to the room it
+                                      // routes to; the old FAB at endFloat
+                                      // ate the sheet's title instead
+                                      FilledButton.icon(
+                                        onPressed: _openDirections,
+                                        style: FilledButton.styleFrom(
+                                          minimumSize:
+                                              const Size.fromHeight(48),
+                                        ),
+                                        icon: const Icon(Icons.directions),
+                                        label: Text(L10n.t(
+                                            "timetable.directions")),
+                                      ),
+                                      SizedBox(height: spaceLg),
+                                    ],
                                     // empty values (lunch has no room, feed
                                     // rows often no id) would leave orphan
                                     // labels eating the column's rhythm
@@ -320,8 +417,6 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                                       final details = <(String, String)>[
                                         (L10n.t("timetable.idLabel"),
                                             widget.appointment.id),
-                                        (L10n.t("timetable.placeLabel"),
-                                            widget.appointment.displayPlace),
                                         (L10n.t("timetable.timeLabel"),
                                             _timeRangeLabel()),
                                         if (widget.appointment.place.aliasList
@@ -343,14 +438,8 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                                       }
                                       return widgets;
                                     })(),
-                                    SizedBox(height: spaceXl),
-                                    // the real payload of the expanded state:
-                                    // a jump to the KIT campus-map / room
-                                    // page. The old trailing 500px spacer is
-                                    // gone - it scrolled the title and the
-                                    // ID/Ort rows off-screen and left an
-                                    // empty blur panel; minChildSize already
-                                    // provides the drag handle.
+                                    // secondary payload, below the peek's
+                                    // fold: campus-map page + course page
                                     if (_placePageUrl != null)
                                       InkWell(
                                         onTap: _openPlacePage,
@@ -431,12 +520,18 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                                       ),
                                     SizedBox(height: 20),
                                   ],
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                              )
+                              ],
+                                ),
+                              ),
                             ],
                           ),
                         )),
                   ),
+                                ),
                 );
               }),
         ],
