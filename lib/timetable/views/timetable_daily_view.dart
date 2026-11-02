@@ -120,8 +120,17 @@ class TimetableDailyView extends StatelessWidget {
                           // the top-right of this Stack, so the text column
                           // reserves the badge's footprint on the right -
                           // long titles used to run under it and cut
-                          // mid-word
-                          padding: const EdgeInsets.only(left: 15, right: 72),
+                          // mid-word. The badge text grows with the system
+                          // font scale, so a const reservation loses that
+                          // fight on Large/Largest: scale the text-proportional
+                          // part with bodyLarge, keep a constant remainder.
+                          padding: EdgeInsets.only(
+                              left: 15,
+                              right: 10 +
+                                  62 *
+                                      MediaQuery.textScalerOf(context)
+                                          .scale(14) /
+                                      14),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisAlignment: MainAxisAlignment.center,

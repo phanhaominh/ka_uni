@@ -63,6 +63,7 @@ class ProfileView extends StatelessWidget {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis)),
                             ),
+                            Text(vm.student.matriculationNumber),
                           ],
                         ),
                       ),

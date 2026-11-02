@@ -828,11 +828,16 @@ class _AgendaPageState extends State<AgendaPage> {
                       : Text(L10n.stamp(a.when!),
                           style: const TextStyle(fontSize: 11)),
                   // F12 rule: a non-launchable payload (malformed or a
-                  // foreign scheme) gets no chevron and no tap target
+                  // foreign scheme) gets no chevron and no tap target -
+                  // the onTap gate matters as much as the chevron gate:
+                  // a no-op callback still ripples and still announces
+                  // the row as actionable
                   trailing: _launchableUrl(a.url) == null
                       ? null
                       : const Icon(Icons.chevron_right, size: 18),
-                  onTap: () => _launchExternal(a.url),
+                  onTap: _launchableUrl(a.url) == null
+                      ? null
+                      : () => _launchExternal(a.url),
                 ),
             if (_load.iliasError != null &&
                 (_load.unread != null || _load.announcements.isNotEmpty))
@@ -986,12 +991,15 @@ class _AgendaPageState extends State<AgendaPage> {
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                             color: scheme.onTertiaryContainer)),
+                    // deadline(): registration windows are exactly the
+                    // timestamps that must never drop the time - stamp()
+                    // hides a real 00:00 close behind a date-only "bis"
                     Text(
                         r.open
-                            ? L10n.t("agenda.signmeupUntil",
-                                [L10n.stamp(r.p.registrationEnd!)])
-                            : L10n.t("agenda.signmeupFrom",
-                                [L10n.stamp(r.p.registrationStart!)]),
+                            ? L10n.t("agenda.signmeupUntil", [
+                                L10n.deadline(r.p.registrationEnd!)])
+                            : L10n.t("agenda.signmeupFrom", [
+                                L10n.deadline(r.p.registrationStart!)]),
                         style: TextStyle(
                             fontSize: 12,
                             color: scheme.onTertiaryContainer
@@ -1004,8 +1012,8 @@ class _AgendaPageState extends State<AgendaPage> {
               // tonal CTA with action wording: the old text button merely
               // repeated the card title and read as a label, not a launch
               child: FilledButton.tonal(
-                onPressed: () =>
-                    _launchExternal("https://plus.campus.kit.edu/"),
+                onPressed: () => _launchExternal(
+                    "https://plus.campus.kit.edu/signmeup"),
                 child: Text(L10n.t("agenda.signmeupOpen")),
               ),
             ),
@@ -1066,12 +1074,16 @@ class AgendaRoomLine extends StatelessWidget {
             builder: (context) => PlaceSearchPage(
                 initialQuery: shown, fromRoom: shown))),
         // C26: a tinted label alone is invisible to TalkBack - the tap
-        // target announces itself as a button carrying the room name
+        // target announces itself as one button node carrying the room
+        // name; ExcludeSemantics keeps the child Text from adding a
+        // second node with the same words ("HS 104, HS 104")
         child: Semantics(
           button: true,
           label: shown,
-          child: Text(shown,
-              style: TextStyle(fontSize: 12, color: scheme.primary)),
+          child: ExcludeSemantics(
+            child: Text(shown,
+                style: TextStyle(fontSize: 12, color: scheme.primary)),
+          ),
         ),
       );
     }

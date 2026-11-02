@@ -33,8 +33,18 @@ class IliasManager extends KITLoginManager {
       // the bounded wait expired with an authorize() chain still running:
       // handing out "" or the stale pre-refresh cookie is a silent login
       // wall for the webview, so join the in-flight chain instead -
-      // bounded, so a permanently wedged SSO does not grow a new dead end
-      await _authInFlight?.timeout(const Duration(minutes: 2));
+      // bounded, so a permanently wedged SSO does not grow a new dead end.
+      // A join that TIMES OUT or THROWS must not escape either: callers
+      // chain this future without error handlers, and falling through to
+      // the stale/authorize path below is strictly better than an
+      // unhandled zone error leaving the webview blank.
+      try {
+        await _authInFlight?.timeout(const Duration(minutes: 2));
+      } on Object catch (e) {
+        if (kDebugMode) {
+          print("ILIAS auth join gave up: $e");
+        }
+      }
     }
 
     if (DateTime.now().isAfter(_lastUpdate.add(const Duration(minutes: 30)))) {

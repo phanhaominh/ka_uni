@@ -43,9 +43,15 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
 
   @override
   Widget build(BuildContext context) {
+    // the band's titleLarge text grows with the system font scale; a hard
+    // 48px cap would paint overflow stripes across the always-visible
+    // header on Large/Largest settings, so both the band and the carousel
+    // subtraction scale with the very text line that sets the height
+    final textScale = MediaQuery.textScalerOf(context).scale(28) / 28;
+    final bandHeight = _dateBandHeight * textScale;
     return Column(
       children: [
-        _dateBand(context),
+        _dateBand(context, bandHeight),
         CarouselSlider.builder(
             itemCount: 1,
             itemBuilder: _weekdayCarouselBuilder,
@@ -56,7 +62,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
               // the header moved out of the pages into the fixed band,
               // so subtract it here: total height and card placement
               // stay exactly as before
-              height: _weekdayHeight - 40 - _dateBandHeight,
+              height: _weekdayHeight - 40 - bandHeight,
               // feeds the REAL page index to the date band - with
               // itemCount 1 the onPageChanged index is always 0 and
               // useless
@@ -118,7 +124,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
   /// pages used to draw their headings inside the viewport, so the
   /// peeking neighbours' headings bled through behind the visible one -
   /// ghost half-letters at both carousel edges.
-  Widget _dateBand(BuildContext context) {
+  Widget _dateBand(BuildContext context, double bandHeight) {
     final theme = Theme.of(context);
     final now = DateTime.now();
 
@@ -140,7 +146,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
     }
 
     return SizedBox(
-      height: _dateBandHeight,
+      height: bandHeight,
       child: Padding(
         padding: EdgeInsets.only(left: 10, right: 10, top: 10),
         child: Row(

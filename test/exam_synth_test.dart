@@ -284,6 +284,44 @@ void main() {
           CampusManager.stripSignMeUpSynth(CampusManager.stripExamSynth(merged)),
           stub);
     });
+
+    test("smuggled sentinel lines die at sanitizeSentinels", () {
+      // an import (or feed body) must never leave lines that a later
+      // strip/extract splice would act on
+      const poisoned = "BEGIN:VCALENDAR\r\n"
+          "X-WR-CALNAME:X-EXAM-SYNTH-END meeting\r\n"
+          "X-EXAM-SYNTH-BEGIN\r\n"
+          "BEGIN:VEVENT\r\nUID:mine@ka_uni\r\nEND:VEVENT\r\n"
+          "X-EXAM-SYNTH-END\r\n"
+          "END:VCALENDAR\r\n";
+      final clean = CampusManager.sanitizeSentinels(poisoned);
+      expect(clean, isNot(contains("X-EXAM-SYNTH")));
+      expect(clean, contains("UID:mine@ka_uni"));
+      expect(clean, isNot(contains("X-WR-CALNAME"))); // aggressive even mid-value
+      expect(CampusManager.extractExamSynth(clean), isEmpty);
+      expect(CampusManager.stripExamSynth(clean), clean);
+    });
+
+    test("mid-value markers before the block are no splice anchors", () {
+      // old raw indexOf found the SUMMARY-embedded END first: strip
+      // mangled the feed tail, extract returned "" and silently dropped
+      // every sitting from the next merge
+      const sneakyStub = "BEGIN:VCALENDAR\r\n"
+          "SUMMARY:X-EXAM-SYNTH-END\r\n"
+          "END:VCALENDAR\r\n";
+      final merged = CampusManager.injectExamSynth(sneakyStub, block);
+      expect(CampusManager.stripExamSynth(merged), sneakyStub);
+      expect(CampusManager.extractExamSynth(merged), block);
+    });
+
+    test("line anchoring tolerates legacy LF-only cache bodies", () {
+      const lfStub = "BEGIN:VCALENDAR\nEND:VCALENDAR\n";
+      const lf =
+          "BEGIN:VCALENDAR\nX-EXAM-SYNTH-BEGIN\n$block"
+          "X-EXAM-SYNTH-END\nEND:VCALENDAR\n";
+      expect(CampusManager.extractExamSynth(lf), block);
+      expect(CampusManager.stripExamSynth(lf), lfStub);
+    });
   });
 
   group("reapplyExamSynth / cold start", () {

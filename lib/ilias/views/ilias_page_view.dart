@@ -351,6 +351,15 @@ class _IliasPageViewWState extends State<IliasPageView> {
                 _retrying = false;
               });
             }
+            if (newPHPSESSIONID.isNotEmpty && mounted) {
+              // the refresh gesture must act on the VISIBLE page: only
+              // _launchPage pushes the fresh PHPSESSID into the webview
+              // engine's cookie jar and reloads - without this the strip
+              // spinner ends and the stale-cookie page just sits there
+              await _launchPage(Provider.of<SettingsProvider>(context,
+                      listen: false)
+                  .defaultIliasPage.value);
+            }
             return newPHPSESSIONID;
           }
 
@@ -374,17 +383,11 @@ class _IliasPageViewWState extends State<IliasPageView> {
                       style: theme.textTheme.bodyMedium),
                   SizedBox(height: 8),
                   CupertinoButton(
-                    onPressed: () async {
-                      final id = await refreshSession();
-                      if (id.isEmpty || !mounted) return;
-                      // initState's launch ran with the failed session;
-                      // the gate only opens now, so this retry has to
-                      // load the page itself
-                      await _launchPage(Provider.of<SettingsProvider>(
-                              context,
-                              listen: false)
-                          .defaultIliasPage.value);
-                    },
+                    // refreshSession now loads the page itself once the
+                    // session is back (cookie jar + reload), so the gate
+                    // retry and the strip's refresh chip share exactly
+                    // one launch path
+                    onPressed: () => refreshSession(),
                     child: Text(L10n.t("ilias.retry")),
                   ),
                 ],

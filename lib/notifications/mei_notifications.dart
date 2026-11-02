@@ -111,8 +111,14 @@ class MeiNotifications {
     if (!MeiNotifications.supported) return;
     if (!_ready) await init(requestPermissions: false);
     if (_changeSeq < 0) {
-      // 30 min epoch buckets: run-distinct ids without any persistence
-      _changeSeq = DateTime.now().millisecondsSinceEpoch ~/ 1800000;
+      // C63: seed per process so a FRESH WorkManager isolate's first
+      // push never reuses a still-shaded id. The 30-min bucket seed
+      // collided when the poll isolate and the main isolate both pushed
+      // inside the same bucket (identical seeds -> the later show()
+      // silently replaced the earlier heads-up); epoch-milliseconds
+      // differ per process to practical certainty, and the per-push ++
+      // rotation is untouched
+      _changeSeq = DateTime.now().microsecondsSinceEpoch ~/ 1000;
     }
     await _plugin.show(
         1000 + (_changeSeq++ % 20),
@@ -241,11 +247,24 @@ class MeiNotifications {
   /// rebuild snapshots its inputs; [resyncOnStartup] replays them, so the
   /// family tracks last-known state (survives a start that never reaches the
   /// network) instead of relying on the next possibleexams fetch alone.
-  static Future<void> scheduleExamReminders(List<ExamEntry> exams) async {
+  static Future<void> scheduleExamReminders(List<ExamEntry> exams,
+      {bool fromReplay = false}) async {
     if (!MeiNotifications.supported) return;
     // C61: contained fire-and-forget scheduler (see the lecture family).
     try {
       if (!_ready) await init();
+      // The unawaited fetch-chain caller may land AFTER a logout sweep
+      // (the sqassign fetch above it takes seconds): without this gate
+      // the scheduler re-armed 500-band alarms and re-persisted the
+      // snapshot past the purge, and the new resyncOnStartup replayed
+      // the OLD account's deadlines on a later cold start. The snapshot
+      // replay itself (fromReplay) is exempt: resyncOnStartup carries
+      // its own logged-out guard.
+      if (!fromReplay &&
+          (await SharedPreferencesAsync().getString(WebcalKeys.url) ?? "")
+              .isEmpty) {
+        return;
+      }
       await _cancelRange(500, 600);
       final epoch = teardownEpoch;
       final now = DateTime.now();
@@ -270,6 +289,13 @@ class MeiNotifications {
               deadlines: true,
               payload: NotificationPayload.exams);
         }
+      }
+      // snapshot only ever describes a LIVE account: fence the write
+      // exactly like the alarms above (C78's live-url probe pattern)
+      if (epoch != teardownEpoch ||
+          (await SharedPreferencesAsync().getString(WebcalKeys.url) ?? "")
+              .isEmpty) {
+        return;
       }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
@@ -426,6 +452,14 @@ class MeiNotifications {
     if (!MeiNotifications.supported) return;
     if (!_ready) await init(requestPermissions: false);
     await _plugin.cancelAll();
+    // cold start into a logged-out state (post-logout, or a restore onto
+    // a fresh install): rebuilding from leaked/raced leftovers would
+    // resurrect the previous account's alarms; cancelling ghosts is all
+    // a logged-out device should do
+    if ((await SharedPreferencesAsync().getString(WebcalKeys.url) ?? "")
+        .isEmpty) {
+      return;
+    }
     final prefs = await SharedPreferences.getInstance();
     final feed =
         WebcalFeed.parse(prefs.getString("DATA_webcalIcsCache") ?? "");
@@ -500,7 +534,11 @@ void meiBackgroundCallback() {
           !response.body.contains("BEGIN:VCALENDAR")) {
         return true; // transient; next window retries
       }
-      final feed = WebcalFeed.parse(response.body);
+      // external bytes first, splices later: strip smuggled sentinel
+      // lines so they can never move a strip/extract cut on the body
+      // this isolate persists (see CampusManager.sanitizeSentinels)
+      final body = CampusManager.sanitizeSentinels(response.body);
+      final feed = WebcalFeed.parse(body);
       if (feed == null) {
         return true;
       }
@@ -575,7 +613,7 @@ void meiBackgroundCallback() {
       final mergedRaw = CampusManager.injectPersonalIcs(
           CampusManager.injectSignMeUpSynth(
               CampusManager.injectExamSynth(
-                  response.body, CampusManager.extractExamSynth(staleCache)),
+                  body, CampusManager.extractExamSynth(staleCache)),
               CampusManager.extractSignMeUpSynth(staleCache)),
           CampusManager.extractPersonalIcs(staleCache));
       await prefs.setString("DATA_webcalIcsCache", mergedRaw);
@@ -588,7 +626,14 @@ void meiBackgroundCallback() {
       }
       // the 30 min poll is the only thing that runs while the app stays closed:
       // without re-scheduling, the 2-day reminder/digest horizon silently
-      // expired after any weekend gap and reminders just stopped
+      // expired after any weekend gap and reminders just stopped.
+      // R101's initialDelay-zero poll races the MAIN isolate's
+      // resyncOnStartup on every cold start (both rebuild the same id
+      // bands from per-isolate memos; interleaved cancel/schedule tails
+      // survive as stale alarms). The band is the main isolate's
+      // responsibility at cold start — give it a head start instead of
+      // interleaving.
+      await Future.delayed(const Duration(seconds: 12));
       final mergedFeed = WebcalFeed.parse(mergedRaw) ?? feed;
       await MeiNotifications.scheduleLectureReminders(mergedFeed);
       await MeiNotifications.scheduleMorningDigest(mergedFeed);

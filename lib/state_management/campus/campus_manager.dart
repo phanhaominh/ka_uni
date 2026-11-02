@@ -566,8 +566,7 @@ class CampusManager extends KITLoginManager {
           continue;
         }
 
-        final newModuleFuture =
-            getOrFetchModuleForRow(row, retryIfFailed: false);
+        final newModuleFuture = _fetchModuleForChain(row);
         newModuleFutures.add(newModuleFuture);
       }
       // one timeout/socket failure must not reject Future.wait and leave
@@ -591,7 +590,7 @@ class CampusManager extends KITLoginManager {
           continue;
         }
 
-        await getOrFetchModuleForRow(row, retryIfFailed: false)
+        await _fetchModuleForChain(row)
             .catchError((_) => KITModule());
         addRelevantModuleRow(row);
       }
@@ -773,6 +772,24 @@ class CampusManager extends KITLoginManager {
     } finally {
       _moduleInFlight.remove(row.id);
     }
+  }
+
+  /// Internal-chain variant of [getOrFetchModuleForRow]: keeps the ready
+  /// shortcut but NEVER joins or registers a per-row memo. The owner
+  /// refetch chain this runs inside can be the very future a user-tap's
+  /// memoized retry tail is awaiting (tap -> _moduleInFlight[F] ->
+  /// forceRefetchViaOwner -> _refetchInFlight[R] joins the running pull ->
+  /// fetchModulesForRows); joining F here from R closed the loop and hung
+  /// both plus every later pull-refresh until restart. One duplicate
+  /// scrape of a shared row is the cheap price for an acyclic graph.
+  Future<KITModule> _fetchModuleForChain(HierarchicTableRow row) {
+    final module = rowModules[row.id];
+    if (_isModuleReady(module)) {
+      final readyModule = module!;
+      _triggerBackgroundRefreshIfStale(row, readyModule);
+      return Future.value(readyModule);
+    }
+    return fetchModule(row, recursiveRetry: false);
   }
 
   /// Best module title known for a row id: fetched page title first, then
@@ -1283,6 +1300,82 @@ class CampusManager extends KITLoginManager {
 
   bool timetableChanged = false;
 
+  // ---- sentinel-line machinery (shared by all three injected blocks) ----
+  // A sentinel may only ever exist as its OWN full line — that is how both
+  // inject* write them, and WebcalFeed.parse only honours whole trimmed
+  // lines. The old byte-offset indexOf splices desynced from that rule:
+  // one sentinel line smuggled into an imported personal ICS or a feed
+  // moved the cut point silently — a forged END dropped every event after
+  // it from re-injection (agenda flapped complete/truncated depending on
+  // which writer ran last), a forged BEGIN made strip cut the FEED short.
+  static const _allSentinels = [
+    "X-SIGNMEUP-SYNTH-BEGIN",
+    "X-SIGNMEUP-SYNTH-END",
+    "X-EXAM-SYNTH-BEGIN",
+    "X-EXAM-SYNTH-END",
+    "X-PERSONAL-ICS-BEGIN",
+    "X-PERSONAL-ICS-END",
+  ];
+
+  /// Drop every line containing a sentinel token: external ICS bytes
+  /// (KIT feed body, imported personal ICS) must never carry lines the
+  /// splices below act on. Substring containment, not whole-line: even
+  /// mid-value markers could anchor a splice cut.
+  static String sanitizeSentinels(String ics) {
+    if (!ics.contains("X-")) return ics; // cheap common path
+    final kept = const LineSplitter()
+        .convert(ics)
+        .where((line) => !_allSentinels.any(line.contains))
+        .join("\r\n");
+    return kept.isEmpty ? "" : (ics.endsWith("\n") ? "$kept\r\n" : kept);
+  }
+
+  /// Position of [marker] when it forms a whole line (allowing the CRLF
+  /// write site's exact output and legacy LF caches); -1 otherwise.
+  static int _sentinelLineStart(String raw, String marker) {
+    var from = 0;
+    while (true) {
+      final i = raw.indexOf(marker, from);
+      if (i < 0) return -1;
+      final atLineStart =
+          i == 0 || raw[i - 1] == "\n" || raw.substring(i - 2, i) == "\r\n";
+      if (atLineStart) {
+        final nl = raw.indexOf("\n", i);
+        final lineEnd = nl < 0 ? raw.length : nl + 1;
+        if (raw.substring(i, lineEnd).trim() == marker) return i;
+      }
+      from = i + marker.length;
+    }
+  }
+
+  static String stripSentinelBlock(String raw, String begin, String end) {
+    final b = _sentinelLineStart(raw, begin);
+    if (b < 0) return raw;
+    final e = _sentinelLineStart(raw, end);
+    if (e < 0 || e < b) return raw.substring(0, b);
+    // e is the sentinel LINE START: step over the line itself before
+    // swallowing its newline (the old cut sat at end.length + 2)
+    var after = e + end.length;
+    while (after < raw.length && (raw[after] == "\r" || raw[after] == "\n")) {
+      after++;
+    }
+    return raw.substring(0, b) + raw.substring(after);
+  }
+
+  static String extractSentinelBlock(String raw, String begin, String end) {
+    final b = _sentinelLineStart(raw, begin);
+    if (b < 0) return "";
+    final e = _sentinelLineStart(raw, end);
+    if (e < 0 || e < b) return "";
+    final body = raw.substring(b + begin.length, e);
+    // old byte contract: [begin line's CRLF, end line start) — a
+    // production block already carries its own trailing CRLF; append
+    // nothing, inject wraps exactly what extract returned
+    if (body.startsWith("\r\n")) return body.substring(2);
+    if (body.startsWith("\n")) return body.substring(1);
+    return body;
+  }
+
   // ---- SignMeUp synthetic events (tutorials the webcal does not carry) ----
   // VEVENT text merged into the cached feed at every write, bracketed by
   // sentinel lines so re-injection is idempotent and change detection can
@@ -1291,24 +1384,14 @@ class CampusManager extends KITLoginManager {
   static const synthEnd = "X-SIGNMEUP-SYNTH-END";
   String signMeUpSynth = "";
 
-  static String stripSignMeUpSynth(String raw) {
-    final b = raw.indexOf(synthBegin);
-    if (b < 0) return raw;
-    final e = raw.indexOf(synthEnd);
-    if (e < 0) return raw.substring(0, b);
-    return raw.substring(0, b) + raw.substring(e + synthEnd.length + 2);
-  }
+  static String stripSignMeUpSynth(String raw) =>
+      stripSentinelBlock(raw, synthBegin, synthEnd);
 
   /// The sentinel-wrapped block currently embedded in [raw] ("" if none);
   /// lets the background isolate carry the student's tutorials across a
   /// fresh feed fetch.
-  static String extractSignMeUpSynth(String raw) {
-    final b = raw.indexOf(synthBegin);
-    if (b < 0) return "";
-    final e = raw.indexOf(synthEnd);
-    if (e < 0 || e < b) return "";
-    return raw.substring(b + synthBegin.length + 2, e);
-  }
+  static String extractSignMeUpSynth(String raw) =>
+      extractSentinelBlock(raw, synthBegin, synthEnd);
 
   static String injectSignMeUpSynth(String raw, String block) {
     final base = stripSignMeUpSynth(raw);
@@ -1329,24 +1412,14 @@ class CampusManager extends KITLoginManager {
   static const examSynthEnd = "X-EXAM-SYNTH-END";
   String examSynth = "";
 
-  static String stripExamSynth(String raw) {
-    final b = raw.indexOf(examSynthBegin);
-    if (b < 0) return raw;
-    final e = raw.indexOf(examSynthEnd);
-    if (e < 0) return raw.substring(0, b);
-    return raw.substring(0, b) + raw.substring(e + examSynthEnd.length + 2);
-  }
+  static String stripExamSynth(String raw) =>
+      stripSentinelBlock(raw, examSynthBegin, examSynthEnd);
 
   /// The sentinel-wrapped exam block embedded in [raw] ("" if none); lets
   /// the background isolate carry the sittings across a fresh feed fetch
   /// (mirrors extractSignMeUpSynth).
-  static String extractExamSynth(String raw) {
-    final b = raw.indexOf(examSynthBegin);
-    if (b < 0) return "";
-    final e = raw.indexOf(examSynthEnd);
-    if (e < 0 || e < b) return "";
-    return raw.substring(b + examSynthBegin.length + 2, e);
-  }
+  static String extractExamSynth(String raw) =>
+      extractSentinelBlock(raw, examSynthBegin, examSynthEnd);
 
   static String injectExamSynth(String raw, String block) {
     final base = stripExamSynth(raw);
@@ -1372,21 +1445,14 @@ class CampusManager extends KITLoginManager {
   String personalIcsUrl = "";
   bool _personalIcsLoaded = false;
 
-  static String stripPersonalIcs(String raw) {
-    final b = raw.indexOf(personalBegin);
-    if (b < 0) return raw;
-    final e = raw.indexOf(personalEnd);
-    if (e < 0) return raw.substring(0, b);
-    return raw.substring(0, b) + raw.substring(e + personalEnd.length + 2);
-  }
+  static String stripPersonalIcs(String raw) =>
+      stripSentinelBlock(raw, personalBegin, personalEnd);
 
-  static String extractPersonalIcs(String raw) {
-    final b = raw.indexOf(personalBegin);
-    if (b < 0) return "";
-    final e = raw.indexOf(personalEnd);
-    if (e < 0 || e < b) return "";
-    return raw.substring(b + personalBegin.length + 2, e);
-  }
+  /// The student's own imported block currently embedded in [raw]
+  /// ("" if none). Line-anchored, mirroring WebcalFeed.parse's own
+  /// whole-line sentinel recognition — see the splice comment above.
+  static String extractPersonalIcs(String raw) =>
+      extractSentinelBlock(raw, personalBegin, personalEnd);
 
   static String injectPersonalIcs(String raw, String block) {
     final base = stripPersonalIcs(raw);
@@ -1411,8 +1477,10 @@ class CampusManager extends KITLoginManager {
   /// headers would be invalid inside the subscription's VCALENDAR).
   /// Returns null on success, "bad"/"fetch" for user-facing errors.
   Future<String?> setPersonalIcsFromRaw(String ics) async {
+    // smuggled sentinel lines would splice-desync every later cache
+    // rewrite (see sanitizeSentinels) — strip them before anything else
     final blocks = RegExp("BEGIN:VEVENT.*?END:VEVENT", dotAll: true)
-        .allMatches(ics)
+        .allMatches(sanitizeSentinels(ics))
         .map((m) => m.group(0)!);
     var block = blocks.join("\r\n");
     if (block.isEmpty) return "bad";
@@ -1987,7 +2055,11 @@ class CampusManager extends KITLoginManager {
         return false;
       }
 
-      final feed = WebcalFeed.parse(response.body);
+      // sanitize BEFORE parse: the parse result echoes its input as
+      // feed.raw, and that raw is what lands in the ICS cache — so one
+      // cut here keeps smuggled sentinel lines out of both the parsed
+      // model and every later splice on the persisted body
+      final feed = WebcalFeed.parse(sanitizeSentinels(response.body));
       if (feed == null) {
         if (kDebugMode) {
           print("WebCal parse produced no occurrences!");
@@ -1995,7 +2067,19 @@ class CampusManager extends KITLoginManager {
         return false;
       }
 
+      final epoch = _teardownEpoch;
       final prefs = await SharedPreferences.getInstance();
+      // a logout landing during the network GET above used to write the
+      // OLD account's feed back into the purged store, which the new
+      // resyncOnStartup then replayed as alarms on a later cold start:
+      // same double fence as the background poll (C81) — teardown epoch
+      // plus a live logged-in-URL probe
+      final urlLive = await SharedPreferencesAsync().getString(_webcalUrlKey);
+      if (epoch != _teardownEpoch ||
+          (urlLive ?? "").isEmpty ||
+          (testWebcalUrl.isEmpty && urlLive != url)) {
+        return false; // logged out (or re-provisioned) mid-fetch
+      }
       // source switch (test seam on/off, re-provisioned webcal token URL):
       // reseed the baseline instead of diffing two different calendars
       final previousSource = prefs.getString(_webcalFeedSourceKey);
