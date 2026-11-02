@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
+import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/module/models/module.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
@@ -114,6 +115,14 @@ class _IliasPageViewWState extends State<IliasPageView> {
   late final WebViewController _controller;
   String _phpsessid = "";
 
+  /// ILIAS SSO occasionally hangs mid-handshake on KIT's side; an
+  /// unresolved future would pin the gate on the spinner forever. The
+  /// timeout resolves to the EMPTY session, which is the existing
+  /// auth-failed path - one terminal state, one retry affordance.
+  static const _sessionTimeout = Duration(seconds: 20);
+  late final Future<String> _sessionFuture = widget.PHPSESSID_Future
+      .timeout(_sessionTimeout, onTimeout: () => "");
+
   bool isBusy = false;
 
   /// A session (re-)authorization is in flight: keeps the pre-webview
@@ -143,7 +152,7 @@ class _IliasPageViewWState extends State<IliasPageView> {
           return NavigationDecision.navigate;
         }));
 
-    widget.PHPSESSID_Future.then((value) async {
+    _sessionFuture.then((value) async {
       // SSO future resolves after an arbitrary delay; the page is often
       // popped (back button) before it lands
       if (!mounted) return;
@@ -330,7 +339,7 @@ class _IliasPageViewWState extends State<IliasPageView> {
     final theme = Theme.of(context);
 
     return FutureBuilder(
-        future: widget.PHPSESSID_Future,
+        future: _sessionFuture,
         builder: (context, snapshot) {
           Future<String> refreshSession() async {
             setState(() {
@@ -338,8 +347,19 @@ class _IliasPageViewWState extends State<IliasPageView> {
               _retrying = true;
             });
 
-            await vm.iliasManager.authorize(refreshSession: true);
-            final newPHPSESSIONID = await vm.iliasManager.getPHPSESSID();
+            String newPHPSESSIONID = "";
+            try {
+              // same ceiling as the initial gate: a re-auth that hangs
+              // must end on the retry card, not a dead strip spinner
+              await vm.iliasManager
+                  .authorize(refreshSession: true)
+                  .timeout(_sessionTimeout);
+              newPHPSESSIONID = await vm.iliasManager
+                  .getPHPSESSID()
+                  .timeout(_sessionTimeout);
+            } on Object catch (_) {
+              // fall through to the empty-session auth-failed path
+            }
 
             if (newPHPSESSIONID.isEmpty) {
               toastsProvider.showTextToast(L10n.t("ilias.refreshError"));
@@ -369,9 +389,31 @@ class _IliasPageViewWState extends State<IliasPageView> {
             // dead end (the refresh chip lives inside the loaded
             // scaffold), so the gate offers its own retry
             if (!snapshot.hasData || _retrying) {
+              // branded gate: the tab's icon (a paperclip) never
+              // announced ILIAS, so the first frame of the session now
+              // does - wordmark + what is happening + spinner
               return Scaffold(
                   body: Center(
-                child: KITProgressIndicator(),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      "ILIAS",
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                          color: theme.colorScheme.primary),
+                    ),
+                    SizedBox(height: spaceLg),
+                    Text(
+                      L10n.t("ilias.connecting"),
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: theme.colorScheme.outline),
+                    ),
+                    SizedBox(height: spaceXl),
+                    KITProgressIndicator(),
+                  ],
+                ),
               ));
             }
             return Scaffold(
@@ -510,6 +552,14 @@ class _IliasControlBar extends StatelessWidget {
                         enabled ? onForward : null,
                         L10n.t("ilias.forwardTooltip"));
                   }),
+            const Spacer(),
+            // the wordmark owns the strip's center: three glass glyphs
+            // alone never said which service this browser belongs to
+            Text(
+              "ILIAS",
+              style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold, letterSpacing: 1.5),
+            ),
             const Spacer(),
             _glassChip(CupertinoIcons.refresh, onRefresh,
                 L10n.t("ilias.refreshTooltip")),

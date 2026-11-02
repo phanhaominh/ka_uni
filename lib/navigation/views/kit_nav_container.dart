@@ -136,7 +136,11 @@ class _KITNavContainerState extends State<KITNavContainer> {
 
   Widget customBottomNavBarButton(int targetIdx, IconData icon,
       {String title = "", Function? customAction}) {
-    return CupertinoButton(
+    return Tooltip(
+      // sighted users get the name on long-press; the paperclip glyph
+      // alone never announced ILIAS
+      message: title,
+      child: CupertinoButton(
         padding: EdgeInsets.zero,
         // dock icons are bare glyphs; without a label a screen reader
         // announces nothing on the app's primary navigation
@@ -161,6 +165,7 @@ class _KITNavContainerState extends State<KITNavContainer> {
           setState(() {
             _selectedPage = targetIdx;
           });
-        });
+        }),
+    );
   }
 }
