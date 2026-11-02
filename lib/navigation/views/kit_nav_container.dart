@@ -87,7 +87,10 @@ class _KITNavContainerState extends State<KITNavContainer> {
                     customBottomNavBarButton(1, CupertinoIcons.home,
                         title: "Dashboard"),
                     customBottomNavBarButton(
-                        2, CupertinoIcons.rectangle_paperclip,
+                        2, null,
+                        // the real ILIAS brand tile: a generic glyph
+                        // (first a paperclip) never read as "ILIAS"
+                        assetIcon: "assets/images/ilias_icon.png",
                         title: "ILIAS",
                         customAction: () {
                           // one-page rule: ILIAS is a heavy SSO page holding
@@ -134,8 +137,8 @@ class _KITNavContainerState extends State<KITNavContainer> {
     );
   }
 
-  Widget customBottomNavBarButton(int targetIdx, IconData icon,
-      {String title = "", Function? customAction}) {
+  Widget customBottomNavBarButton(int targetIdx, IconData? icon,
+      {String title = "", String assetIcon = "", Function? customAction}) {
     return Tooltip(
       // sighted users get the name on long-press; the paperclip glyph
       // alone never announced ILIAS
@@ -147,14 +150,21 @@ class _KITNavContainerState extends State<KITNavContainer> {
         child: Semantics(
           button: true,
           label: title,
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                color: targetIdx == _selectedPage ? null : Colors.grey,
-              ),
-            ],
-          ),
+          child: assetIcon.isNotEmpty
+              // brand tiles keep their own colors: the grey "unselected"
+              // treatment only applies to template glyphs
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.asset(assetIcon, height: 26, width: 26),
+                )
+              : Row(
+                  children: [
+                    Icon(
+                      icon,
+                      color: targetIdx == _selectedPage ? null : Colors.grey,
+                    ),
+                  ],
+                ),
         ),
         onPressed: () {
           if (customAction != null) {
