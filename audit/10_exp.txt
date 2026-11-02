@@ -1,0 +1,4 @@
+9	TAP	77 154	Back	Button
+10	TAP	540 1173	flutter_map	ImageView
+11	TAP	1003 2039	Attributions	Button
+14	info	540 1739	Engineering Mechanics I (Lecture) (V), Langhoff et al., MACH&#10;ID:&#	View

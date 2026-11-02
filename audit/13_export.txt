@@ -1,0 +1,9 @@
+15	info	611 1055	mei-stundenplan-20261102.ics	TextView
+17	TAP	539 1221	Quick Share	Button
+20	info	540 1567	No recommended people to share with	TextView
+24	info	134 2011	AyuGram	TextView
+27	info	405 2011	Gmail	TextView
+30	info	675 2011	Tailscale	TextView
+33	info	945 2011	Termius	TextView
+34	info	945 2059	Upload via Termius	TextView
+35	info	0 0	Apps list	ImageView

@@ -1,0 +1,15 @@
+9	TAP	77 154	Back	Button
+10	info	446 154	Exam Registration	View
+13	info	540 536	Act now	View
+14	info	411 594	Materials Science I and II&#10;Register by: 07.02.2027 23:59&#10;Exami	View
+15	info	217 710	NOT registered	View
+16	info	570 710	76-T-MACH-113510	View
+17	info	540 1205	Registration opens soon	View
+18	info	473 1262	Basics of Manufacturing Technology&#10;Exam: Do, 25.03.2027 13:00 - 14	View
+19	info	209 1502	not registered	View
+20	info	555 1502	76-T-MACH-113509	View
+21	info	540 1848	Other	View
+22	info	467 1906	Engineering Mechanics I&#10;Examiner: Böhlke, Langhoff&#10;Schriftlich	View
+23	info	209 1997	not registered	View
+24	info	619 1997	76-T-MACH-100282-englisch	View
+25	info	540 2106	Offered, but not taken this semester	View

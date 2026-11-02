@@ -1,0 +1,14 @@
+9	TAP	77 154	Back	Button
+10	info	302 154	Agenda	View
+11	TAP	1014 154	Export timetable…	Button
+15	info	540 264	Tomorrow&#10;08:00–09:30  3173008 - Materials Science and Engineering 	View
+16	TAP	345 238	20.40 New lecture hall Architecture	View
+18	info	540 633	ILIAS&#10;2 new	View
+19	TAP	540 485	lecture notes_MSE_I_Chapter III-25102026.pdf&#10;Sun, 25.10. 00:00	Button
+20	TAP	540 661	lecture notes_MSE_I_Chapter II_25102026.pdf&#10;Sun, 25.10. 00:00	Button
+21	TAP	540 837	lecture notes_MSE_I_Chapter I-25102026.pdf&#10;Sun, 25.10. 00:00	Button
+23	info	540 1141	Exam registration open&#10;Materials Science I and II · until 7.2.2027	View
+24	TAP	897 1203	Register	Button
+26	info	540 1629	SignMeUp registrations&#10; Géopolitique des mers européennes: Sécurit	View
+27	TAP	764 1835	SignMeUp registrations	Button
+29	info	540 2030	My registrations&#10;MKL A/MD A Workshop&#10;pending&#10;EMI WS 2026-2	View

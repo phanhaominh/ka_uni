@@ -1,0 +1,188 @@
+14	TAP	124 61	Logo ILIAS - zur Einstiegsseite	View
+15	info	124 61	Logo ILIAS - zur Einstiegsseite	Image
+20	TAP	976 66	Mehr zeigen	MenuItem
+25	info	163 167	EIN HINWEIS:	TextView
+28	info	466 167	für Studierende	TextView
+29	TAP	438 195	zu ILIAS Kursen zum Semesterbeginn	View
+30	info	438 195	zu ILIAS Kursen zum Semesterbeginn	TextView
+33	TAP	933 166	Mehr zeigen	View
+34	TAP	1015 166	Schließen	View
+39	TAP	149 2032	Dashboard	MenuItem
+40	TAP	410 2032	Magazin	MenuItem
+41	TAP	669 2032	Persönlicher Arbeitsraum	MenuItem
+42	TAP	930 2032	Lernerfolge	MenuItem
+43	TAP	540 2115	Mehr	MenuItem
+45	info	0 0	Mehr	TextView
+51	info	538 295	Dashboard	TextView
+54	info	196 487	Favoriten	TextView
+56	info	0 0	Informationsmeldung	TextView
+57	info	536 695	Sie haben aktuell noch keine Favoriten ausgewählt. Um dies zu tun, müs	TextView
+58	info	429 750	&#10;	View
+59	info	538 860	Klicken Sie auf „Magazin“ und wählen Sie aus dem verfügbaren Angebot e	TextView
+60	info	767 915	&#10;	View
+61	info	522 1053	Wenn Sie etwas gefunden haben, das Sie interessiert, können Sie es gan	TextView
+62	info	633 1135	Aktionen	TextView
+64	info	481 1190	Zu Favoriten hinzufügen	TextView
+68	info	173 1300	»	TextView
+69	TAP	250 1300	Magazin	View
+70	info	250 1300	Magazin	TextView
+72	info	316 1585	Empfohlene Inhalte	TextView
+74	TAP	538 1696	-sortation-	Button
+77	info	505 1816	Support, News und Tools für Studierende	TextView
+82	info	131 1949	Forum	Image
+83	TAP	423 1938	Interfakultatives Forum	View
+84	TAP	423 1937	Interfakultatives Forum	View
+85	info	423 1937	Interfakultatives Forum	TextView
+89	info	604 2017	Austausch über das Dies &amp; Das des Studiums	TextView
+91	info	604 2097	Beiträge (Ungelesen): 2541 (2541)	TextView
+93	info	0 0	Letzter Beitrag	TextView
+94	info	0 0	:	TextView
+95	TAP	0 0	Wie gesagt mein Programmieren Tutoriu...	View
+96	info	0 0	Wie gesagt mein Programmieren Tutoriu...	TextView
+97	info	0 0	von urrzq@student.kit.edu, 30. Okt 2026, 17:23	TextView
+100	info	0 0	To-Do	TextView
+107	info	0 0	6. Nov 2026, 23:59	TextView
+109	info	0 0	Übung: Assignments	TextView
+110	info	0 0	Beginn: 30. Okt 2026, 00:00	TextView
+112	info	0 0	Kalender	TextView
+113	TAP	0 0	zurück	View
+114	info	0 0		TextView
+116	TAP	0 0	2026-11	Spinner
+117	TAP	0 0	weiter	View
+118	info	0 0		TextView
+123	info	0 0	Mo	View
+124	info	0 0	Di	View
+125	info	0 0	Mi	View
+126	info	0 0	Do	View
+127	info	0 0	Fr	View
+128	info	0 0	Sa	View
+129	info	0 0	So	View
+137	info	0 0	1	View
+138	TAP	0 0	1	View
+139	info	0 0	1	TextView
+141	info	0 0	2	View
+142	TAP	0 0	2	View
+143	info	0 0	2	TextView
+144	info	0 0	3	View
+145	TAP	0 0	3	View
+146	info	0 0	3	TextView
+147	info	0 0	4	View
+148	TAP	0 0	4	View
+149	info	0 0	4	TextView
+150	info	0 0	5	View
+151	TAP	0 0	5	View
+152	info	0 0	5	TextView
+153	info	0 0	6	View
+154	TAP	0 0	6	View
+155	info	0 0	6	TextView
+156	info	0 0	7	View
+157	TAP	0 0	7	View
+158	info	0 0	7	TextView
+159	info	0 0	8	View
+160	TAP	0 0	8	View
+161	info	0 0	8	TextView
+163	info	0 0	9	View
+164	TAP	0 0	9	View
+165	info	0 0	9	TextView
+166	info	0 0	10	View
+167	TAP	0 0	10	View
+168	info	0 0	10	TextView
+169	info	0 0	11	View
+170	TAP	0 0	11	View
+171	info	0 0	11	TextView
+172	info	0 0	12	View
+173	TAP	0 0	12	View
+174	info	0 0	12	TextView
+175	info	0 0	13	View
+176	TAP	0 0	13	View
+177	info	0 0	13	TextView
+178	info	0 0	14	View
+179	TAP	0 0	14	View
+180	info	0 0	14	TextView
+181	info	0 0	15	View
+182	TAP	0 0	15	View
+183	info	0 0	15	TextView
+185	info	0 0	16	View
+186	TAP	0 0	16	View
+187	info	0 0	16	TextView
+188	info	0 0	17	View
+189	TAP	0 0	17	View
+190	info	0 0	17	TextView
+191	info	0 0	18	View
+192	TAP	0 0	18	View
+193	info	0 0	18	TextView
+194	info	0 0	19	View
+195	TAP	0 0	19	View
+196	info	0 0	19	TextView
+197	info	0 0	20	View
+198	TAP	0 0	20	View
+199	info	0 0	20	TextView
+200	info	0 0	21	View
+201	TAP	0 0	21	View
+202	info	0 0	21	TextView
+203	info	0 0	22	View
+204	TAP	0 0	22	View
+205	info	0 0	22	TextView
+207	info	0 0	23	View
+208	TAP	0 0	23	View
+209	info	0 0	23	TextView
+210	info	0 0	24	View
+211	TAP	0 0	24	View
+212	info	0 0	24	TextView
+213	info	0 0	25	View
+214	TAP	0 0	25	View
+215	info	0 0	25	TextView
+216	info	0 0	26	View
+217	TAP	0 0	26	View
+218	info	0 0	26	TextView
+219	info	0 0	27	View
+220	TAP	0 0	27	View
+221	info	0 0	27	TextView
+222	info	0 0	28	View
+223	TAP	0 0	28	View
+224	info	0 0	28	TextView
+225	info	0 0	29	View
+226	TAP	0 0	29	View
+227	info	0 0	29	TextView
+229	info	0 0	30	View
+230	TAP	0 0	30	View
+231	info	0 0	30	TextView
+240	TAP	0 0	Abonnieren	Button
+242	info	0 0	Neuigkeiten	TextView
+248	TAP	0 0	Es wurde eine Datei hinzugefügt.	View
+249	TAP	0 0	Es wurde eine Datei hinzugefügt.	View
+250	info	0 0	Es wurde eine Datei hinzugefügt.	TextView
+251	info	0 0	Datei: lecture notes_MSE_I_Chapter III-25102026.pdf	TextView
+253	info	0 0	Datum: 25. Okt 2026, 11:48	TextView
+257	TAP	0 0	Es wurde eine Datei hinzugefügt.	View
+258	TAP	0 0	Es wurde eine Datei hinzugefügt.	View
+259	info	0 0	Es wurde eine Datei hinzugefügt.	TextView
+260	info	0 0	Datei: lecture notes_MSE_I_Chapter II_25102026.pdf	TextView
+262	info	0 0	Datum: 25. Okt 2026, 11:48	TextView
+266	TAP	0 0	Es wurde eine Datei hinzugefügt.	View
+267	TAP	0 0	Es wurde eine Datei hinzugefügt.	View
+268	info	0 0	Es wurde eine Datei hinzugefügt.	TextView
+269	info	0 0	Datei: lecture notes_MSE_I_Chapter I-25102026.pdf	TextView
+271	info	0 0	Datum: 25. Okt 2026, 11:48	TextView
+274	info	0 0	Mail	TextView
+279	info	0 0	JG	Image
+280	TAP	0 0	EM1 | Change of lab course date	View
+281	TAP	0 0	EM1 | Change of lab course date	View
+282	info	0 0	EM1 | Change of lab course date	TextView
+284	info	0 0	Von: Johannes Gisy (vz9070@kit.edu)	TextView
+285	info	0 0	Datum: Heute, 09:47	TextView
+289	info	0 0	Profilbild	Image
+290	TAP	0 0	Ihre Anmeldung für Kurs „0140000 – Advanced Mathematics I (Lecture)“	View
+291	TAP	0 0	Ihre Anmeldung für Kurs „0140000 – Advanced Mathematics I (Lecture)“	View
+292	info	0 0	Ihre Anmeldung für Kurs „0140000 – Advanced Mathematics I (Lecture)“	TextView
+294	info	0 0	Von: KIT-ILIAS	TextView
+295	info	0 0	Datum: Heute, 00:44	TextView
+299	info	0 0	AN	Image
+300	TAP	0 0	TUgether – Student Future Days: New skills. New perspectives. New conn	View
+301	TAP	0 0	TUgether – Student Future Days: New skills. New perspectives. New conn	View
+302	info	0 0	TUgether – Student Future Days: New skills. New perspectives. New conn	TextView
+304	info	0 0	Von: Artem Nepechiy (wk7611@kit.edu)	TextView
+305	info	0 0	Datum: 30. Okt 2026, 09:10	TextView
+308	info	0 0	Rechtliche Informationen	View
+311	TAP	0 0	Impressum und Datenschutz	View
+312	info	0 0	Impressum und Datenschutz	TextView

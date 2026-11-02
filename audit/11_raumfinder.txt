@@ -1,0 +1,8 @@
+9	TAP	77 154	Back	Button
+10	info	365 154	Room finder	View
+11	TAP	540 300	10.91 Franz-Grashof-Hörsaal	EditText
+12	TAP	1006 300	Clear	Button
+15	TAP	540 437	Franz-Grashof-Hörsaal (10.91)&#10;Lecture hall	View
+16	TAP	540 620	10.91&#10;Building&#10;≈ 7 m from Franz-Grashof-Hörsaal (10.91)	View
+17	TAP	540 826	10.21&#10;Building&#10;≈ 56 m from Franz-Grashof-Hörsaal (10.91)	View
+18	TAP	540 1029	30.91&#10;Building&#10;≈ 373 m from Franz-Grashof-Hörsaal (10.91)	View

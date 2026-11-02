@@ -1,0 +1,17 @@
+11	info	540 291	&#128680; Shara still DOWN: backends_alive — since 19:20 (re-alert 30m	ViewGroup
+13	info	540 434	Unread Messages	TextView
+14	info	540 1307	[FAIL] PlatoVPN — 74/75 endpoints мертвы:&#10;113.30.152.168:9901&#10;	ViewGroup
+25	TAP	155 2025	Bot menu	View
+26	TAP	341 2025	Emoji, stickers, and GIFs	FrameLayout
+28	TAP	594 2028	Message	EditText
+29	TAP	862 2025	Attach media	ImageView
+31	info	983 2025	Record voice message	FrameLayout
+32	info	988 2025	Record voice message	FrameLayout
+35	TAP	74 165	Go back	ImageView
+36	TAP	562 126	SharaVPN&#10;bot	FrameLayout
+37	TAP	234 166	Profile photo	View
+38	info	636 139	SharaVPN	TextView
+39	info	636 196	bot	TextView
+41	TAP	1014 165	More options	ImageButton
+48	TAP	994 1854	Go to bottom	FrameLayout
+54	info	540 2011	Web tabs	FrameLayout

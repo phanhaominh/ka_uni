@@ -1,0 +1,30 @@
+# FixCampus fix brief
+Owned files: lib/state_management/campus/campus_manager.dart, lib/state_management/kit_provider.dart, lib/timetable/models/webcal.dart, lib/signmeup/*
+
+R102+C71: forceRefetchEverything must continue past a failing stage (wrap each await in try/catch, rethrow a combined failure at the end so the caller's toast still fires) AND fetchSchedule must memoize the in-flight future (copy fetchExams pattern) instead of reject-returning. C78: reapplyExamSynth needs teardownEpoch + empty-URL guard like the poll (:400-403 pattern) — foreground exam chain lacks it. C70: create WebcalKeys class with ALL DATA_webcal* constants; convert campus_manager + webcal worker usages IN THIS FILE and webcal.dart; mei_notifications.dart usage is owned by FixNotifs (coordinate via messages, give them the class). C77? belongs to FixLogin (typo in my list — ignore).
+
+
+
+## Assigned verdicts (FULL verifier detail — authoritative)
+- **C29** [REAL/low] exam_synth.dart:42 `if (start.isBefore(now)) continue;` only takes effect when buildExamSynthBlock re-runs (fetchExams success → reapplyExamSynth, campus_manager.dart:2037). Cold start re-arms the sta
+  → FIX: In carryExamSynthFromCache (campus_manager.dart:1539-1541) filter carried VEVENTs by their DTEND/DTSTART+90 and drop sittings already over, so a cold start never re-seeds history while still preserving the no-veto design for live events.
+- **C32** [REAL/med] campus_manager.dart:625-631: on 200+sessionExpired the guard is `if (cascampusReady) { cascampusReady = false; await bootCascampusSession(); return fetchModule(row, recursiveRetry: recursiveRetry, ...
+  → FIX: Thread a `sessionRetried = false` named parameter through fetchModule (campus_manager.dart:613-631): enter the re-boot branch only when sessionRetried is false, and pass true in the recursive call — making the comment's 'retry once' actually enforced.
+- **C69** [REAL/low] campus_manager.dart:1403 `_lastPersonalIcsRefresh = DateTime.now();` executes BEFORE the try/netGet at :1404-1406; every failure path (non-200/missing VEVENT return at :1407-1409, exception swallowed 
+  → FIX: campus_manager.dart:1403-1421: capture the previous stamp, and reset `_lastPersonalIcsRefresh` to it (or null) on the early return at :1409 and inside the catch at :1421, so only successes consume the 30-min quota; keep a short (e.g. 5-min) failure backoff if hammering is a concern.
+- **C70** [REAL/low] Background callback (mei_notifications.dart:335-431) re-implements the whole fingerprint/diff/cache pipeline of CampusManager.fetchWebcalTimetable (campus_manager.dart:1832-1937) using string literals
+  → FIX: webcal.dart or a small shared prefs-keys file: one public class (e.g. `WebcalKeys`) with all DATA_webcal* constants, used by campus_manager, mei_notifications, agenda_page and ics_export_action; extract the shared strip→diff→merge→fingerprint sequence into one static helper both callers feed with their own synth-block source.
+- **C71** [REAL/med] campus_manager.dart:305-313: `if (isFetchingSchedule) { await HapticFeedback.lightImpact(); ...; return; }` — the rejected call's future completes immediately while the real fetch runs. Awaiters misju
+  → FIX: campus_manager.dart:299-331: memoize like fetchExams — store the running future in a field and return it from the isFetchingSchedule branch instead of an instantly-completed future (drop the reject-and-pray haptic path).
+- **C73** [REAL/low] webcal.dart:418 `if (twin.room != o.room || twin.end != o.end)` — title is not compared, so a pure rename (same uid-series + same start, matched by dk at :405-406) yields zero deltas while the fingerp
+  → FIX: webcal.dart:418: add `|| twin.title != o.title` to the changed test (and consider comparing oldRoom/oldTitle in the IcsChange body); optionally, pair added/removed entries sharing title+end across series before emitting the pair, to report it as moved.
+- **C74** [BY-DESIGN/?] The merge at webcal.dart:138-146 (`key = "${first.title}|${first.start.toIso8601String()}"`, longest seriesEnd wins) and its title-uniqueness assumption are explicitly documented (:153-159) AND regres
+  → FIX: (derive from evidence)
+- **C75** [REAL/low] webcal.dart:79 `_dt = RegExp(r'^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$')` anchored; :231-233 `_parseEvent` returns null when DTSTART fails it and parse() `continue`s (:135-137) — whole VEVENT si
+  → FIX: webcal.dart:79/101-114: extend _dtOf to accept an optional trailing 'Z' (parse as UTC, `.toLocal()`) and an 8-digit VALUE=DATE form (return midnight, optionally flagged all-day); drop-or-annotate events whose DTSTART still fails instead of only debug-silence.
+- **C78** [REAL/med] Confirmed end-to-end. logout (credentials_provider.dart:212-263) calls `vm.campusManager.wipeAccountMemory()` (:225) then sweeps DATA_* prefs (:239-247); wipeAccountMemory force-clears `isFetchingExam
+  → FIX: campus_manager: add a teardown epoch bumped in wipeAccountMemory; capture it at _fetchExamsInner entry and skip the `exams = parsed`/reapplyExamSynth/scheduleExamReminders block (and the memoized-future publication) when it has changed; likewise re-check the epoch after the SharedPreferences awaits inside reapplyExamSynth before writing _webcalIcsCacheKey.
+- **C93** [BY-DESIGN/?] The static-final-once mechanic is real (`static final DateTime horizonDefault = DateTime.now().add(const Duration(days: 365));`, used only as the UNTIL default at :255), but the claimed effect ('UNTIL
+  → FIX: None needed; if touched, make it a getter (`DateTime get horizonDefault => ...`) as free hygiene.
+- **R102** [REAL/?] Sequence confirmed: forceRefetchEverything = `await clearEverything(); await fetchSchedule(); await fetchTimetable(); await fetchExams(); [await fetchAllModules();]` strict (campus_manager.dart:201-20
+  → FIX: Reorder + isolate in forceRefetchEverything (campus_manager.dart:201-209): run the cookie-less `fetchTimetable()` FIRST, then wrap each remaining step in its own try/catch (log-and-continue); additionally move :1833-1834 inside fetchWebcalTimetable's try.

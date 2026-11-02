@@ -1,0 +1,42 @@
+18	info	240 173	KIT Logo	Image
+19	TAP	680 171	toggle dark mode	Switch
+21	TAP	845 171	EN	Button
+25	info	540 376	KIT Hintergrundbild	Image
+29	info	538 778	Herzlich Willkommen im Campus Plus Portal!	TextView
+31	info	538 1578	Newsletter:	TextView
+33	info	520 1696	Wenn Sie regelmäßig über neue Funktionen und wichtige Änderungen infor	TextView
+34	TAP	640 1754	Campus+ Mailingliste	View
+35	info	640 1754	Campus+ Mailingliste	TextView
+36	info	930 1754	abonnieren.	TextView
+37	TAP	364 1876	Zum Veranstaltungsangebot	View
+39	info	397 1875	Zum Veranstaltungsangebot	TextView
+41	info	507 1963	Für die meisten Funktionen müssen Sie sich anmelden.	TextView
+42	info	976 1963	&#10;	View
+43	TAP	280 1963	ANMELDEN (KIT)	View
+45	info	329 1963	ANMELDEN (KIT)	TextView
+46	TAP	333 1963	ANMELDEN (EXTERNE)	View
+48	info	383 1963	ANMELDEN (EXTERNE)	TextView
+49	TAP	361 1963	REGISTRIEREN (EXTERNE)	View
+51	info	410 1963	REGISTRIEREN (EXTERNE)	TextView
+54	info	538 1963	Neuerungen	TextView
+55	info	538 1963	Version 2.31: SignMeUp: Vorschau und Blättern für Verwaltungsansicht	TextView
+56	info	538 1963	29.08.2025	TextView
+57	info	538 1963	Ab sofort steht die Detailvorschau auch in der Verwaltungsansicht zur 	TextView
+58	info	538 1963	Version 2.30: SignMeUp: Verbesserungen beim Nachrichtenversand und der	TextView
+59	info	538 1963	24.07.2025	TextView
+60	info	538 1963	Diese Version bringt viele neue Funktionen für SignMeUp. So können Sie	TextView
+61	info	538 1963	Version 2.23: SignMeUp: Eigene Anzeigetexte und Nachträgliche Änderung	TextView
+62	info	538 1963	01.07.2025	TextView
+65	info	469 1963	Alle Neuerungen und Änderungen finden Sie in den	TextView
+66	TAP	236 1963	Versionsinformationen	View
+67	info	236 1963	Versionsinformationen	TextView
+68	info	441 1963	.	TextView
+71	info	224 1963	Campus+ Portal v2.31.0	TextView
+72	info	545 1963	(28.10.2026)	TextView
+73	TAP	782 1963	Neuerungen	View
+74	info	782 1963	Neuerungen	TextView
+92	info	65 2038	Connection is secure	ImageView
+94	TAP	401 2039	plus.campus.kit.edu	EditText
+98	TAP	732 2039	Enable/Disable Brave Shields	ImageButton
+99	TAP	860 2039	See 7 tabs	ImageButton
+101	TAP	992 2039	Customize and control Google Chrome	ImageButton

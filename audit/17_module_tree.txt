@@ -1,0 +1,17 @@
+9	TAP	77 154	Back	Button
+10	info	474 154	Module tree (debug)	View
+11	info	540 281	Long-press a title to copy it.	View
+14	info	540 441	Mechanical Engineering (International) Bachelor&#10;(not a module)&#10	View
+15	info	540 620	Orientation Exam&#10;(not a module)&#10;L2&#10;(no page yet)&#10;not o	View
+16	info	540 738	Orientation Exam&#10;L3&#10;(no page yet)&#10;not on the timetable	View
+17	info	540 840	Advanced Mathematics I&#10;L4	View
+18	info	540 942	Engineering Mechanics I&#10;L4	View
+19	info	540 1060	Bachelor's Thesis&#10;(not a module)&#10;L2&#10;(no page yet)&#10;not 	View
+20	info	540 1178	Bachelor's Thesis&#10;L3&#10;(no page yet)&#10;not on the timetable	View
+21	info	540 1280	Bachelor's Thesis&#10;L4&#10;not on the timetable	View
+22	info	540 1382	Presentation&#10;L4&#10;not on the timetable	View
+23	info	540 1500	Internship&#10;(not a module)&#10;L2&#10;(no page yet)&#10;not on the 	View
+24	info	540 1646	Internship in Industry&#10;L3&#10;(no page yet)&#10;not on the timetab	View
+25	info	540 1775	Internship in Industry&#10;L4&#10;not on the timetable	View
+26	info	540 1915	Fundamentals of Engineering&#10;(not a module)&#10;L2&#10;(no page yet	View
+27	info	540 2060	Advanced Mathematics&#10;L3&#10;(no page yet)&#10;not on the timetable	View

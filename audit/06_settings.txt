@@ -1,0 +1,22 @@
+9	info	157 154	Settings	View
+12	info	139 356	Home	View
+13	info	201 479	Show profile	View
+15	info	270 587	Show average grade	View
+17	info	178 778	Language	View
+18	TAP	654 778	English	Button
+19	info	196 910	Appearance	View
+20	TAP	673 910	Dark	Button
+21	info	134 1096	ILIAS	View
+22	info	183 1232	Start page	View
+23	TAP	659 1232	Dashboard	Button
+24	info	275 1418	Own timetable (ICS)	View
+25	info	454 1536	29 courses imported from own calendar	View
+26	TAP	540 1628	http://127.0.0.1:8080/KIT_Winter_Semester_Timetable_True_Final.ics	EditText
+27	TAP	268 1760	Save link	Button
+28	TAP	604 1760	Import file…	Button
+29	TAP	879 1760	Remove	Button
+30	TAP	486 1914	Export timetable (all sources)…	Button
+31	info	180 2110	File cache	View
+34	TAP	273 1998	Settings	Button
+36	TAP	540 1998	Dashboard	Button
+38	TAP	806 1998	ILIAS	Button

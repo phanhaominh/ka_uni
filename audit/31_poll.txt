@@ -1,0 +1,15 @@
+9	TAP	77 154	Back	Button
+10	info	302 154	Agenda	View
+11	TAP	1014 154	Export timetable…	Button
+15	info	540 385	running · until 11:15&#10;3161010 - Engineering Mechanics I (Lecture) 	View
+17	info	540 1002	Today&#10;09:45–11:15  3161010 - Engineering Mechanics I (Lecture) (V)	View
+18	TAP	297 741	10.91 Franz-Grashof-Hörsaal	View
+19	TAP	300 856	Franz-Grashof-HS, bldg 10.91	View
+20	TAP	262 972	10.21 Carl-Benz-Hörsaal	View
+21	TAP	262 1140	10.21 Carl-Benz-Hörsaal	View
+22	TAP	262 1307	10.21 Carl-Benz-Hörsaal	View
+23	TAP	222 1423	KIT Gebäude 10.23	View
+25	info	540 1807	Tomorrow&#10;08:00–09:30  3173008 - Materials Science and Engineering 	View
+26	TAP	331 1734	20.40 Fritz-Haller-Hörsaal (HS37)	View
+27	TAP	331 1901	20.40 Fritz-Haller-Hörsaal (HS37)	View
+28	TAP	298 2017	Redtenbacher HS, bldg 10.91	View

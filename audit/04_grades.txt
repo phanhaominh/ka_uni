@@ -1,0 +1,16 @@
+9	TAP	77 154	Back	Button
+10	info	294 154	Grades	View
+13	info	540 416	0, Studienorientierungsprüfung&#10;0,0 / 30 CP&#10;still open	ProgressBar
+15	info	540 756	Total ECTS&#10;0,0&#10;Average grade&#10;—	View
+16	info	192 831	0 passed	View
+17	info	415 831	0 failed	View
+18	info	632 831	49 open	View
+19	info	540 1518	In progress&#10;Orientation Exam&#10;Advanced Mathematics I&#10;7 CP&#	View
+20	info	632 1144	open	View
+21	info	588 1290	open	View
+22	info	588 1436	open	View
+23	info	578 1581	open	View
+24	info	588 1727	open	View
+25	info	578 1873	open	View
+26	info	578 2019	open	View
+27	info	632 2112	open	View

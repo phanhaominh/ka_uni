@@ -1,0 +1,19 @@
+9	info	157 154	Settings	View
+12	info	275 251	Own timetable (ICS)	View
+13	info	454 360	29 courses imported from own calendar	View
+14	TAP	540 452	http://127.0.0.1:8080/KIT_Winter_Semester_Timetable_True_Final.ics	EditText
+15	TAP	268 584	Save link	Button
+16	TAP	604 584	Import file…	Button
+17	TAP	879 584	Remove	Button
+18	TAP	486 738	Export timetable (all sources)…	Button
+19	info	180 957	File cache	View
+20	info	128 1054	Size	View
+21	info	927 1054	0.0 MB	View
+22	TAP	540 1153	Manage	Button
+23	info	144 1344	Debug	View
+24	info	270 1475	Module tree (debug)	View
+26	info	540 1580	Every module entry of the CampusKIT tree: level, timetable hit, loaded	View
+27	TAP	540 1730	Log out	Button
+30	TAP	273 1998	Settings	Button
+32	TAP	540 1998	Dashboard	Button
+34	TAP	806 1998	ILIAS	Button

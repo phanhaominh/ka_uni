@@ -1,0 +1,18 @@
+9	TAP	77 154	Back	Button
+10	info	446 154	Exam Registration	View
+13	info	540 241	Registration opens soon	View
+14	info	473 241	Basics of Manufacturing Technology&#10;Exam: Do, 25.03.2027 13:00 - 14	View
+15	info	540 498	Other	View
+16	info	467 556	Engineering Mechanics I&#10;Examiner: Böhlke, Langhoff&#10;Schriftlich	View
+17	info	209 647	not registered	View
+18	info	619 647	76-T-MACH-100282-englisch	View
+19	info	540 1431	Offered, but not taken this semester	View
+20	info	491 1100	IT and Data Science&#10;Exam: Do, 26.11.2026 17:30 - 19:00  •  30.95 A	View
+21	info	209 1241	not registered	View
+22	info	555 1241	76-T-MACH-113515	View
+23	info	461 1554	Production Operations Management-Project&#10;Register by: 30.11.2026 2	View
+24	info	209 1670	not registered	View
+25	info	555 1670	76-T-MACH-110326	View
+26	info	404 1942	Tutorial Engineering Mechanics III&#10;Register by: 07.12.2026 23:59&#	View
+27	info	209 2080	not registered	View
+28	info	555 2080	76-T-MACH-113506	View

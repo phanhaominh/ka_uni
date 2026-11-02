@@ -1,0 +1,9 @@
+9	TAP	77 154	Back	Button
+10	info	302 154	Agenda	View
+11	TAP	1014 154	Export timetable…	Button
+15	info	540 372	Exam registration open&#10;Materials Science I and II · until 7.2.2027	View
+16	TAP	897 403	Register	Button
+18	info	540 829	SignMeUp registrations&#10; Géopolitique des mers européennes: Sécurit	View
+19	TAP	764 1035	SignMeUp registrations	Button
+21	info	540 1408	My registrations&#10;MKL A/MD A Workshop&#10;pending&#10;EMI WS 2026-2	View
+22	info	540 1715	As of 09:48	View
