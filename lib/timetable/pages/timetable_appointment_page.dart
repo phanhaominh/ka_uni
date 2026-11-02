@@ -8,6 +8,7 @@ import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/timetable/models/timetable_appointment.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:kit_mobile/geo/logic/maps_url.dart';
 
 class TimetableAppointmentPage extends StatefulWidget {
   final TimetableAppointment appointment;
@@ -64,6 +65,31 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
     launchUrl(Uri.parse(url));
   }
 
+  /// "Route here" - hands off to Google Maps with NO origin set, so Maps
+  /// starts navigation from the device's current location. Destination
+  /// preference: coordinates the place already carries locally, then the
+  /// same resolved point the in-app map pins; a place the map can only
+  /// approximate (the dataUrl-less fallback drops the pin on the main
+  /// building) must NOT be offered as a precise destination - Maps gets
+  /// the search string instead and geocodes it itself.
+  Future<void> _openDirections() async {
+    final place = widget.appointment.place;
+    final exact = place.latLngFromList ??
+        (place.dataUrl.isNotEmpty
+            ? await widget.appointment.placeData
+            : null);
+    final url = exact != null
+        ? mapsDirectionsUrl(exact)
+        : mapsSearchUrl(
+            "${widget.appointment.displayPlace} KIT Karlsruhe".trim());
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } on Object catch (_) {
+      // same posture as the course-page launcher: no Maps/browser on the
+      // device is not worth interrupting the schedule view for
+    }
+  }
+
   /// The feed's URL property (W3: parsed from the VEVENT URL line, the
   /// KIT campus course page). The value arrives with the feed, so it is
   /// gated https + exact KIT host before a tap target is offered at all -
@@ -110,6 +136,15 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
 
     return Scaffold(
       appBar: AppBar(),
+      // an online lecture has no place to walk to: no button
+      floatingActionButton: widget.appointment.displayPlace.isEmpty
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () => _openDirections(),
+              icon: const Icon(Icons.directions),
+              label: Text(L10n.t("timetable.directions")),
+            ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: Stack(
         children: [
           Center(

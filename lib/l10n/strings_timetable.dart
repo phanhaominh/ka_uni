@@ -54,6 +54,7 @@ const Map<String, String> de_timetable = {
   "timetable.timeLabel": "Zeit:",
   "timetable.aliasesLabel": "Auch bekannt als:",
   "timetable.openCampusMap": "Auf dem Campusplan öffnen",
+  "timetable.directions": "Route",
   // round 12: daily-view now line, ghost cards, free-gap + room-varies
   // chips, course-page link
   "timetable.nowLineLabel": "Aktuelle Zeit: {0}",
@@ -116,6 +117,7 @@ const Map<String, String> en_timetable = {
   "timetable.timeLabel": "Time:",
   "timetable.aliasesLabel": "Also known as:",
   "timetable.openCampusMap": "Open in campus map",
+  "timetable.directions": "Directions",
   "timetable.idLabel": "ID:",
   "timetable.placeLabel": "Room:",
   // round 12: see de_timetable
