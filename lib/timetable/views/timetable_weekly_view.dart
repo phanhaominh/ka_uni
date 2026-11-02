@@ -183,8 +183,32 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
 
     final weekdayIdx = (w - 10000);
 
-    final TimetableDaily? tt =
+    final TimetableDaily? template =
         weekdayIdx % 7 < 5 ? vm.timetable.days[weekdayIdx % 7] : null;
+
+    // The template repeats its weekday columns forever (cascampus parity);
+    // this carousel page has ONE real date. Rows that do not occur on it -
+    // a lecture series starting in December, an EXDATE-cancelled week, a
+    // one-shot chain member or a personal appointment beyond its UNTIL -
+    // are dropped HERE, so every page shows what actually happens on ITS
+    // date. Scaffold and lunch carry no date semantics and always stay;
+    // HTML-grid fallback rows have null occurrenceDates and pass through
+    // (they are all stamped "today", there is nothing to filter on).
+    final TimetableDaily? tt;
+    if (template == null) {
+      tt = null;
+    } else {
+      final d = _pageDate(w);
+      final pageDate = DateTime(d.year, d.month, d.day);
+      tt = TimetableDaily(weekday: template.weekday)
+        ..appointments = template.appointments
+            .where((a) =>
+                a.isEmpty ||
+                a.type == TimetableAppointmentType.lunchBreak ||
+                a.occurrenceDates == null ||
+                a.occurrenceDates!.contains(pageDate))
+            .toList();
+    }
 
     // Lecture-free week: only ever with the provable reading - a feed
     // cache exists (so the grid is real parsed data, not the template) AND

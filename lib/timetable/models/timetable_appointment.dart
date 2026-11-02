@@ -34,6 +34,14 @@ class TimetableAppointment {
   /// card earns a "Raum wchs." chip.
   bool roomVaries = false;
 
+  /// Real calendar dates (date-only) on which the CLAIMED course actually
+  /// occurs, collected by WebcalFeed.toWeeklyTemplate across the whole
+  /// retained horizon. The weekly carousel filters each page against its
+  /// real date: a lecture starting in December or an EXDATE-cancelled week
+  /// must not be painted onto pages where nothing happens. Null on rows
+  /// without date semantics (scaffold, lunch, HTML-grid rows).
+  Set<DateTime>? occurrenceDates;
+
   /// Mirrors IcsOccurrence.fromPersonalIcs: row came from the student's
   /// OWN imported ICS block, not the KIT feed (duplicate tell-apart).
   bool fromPersonalIcs = false;

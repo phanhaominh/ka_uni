@@ -54,12 +54,13 @@ void main() {
         isTrue,
         reason: 'monday: ${monday.appointments.map((a) => a.title)}');
 
-    // fingerprint stable & change-sensitive
-    final fp1 = feed.fingerprint();
-    expect(fp1, feed.fingerprint());
+    // fingerprint stable & change-sensitive - on the FIXTURE clock: the
+    // real-clock day window empties once the wall date passes the fixture
+    final fp1 = feed.fingerprint(at: DateTime(2026, 10, 30, 18, 0));
+    expect(fp1, feed.fingerprint(at: DateTime(2026, 10, 30, 18, 0)));
     expect(fp1 == WebcalFeed.parse(raw.replaceFirst('Carl-Benz', 'Other-Room'),
             now: DateTime(2026, 10, 30, 18, 0))!
-        .fingerprint(), isFalse);
+        .fingerprint(at: DateTime(2026, 10, 30, 18, 0)), isFalse);
   });
 
   String ics(List<String> events) =>
@@ -307,14 +308,17 @@ void main() {
     expect(a.occurrences.single.url, isNull);
     expect(
         b.occurrences.single.url, "https://campus.studium.kit.edu/ev/Tok123");
-    // an internal URL rotation must not move the diff baseline...
-    expect(b.fingerprint(), a.fingerprint());
+    // fingerprint's day window must ride the FIXTURE clock: with the real
+    // wall clock the fixture's Nov-2 event falls below "today's midnight"
+    // the moment the real date ticks over, both fingerprints collapse to
+    // '' and this test time-bombs
+    expect(b.fingerprint(at: now), a.fingerprint(at: now));
     expect(b.occurrences.single.dedupeKey, a.occurrences.single.dedupeKey);
     // ...while the fingerprint keeps its byte-exact title rule
     final c =
         WebcalFeed.parse(withUrl.replaceFirst("SUMMARY:T", "SUMMARY:T2"),
             now: now)!;
-    expect(c.fingerprint(), isNot(b.fingerprint()));
+    expect(c.fingerprint(at: now), isNot(b.fingerprint(at: now)));
   });
 
   test('fixture: URL is the stable course token across clones and '
@@ -453,7 +457,33 @@ void main() {
             a.title.contains('KLAUSUR')),
         isEmpty,
         reason: 'a February Klausur must not haunt every Tuesday');
+    final late1130 = thursday.firstWhere((a) => a.title == 'MatSci Late');
+    expect(late1130.occurrenceDates, {DateTime(2026, 11, 26)},
+        reason: 'a chain member knows exactly which real date it is');
+    expect(
+        tuesday.firstWhere((a) => a.title == 'Clinic Slot').occurrenceDates,
+        // slot union: the February Klausur sits in the SAME Tue-10:00
+        // block, so that week the slot is genuinely occupied too
+        {DateTime(2026, 11, 3), DateTime(2027, 2, 16)});
     expect(thursday.where((a) => a.title == 'MatSci Late'), hasLength(1),
         reason: 'feed one-shot chains stay on the repeating template');
+  });
+
+  test('weekly expansion keeps wall-clock ends across the DST flip', () {
+    const raw = "BEGIN:VCALENDAR\nVERSION:2.0\n"
+        "BEGIN:VEVENT\nUID:dst@x\nDTSTART:20261019T080000\n"
+        "DTEND:20261019T100000\n"
+        "RRULE:FREQ=WEEKLY;UNTIL=20261110T000000\n"
+        "SUMMARY:DST Lecture\nEND:VEVENT\nEND:VCALENDAR\n";
+    final feed =
+        WebcalFeed.parse(raw, now: DateTime(2026, 11, 2, 8))!;
+    final nov2 = feed.occurrences
+        .firstWhere((o) => o.start == DateTime(2026, 11, 2, 8));
+    // the pre-flip instance was 08:00-10:00 CEST (2 absolute hours);
+    // re-adding THAT to the post-flip Monday printed 09:00 CET as the end
+    // while geometry still spanned to 10:00. Trivially true on hosts
+    // without a late-October DST flip.
+    expect(nov2.end, DateTime(2026, 11, 2, 10),
+        reason: 'end follows the start by wall clock');
   });
 }

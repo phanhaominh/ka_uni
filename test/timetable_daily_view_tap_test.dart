@@ -176,4 +176,50 @@ void main() {
     expect(top('Tutorial: Materials Science'), lessThan(top('Mittagspause')),
         reason: '09:45 before the Nov-2-stamped 13:00 lunch');
   });
+
+  testWidgets('free chip names the real gap; day-edge voids are trimmed',
+      (tester) async {
+    TimetableAppointment emptySlot(int h1, int m1, int h2, int m2) =>
+        TimetableAppointment(
+            begin: DateTime(2026, 11, 3, h1, m1),
+            end: DateTime(2026, 11, 3, h2, m2))
+          ..title = '—';
+    final d = TimetableDaily(weekday: Weekday.tuesday)
+      ..appointments = [
+        ap('Engineering Mechanics I', 1, '10.91',
+            DateTime(2026, 11, 3, 9, 45), DateTime(2026, 11, 3, 11, 15)),
+        emptySlot(11, 30, 13, 0),
+        TimetableAppointment(
+            type: TimetableAppointmentType.lunchBreak,
+            begin: DateTime(2026, 11, 3, 13, 0),
+            end: DateTime(2026, 11, 3, 14, 0)),
+        emptySlot(14, 0, 15, 30),
+        ap('Advanced Mathematics I', 2, '31.6',
+            DateTime(2026, 11, 3, 15, 0), DateTime(2026, 11, 3, 16, 30)),
+        // trailing scaffold after the last lecture: pure void, must vanish
+        emptySlot(18, 0, 19, 30),
+      ];
+    await tester.pumpWidget(MaterialApp(
+      home: MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => KITProvider()),
+          ChangeNotifierProvider(create: (c) => SettingsProvider(context: c)),
+          ChangeNotifierProvider(create: (_) => TutorialManager()),
+        ],
+        child: Scaffold(
+            body: SizedBox(
+                height: 900,
+                child: TimetableDailyView(tt: d, showNowLine: false))),
+      ),
+    ));
+    await tester.pump();
+
+    // EM really ends 11:15 -> 1:45 free, though the 11:30 scaffold spans
+    // only 1:30; lunch->15:00 is a real 1:00 though the scaffold spans 1:30
+    expect(find.textContaining('1:45'), findsOneWidget,
+        reason: 'chip reports the real gap, not the placeholder span');
+    expect(find.textContaining('1:00'), findsOneWidget);
+    expect(find.textContaining('1:30'), findsNothing,
+        reason: 'trailing void trimmed: no third scaffold chip');
+  });
 }

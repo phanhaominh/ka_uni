@@ -407,11 +407,18 @@ class WebcalFeed {
     // every occurrence carries the series' real end: two same-UID series
     // that differ only in UNTIL must not dedupe against each other
     final seriesEnd = dates.last;
+    // the end follows the START by wall clock, not by absolute difference:
+    // `day.add(end.difference(start))` re-plays the FIRST instance's UTC
+    // offset, so every post-flip instance of a pre-flip series printed its
+    // end one hour early (agenda, sheet, reminders, running chip) while
+    // row geometry still used the true length - labels and pixels lying
+    // about the same lecture. Overnight series shift the copy a day ahead.
+    // (exam_synth.dart carries the identical precedent.)
     return [
       for (final day in dates)
         IcsOccurrence(
             start: day,
-            end: day.add(end.difference(start)),
+            end: _wallEndFor(day, end),
             title: title,
             room: room,
             uid: uid ?? title,
@@ -420,6 +427,18 @@ class WebcalFeed {
             fromPersonalIcs: personal,
             url: url)
     ];
+  }
+
+  /// Wall-clock [end] on [day]'s calendar date - never the first
+  /// instance's absolute length re-added across DST boundaries; next day
+  /// when the series runs past midnight.
+  static DateTime _wallEndFor(DateTime day, DateTime end) {
+    final sameDay = DateTime(
+        day.year, day.month, day.day, end.hour, end.minute, end.second);
+    return sameDay.isAfter(day)
+        ? sameDay
+        : DateTime(day.year, day.month, day.day + 1, end.hour, end.minute,
+            end.second);
   }
 
   /// RRULE expansion safety ceiling; parse() clamps with its own horizon.
@@ -532,16 +551,26 @@ class WebcalFeed {
     // personal-ICS and exam-synth occurrences never join a group.
     for (var d = 0; d < weekly.days.length; d++) {
       for (final a in weekly.days[d].appointments) {
-        if (a.isEmpty || a.fromPersonalIcs) continue;
+        if (a.isEmpty) continue;
         final rooms = <String>{};
+        final dates = <DateTime>{};
         for (final o in occurrences) {
           if (o.start.weekday != d + 1 ||
               o.start.hour != a.begin.hour ||
               o.start.minute != a.begin.minute) {
             continue;
           }
-          if (_isFeedCloneOf(o, a)) rooms.add(o.room);
+          // SLOT-level union for the dates: the row disappears from a
+          // carousel page only when NOTHING occupies this weekday+block
+          // that week - hiding a lecture that really happens (wrong clone
+          // won the claim, title tails differ between export and feed) is
+          // far worse than one stale title on a slot another course
+          // covers that week: the cascampus HTML grid shows exactly one
+          // card per slot too. roomVaries keeps the strict identity match.
+          dates.add(DateTime(o.start.year, o.start.month, o.start.day));
+          if (!a.fromPersonalIcs && _isFeedCloneOf(o, a)) rooms.add(o.room);
         }
+        if (dates.isNotEmpty) a.occurrenceDates = dates;
         if (rooms.length > 1) a.roomVaries = true;
       }
     }

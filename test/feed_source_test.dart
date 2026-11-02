@@ -16,7 +16,11 @@ void main() {
       File('test/fixtures/webcal_e2e.ics').readAsStringSync())!;
 
   test("unrelated calendars have different fingerprints", () {
-    expect(real.fingerprint(), isNot(e2e.fingerprint()));
+    // fixture clock, not the wall clock: the E2E calendar is 1970-DST test
+    // data so any real-clock window leaves it empty - once the real
+    // fixture ages out too, both fingerprints are '' and equal
+    expect(real.fingerprint(at: DateTime(2026, 10, 30, 18)),
+        isNot(e2e.fingerprint(at: DateTime(2026, 10, 30, 18))));
   });
 
   test("cross-calendar diff is the phantom flood the guard prevents", () {

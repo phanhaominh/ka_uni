@@ -28,6 +28,35 @@ String _dur(int minutes) =>
 bool _isContent(TimetableAppointment a) =>
     !a.isEmpty || a.type == TimetableAppointmentType.lunchBreak;
 
+int _beginMin(TimetableAppointment a) => a.begin.hour * 60 + a.begin.minute;
+
+/// Wall span of a real row: the wall-clock difference of its endpoints,
+/// NEVER the full-stamp difference (template rows mix dates). Rows whose
+/// wall span would be zero or negative (all-day VALUE=DATE events, ends
+/// stored past midnight) render with the parser's +90-minute default
+/// length instead of a column-eating monster block.
+int _spanMin(TimetableAppointment a) {
+  final s = (a.end.hour * 60 + a.end.minute) - _beginMin(a);
+  return s > 0 ? s : 90;
+}
+
+/// Minutes row [i] occupies on the wall clock: content rows their own
+/// span; EMPTY 'Free' rows stretch from the previous content row's end
+/// to the next content row's begin, so chip text, row height and the
+/// now-line walk all speak about the REAL gap - the scaffold
+/// placeholder's generic span (always 1:30/1:45) used to misreport it.
+int _rowMin(List<TimetableAppointment> rows, int i) {
+  final a = rows[i];
+  if (_isContent(a)) return _spanMin(a);
+  var prev = i - 1, next = i + 1;
+  while (prev >= 0 && !_isContent(rows[prev])) prev--;
+  while (next < rows.length && !_isContent(rows[next])) next++;
+  if (prev < 0 || next >= rows.length) return _spanMin(a);
+  final gap =
+      _beginMin(rows[next]) - (_beginMin(rows[prev]) + _spanMin(rows[prev]));
+  return gap > 0 ? gap : _spanMin(a);
+}
+
 /// A hairline is drawn after block [i] only where it separates something:
 /// after the LAST row, and anywhere inside a pure empty run (the leading
 /// or trailing void of the day), a line would float over nothing. ONE
@@ -115,12 +144,19 @@ class TimetableDailyView extends StatelessWidget {
 
     if (!rows.any(_isContent)) return _dayFree(context);
 
-    final seams = dayColumnSeams(rows);
+    // Leading/trailing scaffold voids outside the content range used to
+    // eat up to half the page at full scale; only the void BETWEEN real
+    // rows carries meaning (and a chip), so trim outside the range.
+    final day = rows.sublist(
+        rows.indexWhere(_isContent), rows.lastIndexWhere(_isContent) + 1);
+
+    final mins = [for (var i = 0; i < day.length; i++) _rowMin(day, i)];
+    final seams = dayColumnSeams(day);
     final blocks = [
-      for (var i = 0; i < rows.length; i++)
+      for (var i = 0; i < day.length; i++)
         NowBlock(
-            beginMin: rows[i].begin.hour * 60 + rows[i].begin.minute,
-            durationMin: rows[i].duration,
+            beginMin: _beginMin(day[i]),
+            durationMin: mins[i],
             border: seams[i])
     ];
 
@@ -136,8 +172,8 @@ class TimetableDailyView extends StatelessWidget {
         children: [
           Column(
             children: [
-              for (var i = 0; i < rows.length; i++)
-                _rowWithSeam(context, rows, i, factor, seams[i])
+              for (var i = 0; i < day.length; i++)
+                _rowWithSeam(context, day, mins, i, factor, seams[i])
             ],
           ),
           if (showNowLine)
@@ -173,8 +209,8 @@ class TimetableDailyView extends StatelessWidget {
   /// drawn iff [seam] - the same flag the blocks list handed to
   /// dayColumnFactor/nowLineY, so the line only sits where a measured row is.
   Widget _rowWithSeam(BuildContext context, List<TimetableAppointment> rows,
-      int i, double factor, bool seam) {
-    final row = _row(context, rows, i, factor);
+      List<int> mins, int i, double factor, bool seam) {
+    final row = _row(context, rows, mins, i, factor);
     if (!seam) return row;
     return Column(
       children: [
@@ -188,15 +224,15 @@ class TimetableDailyView extends StatelessWidget {
     );
   }
 
-  Widget _row(BuildContext context, List<TimetableAppointment> rows, int i,
-      double factor) {
+  Widget _row(BuildContext context, List<TimetableAppointment> rows,
+      List<int> mins, int i, double factor) {
     final theme = Theme.of(context);
     final appointment = rows[i];
 
     if (!_isContent(appointment)) {
       final ghost = _ghostFor(appointment);
       if (ghost != null) {
-        return _ghostCard(context, appointment, ghost, factor);
+        return _ghostCard(context, appointment, ghost, factor, mins[i]);
       }
       // a slot between two lectures is worth naming; one at either end of
       // the day is only a seam
@@ -207,11 +243,11 @@ class TimetableDailyView extends StatelessWidget {
       return SizedBox(
         // A free block must read as empty: the placeholder dash and
         // its time badge used to render like a lecture called "-".
-        height: appointment.duration * factor,
+        height: mins[i] * factor,
         child: boxedIn
             ? Center(
                 child: Text(
-                  L10n.t("timetable.freeGap", [_dur(appointment.duration)]),
+                  L10n.t("timetable.freeGap", [_dur(mins[i])]),
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: theme.colorScheme.outline),
                   maxLines: 1,
@@ -258,7 +294,7 @@ class TimetableDailyView extends StatelessWidget {
     // so a 60-min block must give up text lines instead of pushing its
     // words over the neighbour's first row (what an unbounded text
     // column inside a fixed SizedBox did: AUDIT-test bled into KLAUSUR)
-    final boxH = appointment.duration * factor;
+    final boxH = mins[i] * factor;
     final textScale = MediaQuery.textScalerOf(context);
     // the HH:MM rides bodyLarge and claims a line of its own at the top
     // of the column, so the title/place budget starts below it
@@ -438,12 +474,12 @@ class TimetableDailyView extends StatelessWidget {
   }
 
   Widget _ghostCard(BuildContext context, TimetableAppointment block,
-      IcsChange change, double factor) {
+      IcsChange change, double factor, int min) {
     final theme = Theme.of(context);
     return Opacity(
       opacity: deadContentOpacity,
       child: SizedBox(
-        height: block.duration * factor,
+        height: min * factor,
         child: Padding(
           padding:
               const EdgeInsets.symmetric(horizontal: defaultPagePadding),
