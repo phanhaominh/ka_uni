@@ -16,6 +16,12 @@ import '../signmeup/signmeup_manager.dart';
 import '../state_management/campus/campus_manager.dart';
 import 'notification_payload.dart';
 import '../timetable/models/webcal.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import '../credentials/models/kit_credentials.dart';
+import '../ilias/ilias_scraper.dart';
+import '../state_management/ilias/ilias_manager.dart';
+import '../state_management/ilias/ilias_watcher.dart';
 
 const String channelIdDaily = "mei_daily";
 const String channelIdDeadlines = "mei_deadlines";
@@ -506,6 +512,43 @@ class MeiNotifications {
   }
 }
 
+/// C28: one background ILIAS announcements diff, piggy-backed on the same
+/// 30-min webcal cycle so new material is pushed on days the agenda is
+/// never opened (before this, the diff only ran on agenda visits).
+/// A FRESH IliasManager per run: its cookie jar is per-instance in-memory,
+/// so each cycle pays one full SAML chain (~4 requests) — the same cadence
+/// CampusKIT's own web session keeps warm anyway. Every dead end funnels
+/// to a contained early return, and every watcher write/push passes the
+/// live-URL probe: the main isolate's teardownEpoch bump is invisible in
+/// this isolate, platform prefs are the only cross-isolate fence.
+Future<void> _iliasBackgroundDiff() async {
+  if ((await SharedPreferencesAsync().getString(WebcalKeys.url) ?? "")
+      .isEmpty) {
+    return; // logged out (or never provisioned)
+  }
+  // options MUST mirror CredentialsProvider's (iOS keychain account!)
+  const storage = FlutterSecureStorage(
+      iOptions: IOSOptions(accountName: "kit-student"));
+  final user = await storage.read(key: "username");
+  final pass = await storage.read(key: "password");
+  if ((user ?? "").isEmpty || (pass ?? "").isEmpty) return;
+  final mgr = IliasManager();
+  mgr.credentials =
+      KITCredentials(username: user!, password: pass!, valid: true);
+  await mgr.authorize(refreshSession: true);
+  if (!mgr.sessionContainsCookieNamed("PHPSESSID")) {
+    return; // bot wall or dead session: the board would come back EMPTY,
+    // and seeding that as truth would swallow every future announcement
+  }
+  final fresh = await mgr.fetchAnnouncements();
+  if (fresh.isEmpty) return; // never seed from a board we did not prove
+  await IliasWatcher.diffAndNotify(
+      fresh,
+      stillOurs: () async =>
+          (await SharedPreferencesAsync().getString(WebcalKeys.url) ?? "")
+              .isNotEmpty);
+}
+
 /// WorkManager entry: cookieless ICS poll + fingerprint diff -> push.
 @pragma('vm:entry-point')
 void meiBackgroundCallback() {
@@ -624,6 +667,16 @@ void meiBackgroundCallback() {
       if (advanceFingerprint) {
         await prefs.setString("DATA_webcalFingerprint", current);
       }
+
+      // C28: background ILIAS news diff rides the same cycle — contained
+      // separately so a wedged SSO can never kill the reminder re-arm or
+      // the re-registration below
+      try {
+        await _iliasBackgroundDiff();
+      } on Object catch (e) {
+        if (kDebugMode) print("ilias background diff failed: $e");
+      }
+
       // the 30 min poll is the only thing that runs while the app stays closed:
       // without re-scheduling, the 2-day reminder/digest horizon silently
       // expired after any weekend gap and reminders just stopped.

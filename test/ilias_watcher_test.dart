@@ -220,4 +220,29 @@ void main() {
       MeiNotifications.teardownEpoch = epoch;
     }
   });
+
+  test("stillOurs=false aborts pushes AND the persist: late, never lost",
+      () async {
+    await IliasWatcher.diffAndNotify([_a("alt")]); // seed
+    pushed.clear();
+    var ours = false;
+    await IliasWatcher.diffAndNotify([_a("alt"), _a("neu")],
+        stillOurs: () async => ours);
+    expect(pushed, isEmpty);
+    expect(await stored(), ["4711|alt"]); // nothing marked while fenced
+    ours = true; // the announcement was delayed, not swallowed
+    await IliasWatcher.diffAndNotify([_a("alt"), _a("neu")],
+        stillOurs: () async => ours);
+    expect(pushed, [("Analysis I", "neu")]);
+    expect(await stored(), contains("4711|neu"));
+  });
+
+  test("first-run seed is refused while stillOurs says not ours", () async {
+    // the poll isolate right after a logout: the sweep already deleted
+    // the seen key; seeding now would resurrect the OLD board's titles
+    await IliasWatcher.diffAndNotify([_a("Impressum")],
+        stillOurs: () async => false);
+    expect(pushed, isEmpty);
+    expect(await stored(), isEmpty);
+  });
 }

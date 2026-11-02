@@ -44,16 +44,24 @@ class IliasWatcher {
 
   /// Called after the agenda successfully fetched announcements. Never
   /// throws: a watcher hiccup must not break the agenda refresh.
-  static Future<void> diffAndNotify(List<IliasAnnouncement> fresh) {
+  /// [stillOurs] re-checks login state before every write/push: the
+  /// static teardown epoch is invisible ACROSS isolates, so the poll's
+  /// logout fence must come from the platform prefs the main isolate
+  /// just swept.
+  static Future<void> diffAndNotify(
+      List<IliasAnnouncement> fresh,
+      {Future<bool> Function()? stillOurs}) {
     final running = _inFlight;
     if (running != null) return running;
-    final done = _run(fresh);
+    final done = _run(fresh, stillOurs);
     _inFlight = done;
     done.whenComplete(() => _inFlight = null);
     return done;
   }
 
-  static Future<void> _run(List<IliasAnnouncement> fresh) async {
+  static Future<void> _run(
+      List<IliasAnnouncement> fresh,
+      Future<bool> Function()? stillOurs) async {
     // captured before the first await: a logout mid-fetch bumps the epoch,
     // and every persist/push below must then abort - the sweep has already
     // deleted our key, and re-persisting would resurrect the old student's
@@ -63,6 +71,9 @@ class IliasWatcher {
       final prefs = await SharedPreferences.getInstance();
       final stored = _decode(prefs.getString(seenKey));
       if (stored == null) {
+        // seeding the OLD account's board past a logout would resurrect
+        // its titles exactly like re-persisting them would
+        if (!await _ours(stillOurs, epoch)) return;
         // first run (or unreadable store): seed, notify nothing
         await prefs.setString(seenKey, jsonEncode(_cap([
           for (final a in newOnes(fresh, const {})) idOf(a),
@@ -71,7 +82,7 @@ class IliasWatcher {
       }
       final freshNew = newOnes(fresh, stored.toSet());
       if (freshNew.isEmpty) return;
-      if (epoch != MeiNotifications.teardownEpoch) return;
+      if (!await _ours(stillOurs, epoch)) return;
       // persist the seen-marking only AFTER pushing: a silent
       // Android-side drop (plugin returns, nothing throws) used to mark
       // the announcement forever-seen with no notification ever shown -
@@ -80,7 +91,7 @@ class IliasWatcher {
       final marked = <String>[];
       // one failing push must not bury its siblings
       for (final a in freshNew.take(_maxNotify)) {
-        if (epoch != MeiNotifications.teardownEpoch) return;
+        if (!await _ours(stillOurs, epoch)) return;
         try {
           await notify(
               a.courseTitle.isEmpty
@@ -96,13 +107,19 @@ class IliasWatcher {
       // it anyway, or a whole-board rename would re-notify it every run
       marked.addAll(freshNew.skip(_maxNotify).map(idOf));
       if (marked.isEmpty) return;
-      if (epoch != MeiNotifications.teardownEpoch) return;
+      if (!await _ours(stillOurs, epoch)) return;
       final seen = [...stored, ...marked];
       await prefs.setString(
           seenKey, jsonEncode(_cap(seen, {for (final a in fresh) idOf(a)})));
     } on Object catch (e) {
       if (kDebugMode) print("ilias watcher: $e");
     }
+  }
+
+  static Future<bool> _ours(
+      Future<bool> Function()? stillOurs, int epoch) async {
+    if (epoch != MeiNotifications.teardownEpoch) return false;
+    return stillOurs == null || await stillOurs();
   }
 
   /// age-trim to the newest [_maxSeen] (list order = age) - but ids still
