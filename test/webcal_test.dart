@@ -425,4 +425,35 @@ void main() {
     expect(changes.removedOrMovedBlocks(DateTime(2026, 11, 3)), {10 * 60});
     expect(changes.removedOrMovedBlocks(DateTime(2026, 11, 4)), isEmpty);
   });
+
+  test('template: imported one-shots only in their real week, feed '
+      'one-shot chains kept', () {
+    String ev(String uid, String start, String end, String title,
+            [String url = ""]) =>
+        "BEGIN:VEVENT\nUID:$uid\nDTSTART;TZID=Europe/Berlin:$start\n"
+        "DTEND;TZID=Europe/Berlin:$end\nSUMMARY:$title\n${url}END:VEVENT\n";
+    final raw = "BEGIN:VCALENDAR\nVERSION:2.0\n" +
+        // imported (URL-less) one-shot INSIDE the parsed week Mon 2.11
+        ev('imp-in', '20261103T100000', '20261103T110000', 'Clinic Slot') +
+        // imported one-shot far outside: a February Klausur on a Tuesday
+        ev('imp-out', '20270216T100000', '20270216T120000', 'KLAUSUR X') +
+        // feed one-shot far outside the week but carrying the cascampus
+        // URL - KIT's Nov-Dec publication chain must survive on the grid
+        ev('feed-far', '20261126T113000', '20261126T130000', 'MatSci Late',
+            "URL:https://campus.studium.kit.edu/ev/Tok9\n") +
+        "END:VCALENDAR\n";
+    final feed =
+        WebcalFeed.parse(raw, now: DateTime(2026, 11, 2, 8))!;
+    final weekly = feed.toWeeklyTemplate();
+    final tuesday = weekly.days[DateTime.tuesday - 1].appointments;
+    final thursday = weekly.days[DateTime.thursday - 1].appointments;
+    expect(tuesday.where((a) => a.title == 'Clinic Slot'), hasLength(1),
+        reason: 'in-week imported one-shot belongs on its weekday');
+    expect(weekly.days.expand((d) => d.appointments).where((a) =>
+            a.title.contains('KLAUSUR')),
+        isEmpty,
+        reason: 'a February Klausur must not haunt every Tuesday');
+    expect(thursday.where((a) => a.title == 'MatSci Late'), hasLength(1),
+        reason: 'feed one-shot chains stay on the repeating template');
+  });
 }

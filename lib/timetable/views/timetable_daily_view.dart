@@ -92,13 +92,20 @@ class TimetableDailyView extends StatelessWidget {
 
     // the appointment a block actually renders: first non-empty entry, or
     // the lone placeholder when the block holds nothing else
+    // The template appends non-colliding events (personal ICS, one-shot
+    // feed entries) after the generic blocks, and tutorials attach by
+    // generic block INDEX - so the list order must stay untouched until
+    // the merge is done; only then order the rendered rows chronologically
+    // (gaps, seams and the now-line all assume time order: a 10:00 own
+    // appointment used to render below the 15:45 lecture).
     final rows = appointmentsByBlock
         .map((block) => block
             .whereType<TimetableAppointment>()
             .where((appointment) =>
                 !appointment.isEmpty || block.length <= 1)
             .first)
-        .toList(growable: false);
+        .toList(growable: false)
+      ..sort((a, b) => a.begin.compareTo(b.begin));
 
     if (!rows.any(_isContent)) return _dayFree(context);
 

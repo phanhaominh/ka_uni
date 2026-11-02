@@ -99,4 +99,36 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.byType(TimetableAppointmentPage), findsOneWidget);
   });
+
+  testWidgets('rows render chronologically despite appended personal event',
+      (tester) async {
+    // real-world shape: template claims the generic slots in place, the
+    // imported 10:00 appointment lands at the END of the list - the grid
+    // used to paint it below the 15:45 lecture
+    final d = monday()
+      ..appointments.add(
+          ap('Zwischentermin Klinik', 9, '54.11', DateTime(2026, 11, 2, 10, 0),
+              DateTime(2026, 11, 2, 11, 0)));
+    await tester.pumpWidget(MaterialApp(
+      home: MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => KITProvider()),
+          ChangeNotifierProvider(create: (c) => SettingsProvider(context: c)),
+          ChangeNotifierProvider(create: (_) => TutorialManager()),
+        ],
+        child: Scaffold(
+            body: SizedBox(
+                height: 900,
+                child: TimetableDailyView(tt: d, showNowLine: false))),
+      ),
+    ));
+    await tester.pump();
+
+    double top(String needle) =>
+        tester.getTopLeft(find.textContaining(needle, findRichText: true)).dy;
+    expect(top('Engineering Mechanics I'), lessThan(top('Zwischentermin')),
+        reason: '9:45 lecture above the appended 10:00');
+    expect(top('Zwischentermin'), lessThan(top('Advanced Mathematics I')),
+        reason: '10:00 above the 15:45 lecture it used to trail');
+  });
 }

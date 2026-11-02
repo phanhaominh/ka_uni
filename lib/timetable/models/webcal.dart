@@ -67,6 +67,13 @@ class IcsOccurrence {
   /// move the diff baseline.
   final String? url;
 
+  /// Set during parse: the VEVENT is a one-off (no RRULE, or an RRULE that
+  /// expanded to exactly one instance) - a February Klausur, a hand-imported
+  /// single appointment. The weekday template only shows these inside the
+  /// real week they fall in; see toWeeklyTemplate. Mutable because it is a
+  /// SERIES-level property applied after per-VEVENT construction.
+  bool oneShot = false;
+
   IcsOccurrence(
       {required this.start,
       required this.end,
@@ -118,7 +125,13 @@ class WebcalFeed {
   final List<IcsOccurrence> occurrences;
   final String raw;
 
-  WebcalFeed({required this.occurrences, required this.raw});
+  /// The "now" the parse was anchored to (parse's `now` param or wall
+  /// clock): the weekly template scopes one-off events against it.
+  final DateTime reference;
+
+  WebcalFeed(
+      {required this.occurrences, required this.raw, DateTime? now})
+      : reference = now ?? DateTime.now();
 
   static final _dt = RegExp(r'^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$');
   // UTC form: bare `Z` or a numeric offset (RFC 5545 writes "+0200", the
@@ -276,6 +289,7 @@ class WebcalFeed {
       // export must not disagree about which events exist.
       final oneShot = series.length == 1;
       for (final occ in series) {
+        occ.oneShot = oneShot;
         if (!oneShot && occ.start.isAfter(horizonEnd)) {
           continue;
         }
@@ -290,7 +304,7 @@ class WebcalFeed {
     if (occurrences.isEmpty) {
       return null;
     }
-    return WebcalFeed(occurrences: occurrences, raw: raw);
+    return WebcalFeed(occurrences: occurrences, raw: raw, now: reference);
   }
 
   static List<IcsOccurrence>? _parseEvent(List<String> block,
@@ -465,10 +479,29 @@ class WebcalFeed {
       daily.appointments = TimetableDaily.genericAppointmentsSchedule;
     }
 
+    // Personal-ICS one-offs (imported Klausurs, single appointments) only
+    // belong to the ONE real week they sit in: the grid repeats its columns
+    // every week, so an unscoped February exam would haunt every Tuesday
+    // (the exam-synth feed is excluded upstream for the same reason).
+    // Date-scoped consumers (agenda, exams, notifications) still see them.
+    // FEED one-shots keep the full template: KIT publishes near-term
+    // lectures as one-shot chains (wc_now.ics "Nov-Dec chain") that the
+    // cascampus HTML grid shows across the whole horizon - they are
+    // recognisable by the cascampus URL every feed VEVENT carries.
+    final weekStart = reference
+        .subtract(Duration(days: reference.weekday - 1))
+        .copyWith(hour: 0, minute: 0, second: 0, millisecond: 0, microsecond: 0);
+    final weekEnd = weekStart.add(const Duration(days: 7));
+
     for (final occ in occurrences) {
       final weekdayIdx = occ.start.weekday - 1;
       if (weekdayIdx > 4) {
         continue; // grid is Mon-Fri only, as the cascampus one
+      }
+      if (occ.oneShot &&
+          occ.url == null &&
+          (occ.start.isBefore(weekStart) || !occ.start.isBefore(weekEnd))) {
+        continue; // imported one-off from another week: grid must not show it
       }
       final daily = weekly.days[weekdayIdx];
       final appointment = _toAppointment(occ);
