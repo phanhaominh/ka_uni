@@ -13,6 +13,10 @@ import 'package:kit_mobile/home/views/padded_title.dart';
 import 'package:kit_mobile/common_ui/mei_failure_banner.dart';
 import 'package:kit_mobile/exams/views/exams_page.dart';
 import 'package:kit_mobile/agenda/views/agenda_page.dart';
+import 'package:kit_mobile/agenda/logic/next_up.dart';
+import 'package:kit_mobile/timetable/logic/now_clock.dart';
+import 'package:kit_mobile/timetable/models/webcal.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:kit_mobile/home/views/relevant_modules.dart';
 import 'package:kit_mobile/local_files_storage/views/pinned_files_list_view.dart';
 import 'package:kit_mobile/profile/views/profile_view.dart';
@@ -168,6 +172,7 @@ class _KITHomePageState extends State<KITHomePage> {
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: <Widget>[
                     MeiFailureBanner(vm: vm),
+                    const NextUpHomeCard(),
                     AnimatedSwitcher(
                       duration: Duration(milliseconds: 200),
                       child: settingsVM.showingProfile.value
@@ -259,4 +264,87 @@ class _KITHomePageState extends State<KITHomePage> {
   // Future<void> _refreshHomeView(KITProvider vm) async {
   //   await vm.forceRefetchEverything();
   // }
+}
+
+/// The agenda hero on home (R12): the SAME [NextUp.compute] and card the
+/// agenda banner renders, fed by the agenda's own cache recipe. Countdown
+/// updates ride a ValueListenableBuilder on the shared NowClock minute
+/// heartbeat - the home page itself NEVER rebuilds per tick; the TickerMode
+/// gate (agenda's C22 pattern) arms/disarms the clock so a hidden dashboard
+/// or a Settings-tab visit costs zero wakeups.
+class NextUpHomeCard extends StatefulWidget {
+  const NextUpHomeCard({super.key});
+
+  @override
+  State<NextUpHomeCard> createState() => _NextUpHomeCardState();
+}
+
+class _NextUpHomeCardState extends State<NextUpHomeCard>
+    with WidgetsBindingObserver {
+  WebcalFeed? _feed;
+  bool _clockArmed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // parse ONCE on mount; a resume re-reads (background polls refresh the
+    // cache while the app sits closed - the hero must not show yesterday)
+    _readCache();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    if (_clockArmed) {
+      _clockArmed = false;
+      NowClock.disarm();
+    }
+    super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // visibility gate (C22 pattern): reading the flag HERE registers the
+    // dependency, so the rebuild that re-exposes the dashboard re-arms
+    final visible = TickerMode.valuesOf(context).enabled;
+    if (visible && !_clockArmed) {
+      _clockArmed = true;
+      NowClock.arm();
+    } else if (!visible && _clockArmed) {
+      _clockArmed = false;
+      NowClock.disarm();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _readCache();
+  }
+
+  Future<void> _readCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final feed = WebcalFeed.parse(prefs.getString(WebcalKeys.icsCache) ?? "");
+    if (mounted) setState(() => _feed = feed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: NowClock.minutesOfDay,
+      builder: (context, _, __) {
+        // one clock reading per rebuild: candidates and countdown must
+        // never straddle a minute boundary between the two
+        final now = NowClock.timeSource();
+        final up = NextUp.compute(NextUp.heroWindow(_feed, now), now);
+        if (up == null) return const SizedBox.shrink();
+        return NextUpCard(
+          up: up,
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (context) => const AgendaPage(scrollToToday: true))),
+        );
+      },
+    );
+  }
 }

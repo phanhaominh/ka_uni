@@ -52,6 +52,16 @@ const Map<String, String> de_timetable = {
   "timetable.timeLabel": "Zeit:",
   "timetable.aliasesLabel": "Auch bekannt als:",
   "timetable.openCampusMap": "Auf dem Campusplan öffnen",
+  // round 12: daily-view now line, ghost cards, free-gap + room-varies
+  // chips, course-page link
+  "timetable.nowLineLabel": "Aktuelle Zeit: {0}",
+  "timetable.ghostCancelled": "Entfällt",
+  "timetable.freeGap": "Frei · {0}",
+  "timetable.dayFree": "Freier Tag",
+  "timetable.mittagspause": "Mittagspause",
+  "timetable.lectureFree": "Vorlesungsfreie Zeit",
+  "timetable.roomVaries": "Raum wchs.",
+  "timetable.openCoursePage": "Kursseite öffnen",
 };
 
 const Map<String, String> en_timetable = {
@@ -104,4 +114,13 @@ const Map<String, String> en_timetable = {
   "timetable.timeLabel": "Time:",
   "timetable.aliasesLabel": "Also known as:",
   "timetable.openCampusMap": "Open in campus map",
+  // round 12: see de_timetable
+  "timetable.nowLineLabel": "Current time: {0}",
+  "timetable.ghostCancelled": "Cancelled",
+  "timetable.freeGap": "Free · {0}",
+  "timetable.dayFree": "No lectures",
+  "timetable.mittagspause": "Lunch break",
+  "timetable.lectureFree": "No lectures this week",
+  "timetable.roomVaries": "Room varies",
+  "timetable.openCoursePage": "Open course page",
 };

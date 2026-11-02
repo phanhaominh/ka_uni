@@ -290,4 +290,139 @@ void main() {
     expect(allDay.endGuessed, isTrue); // no DTEND -> +90' default
     expect(feed.occurrences.any((o) => o.title == "Ghost"), isFalse);
   });
+
+  test('URL parses onto occurrences but stays out of fingerprint/dedupeKey', () {
+    const plain = "BEGIN:VCALENDAR\nVERSION:2.0\n"
+        "BEGIN:VEVENT\nUID:u1@x\nDTSTART:20261102T113000\n"
+        "DTEND:20261102T130000\nSUMMARY:T\nLOCATION:HS1\n"
+        "END:VEVENT\nEND:VCALENDAR\n";
+    const withUrl = "BEGIN:VCALENDAR\nVERSION:2.0\n"
+        "BEGIN:VEVENT\nUID:u1@x\nDTSTART:20261102T113000\n"
+        "DTEND:20261102T130000\nSUMMARY:T\nLOCATION:HS1\n"
+        "URL:https://campus.studium.kit.edu/ev/Tok123\n"
+        "END:VEVENT\nEND:VCALENDAR\n";
+    final now = DateTime(2026, 11, 2, 8);
+    final a = WebcalFeed.parse(plain, now: now)!;
+    final b = WebcalFeed.parse(withUrl, now: now)!;
+    expect(a.occurrences.single.url, isNull);
+    expect(
+        b.occurrences.single.url, "https://campus.studium.kit.edu/ev/Tok123");
+    // an internal URL rotation must not move the diff baseline...
+    expect(b.fingerprint(), a.fingerprint());
+    expect(b.occurrences.single.dedupeKey, a.occurrences.single.dedupeKey);
+    // ...while the fingerprint keeps its byte-exact title rule
+    final c =
+        WebcalFeed.parse(withUrl.replaceFirst("SUMMARY:T", "SUMMARY:T2"),
+            now: now)!;
+    expect(c.fingerprint(), isNot(b.fingerprint()));
+  });
+
+  test('fixture: URL is the stable course token across clones and '
+      're-publications', () {
+    final raw = File('test/fixtures/wc_now.ics').readAsStringSync();
+    final feed = WebcalFeed.parse(raw, now: DateTime(2026, 10, 30, 18))!;
+    expect(
+        feed.occurrences.every((o) =>
+            o.url != null &&
+            o.url!.startsWith("https://campus.studium.kit.edu/ev/")),
+        isTrue);
+    // the three Math-I clone snapshots (wc_now.ics:106/:120/:132) share
+    // one token - the surviving Fri 08:00 occurrences all carry it
+    final math = feed.occurrences
+        .where((o) => o.title.contains('Advanced Mathematics I'))
+        .toList();
+    expect(math, isNotEmpty);
+    expect(math.map((o) => o.url).toSet(),
+        {"https://campus.studium.kit.edu/ev/NvIWCoM4QRSRN7g9qwP8gQ"});
+    // the Nov-Dec one-shot chain (:223..:377) and the Jan RRULE
+    // re-publication (:200) of the MatSci lecture carry the same token
+    final matSci1130 = feed.occurrences
+        .where((o) =>
+            o.title
+                .contains('Materials Science and Engineering I (Lecture)') &&
+            o.start.hour == 11)
+        .toList();
+    expect(matSci1130, isNotEmpty);
+    expect(matSci1130.map((o) => o.url).toSet(),
+        {"https://campus.studium.kit.edu/ev/Z8LCOQf8RRm5qIWP-G30tg"});
+  });
+
+  test('roomVaries: alternating feed rooms flag the block, stable rooms '
+      'stay quiet', () {
+    final raw = File('test/fixtures/wc_now.ics').readAsStringSync();
+    final feed = WebcalFeed.parse(raw, now: DateTime(2026, 10, 30, 18))!;
+    final weekly = feed.toWeeklyTemplate();
+    // Thu 11:30 MatSci I lecture: the one-shots run in 40.50
+    // Engler-Bunte, but 19.11. sits in 20.40 Egon-Eiermann
+    // (wc_now.ics:287) -> alternating rooms
+    final thursday = weekly.days[DateTime.thursday - 1];
+    final matSci = thursday.appointments
+        .where(
+            (a) => a.title.contains('Materials Science') && a.begin.hour == 11)
+        .toList();
+    expect(matSci, hasLength(1));
+    expect(matSci.single.roomVaries, isTrue);
+    expect(matSci.single.url,
+        "https://campus.studium.kit.edu/ev/Z8LCOQf8RRm5qIWP-G30tg");
+    // Mon 11:30 Mechanical Design A: constant 10.21 Carl-Benz all term
+    final monday = weekly.days.first;
+    final mdMon = monday.appointments
+        .where((a) =>
+            a.title.contains('Mechanical Design A') && a.begin.hour == 11)
+        .toList();
+    expect(mdMon, hasLength(1));
+    expect(mdMon.single.roomVaries, isFalse);
+    // untouched placeholder slots never light up
+    expect(
+        weekly.days
+            .expand((d) => d.appointments)
+            .where((a) => a.isEmpty)
+            .every((a) => !a.roomVaries),
+        isTrue);
+  });
+
+  test('IcsChangeIndex groups by day and indexes room moves per block', () {
+    final changes = [
+      IcsChange(
+          kind: IcsChangeKind.changed,
+          title: 'A',
+          when: DateTime(2026, 11, 2, 8),
+          room: 'HS2',
+          oldRoom: 'HS1'),
+      IcsChange(
+          kind: IcsChangeKind.changed,
+          title: 'A2',
+          when: DateTime(2026, 11, 2, 8, 30),
+          room: 'HS9',
+          oldRoom: 'HS9'),
+      IcsChange(
+          kind: IcsChangeKind.changed,
+          title: 'A3',
+          when: DateTime(2026, 11, 2, 8, 0, 30),
+          room: 'HS3',
+          oldRoom: 'HS2'),
+      IcsChange(
+          kind: IcsChangeKind.removed,
+          title: 'B',
+          when: DateTime(2026, 11, 2, 14),
+          room: 'HS4'),
+      IcsChange(
+          kind: IcsChangeKind.moved,
+          title: 'C',
+          when: DateTime(2026, 11, 3, 10),
+          room: 'HS5',
+          oldRoom: 'HS6',
+          oldWhen: DateTime(2026, 11, 2, 16)),
+    ];
+    final byDay = changes.byDayKey();
+    expect(byDay['2026-11-02'], hasLength(4));
+    // moved keys on WHEN, not on the vanished oldWhen slot
+    expect(byDay['2026-11-03'], hasLength(1));
+    final blocks = changes.blockKeys(DateTime(2026, 11, 2, 23, 59));
+    expect(blocks.keys, {8 * 60}); // room-unchanged "A2" excluded
+    expect(blocks[8 * 60]!.room, 'HS3'); // latest delta of the block wins
+    expect(changes.removedOrMovedBlocks(DateTime(2026, 11, 2)), {14 * 60});
+    expect(changes.removedOrMovedBlocks(DateTime(2026, 11, 3)), {10 * 60});
+    expect(changes.removedOrMovedBlocks(DateTime(2026, 11, 4)), isEmpty);
+  });
 }

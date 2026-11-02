@@ -11,7 +11,14 @@ import 'package:url_launcher/url_launcher.dart';
 class TimetableAppointmentPage extends StatefulWidget {
   final TimetableAppointment appointment;
 
-  const TimetableAppointmentPage({super.key, required this.appointment});
+  /// Disambiguator appended to the title Hero tag: the weekly carousel
+  /// renders five pages from one weekday template, so identical lunch
+  /// rows share title AND id across pages and their Heroes must not fly
+  /// into each other (W1 appends "_<weekday.index>" at its push site).
+  final String heroSuffix;
+
+  const TimetableAppointmentPage(
+      {super.key, required this.appointment, this.heroSuffix = ""});
 
   @override
   State<StatefulWidget> createState() {
@@ -54,6 +61,36 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
     final url = _placePageUrl;
     if (url == null) return;
     launchUrl(Uri.parse(url));
+  }
+
+  /// The feed's URL property (W3: parsed from the VEVENT URL line, the
+  /// KIT campus course page). The value arrives with the feed, so it is
+  /// gated https + exact KIT host before a tap target is offered at all -
+  /// the agenda's F12 launcher posture: a tampered or malformed URL must
+  /// never reach the external launcher.
+  Uri? get _coursePageUri {
+    final raw = widget.appointment.url;
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final uri = Uri.parse(raw);
+      return uri.scheme == "https" && uri.host == "campus.studium.kit.edu"
+          ? uri
+          : null;
+    } on Object catch (_) {
+      return null;
+    }
+  }
+
+  /// Error-handled launch through the gate (agenda's _launchExternal
+  /// idiom): a missing or refusing browser stays a silent no-op instead
+  /// of throwing inside the tap.
+  void _openCoursePage() {
+    final uri = _coursePageUri;
+    if (uri == null) return;
+    try {
+      launchUrl(uri, mode: LaunchMode.externalApplication)
+          .catchError((_) => false);
+    } on Object catch (_) {}
   }
 
   @override
@@ -224,7 +261,7 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                                     SizedBox(height: 15,),
                                     Hero(
                                         tag:
-                                            "appointmentTitle_${widget.appointment.title}_${widget.appointment.id}",
+                                            "appointmentTitle_${widget.appointment.title}_${widget.appointment.id}${widget.heroSuffix}",
                                         child: Text(
                                           widget.appointment.displayTitle,
                                           style: theme.textTheme.titleLarge
@@ -276,6 +313,45 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                                                 child: Text(
                                                   L10n.t(
                                                       "timetable.openCampusMap"),
+                                                  style: theme
+                                                      .textTheme
+                                                      .bodyMedium
+                                                      ?.copyWith(
+                                                          color: theme
+                                                              .colorScheme
+                                                              .primary),
+                                                ),
+                                              ),
+                                              Icon(
+                                                Icons.chevron_right,
+                                                color: theme
+                                                    .colorScheme
+                                                    .outline,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    if (_coursePageUri != null)
+                                      InkWell(
+                                        onTap: _openCoursePage,
+                                        borderRadius: const BorderRadius.all(
+                                            Radius.circular(12)),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                              vertical: 10),
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.school_outlined,
+                                                color:
+                                                    theme.colorScheme.primary,
+                                              ),
+                                              SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  L10n.t(
+                                                      "timetable.openCoursePage"),
                                                   style: theme
                                                       .textTheme
                                                       .bodyMedium

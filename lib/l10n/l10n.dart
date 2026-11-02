@@ -192,6 +192,9 @@ class L10n {
     "agenda.signmeupFrom": "ab {0}",
     "agenda.signmeupOpen": "In SignMeUp öffnen",
     "agenda.ownCalendar": "eigener Kalender",
+    // bare arrow for the agenda row room-diff line; changeRoomDelta
+    // carries a " · Raum " prefix and only fits inline
+    "agenda.roomChangedTo": "{0} → {1}",
     "notifs.signmeupTitle": "SignMeUp-Frist endet bald",
     "notifs.signmeupBody": "{0} – Anmeldung endet um {1}",
     // SignMeUp "Meine Anmeldungen" status card
@@ -303,6 +306,7 @@ class L10n {
     "agenda.signmeupFrom": "from {0}",
     "agenda.signmeupOpen": "Open in SignMeUp",
     "agenda.ownCalendar": "own calendar",
+    "agenda.roomChangedTo": "{0} → {1}",
     "notifs.signmeupTitle": "SignMeUp deadline approaching",
     "notifs.signmeupBody": "{0} – registration ends at {1}",
     "agenda.signmeupMineTitle": "My registrations",

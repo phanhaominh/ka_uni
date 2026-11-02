@@ -10,6 +10,8 @@ import '../../l10n/l10n.dart';
 import '../../exams/models/exam_list.dart';
 import '../../exams/views/exams_page.dart';
 import '../../agenda/logic/walk_hint.dart';
+import '../../agenda/logic/next_up.dart';
+import '../../timetable/logic/now_clock.dart';
 import '../../common_ui/highlight_pulse.dart';
 import '../../ilias/ilias_scraper.dart';
 import '../../geo/models/kit_place.dart';
@@ -76,7 +78,8 @@ class _AgendaPageState extends State<AgendaPage> {
   // false until a cached ICS was found; drives the day-section spinner
   bool _feedCached = false;
 
-  Timer? _ticker;
+  /// minute-heartbeat subscription state; armed while the route is visible
+  bool _clockArmed = false;
   /// the today card doubles as the agenda's "now" anchor for deep links
   final GlobalKey _todaySectionKey = GlobalKey();
 
@@ -88,8 +91,8 @@ class _AgendaPageState extends State<AgendaPage> {
   void initState() {
     super.initState();
     _refresh();
-    // the 30 s ticker is armed in didChangeDependencies: it must respect
-    // route visibility from the very first frame (C22)
+    // the minute heartbeat is armed in didChangeDependencies: it must
+    // respect route visibility from the very first frame (C22)
     if (widget.scrollToToday) {
       // the today card doubles as the "now" anchor, but it is NOT at its
       // final position on the first frame: the changes band and the
@@ -107,21 +110,34 @@ class _AgendaPageState extends State<AgendaPage> {
     // sits under an opaque route or is offstage. Reading the flag here (not
     // only inside the tick) both stops the countdown while the user cannot
     // see it AND registers the dependency, so the very rebuild that
-    // re-exposes the route re-arms the timer - no up-to-30 s stale banner
-    // after the way back.
+    // re-exposes the route re-arms the heartbeat - the countdown is fresh
+    // again immediately, never stale after the way back.
     if (TickerMode.valuesOf(context).enabled) {
-      _ticker ??= Timer.periodic(const Duration(seconds: 30), (_) {
-        if (mounted) setState(() {});
-      });
-    } else {
-      _ticker?.cancel();
-      _ticker = null;
+      if (!_clockArmed) {
+        _clockArmed = true;
+        NowClock.arm();
+        NowClock.minutesOfDay.addListener(_onMinute);
+      }
+    } else if (_clockArmed) {
+      _clockArmed = false;
+      NowClock.minutesOfDay.removeListener(_onMinute);
+      NowClock.disarm();
     }
+  }
+
+  /// ONE whole-page setState per wall-minute (R12): replaces the 30 s
+  /// ticker that rebuilt twice as often than needed; every build-time-now
+  /// consumer (row recede/bold, hero, bands) keeps its exact behavior.
+  void _onMinute() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    _ticker?.cancel();
+    if (_clockArmed) {
+      NowClock.minutesOfDay.removeListener(_onMinute);
+      NowClock.disarm();
+    }
     super.dispose();
   }
 
@@ -181,8 +197,9 @@ class _AgendaPageState extends State<AgendaPage> {
       _feedCached = (prefs.getString(_icsCacheKey) ?? "")
           .contains("BEGIN:VCALENDAR");
       _load = _AgendaLoad(
-          today: _onDay(feed, now),
-          tomorrow: _onDay(feed, DateTime(now.year, now.month, now.day + 1)),
+          today: NextUp.onDay(feed, now),
+          tomorrow: NextUp.onDay(
+              feed, DateTime(now.year, now.month, now.day + 1)),
           changes: changes,
           upcoming: _upcoming(feed, now),
           unread: iliasCached?.$1 ?? _load.unread,
@@ -287,9 +304,9 @@ class _AgendaPageState extends State<AgendaPage> {
           (prefs2.getString(_icsCacheKey) ?? "")
               .contains("BEGIN:VCALENDAR");
       _load = _AgendaLoad(
-          today: _onDay(feed2, now2),
-          tomorrow:
-              _onDay(feed2, DateTime(now2.year, now2.month, now2.day + 1)),
+          today: NextUp.onDay(feed2, now2),
+          tomorrow: NextUp.onDay(
+              feed2, DateTime(now2.year, now2.month, now2.day + 1)),
           changes: _load.changes,
           upcoming: _upcoming(feed2, now2),
           unread: _load.unread,
@@ -301,26 +318,7 @@ class _AgendaPageState extends State<AgendaPage> {
     _scheduleTodayScroll();
   }
 
-  static List<IcsOccurrence> _onDay(WebcalFeed? feed, DateTime day) {
-    if (feed == null) return const [];
-    final seen = <String>{};
-    final dayStart = DateTime(day.year, day.month, day.day);
-    // calendar next-day (not +24h): the autumn DST day is 25 real hours
-    final nextStart = DateTime(day.year, day.month, day.day + 1);
 
-    return feed.occurrences
-        .where((o) =>
-            // include a lecture that started yesterday but still runs past
-            // midnight: it belongs to today's list and the running banner
-            (o.start.isBefore(nextStart) && o.end.isAfter(dayStart)) &&
-            // one row per lecture; the room is part of the key so two
-            // genuinely parallel groups of one family ("Übung X" 14:00 in
-            // different rooms) keep their own rows and room lines
-            seen.add(
-                "${o.title}|${o.start.toIso8601String()}|${o.room}"))
-        .toList()
-      ..sort((a, b) => a.start.compareTo(b.start));
-  }
   /// Next occurrences after the end of tomorrow, soonest first (≤5).
   static List<IcsOccurrence> _upcoming(WebcalFeed? feed, DateTime now) {
     if (feed == null) return const [];
@@ -356,6 +354,7 @@ class _AgendaPageState extends State<AgendaPage> {
   Widget build(BuildContext context) {
     final vm = Provider.of<KITProvider>(context);
     final now = DateTime.now();
+    final dayStart = DateTime(now.year, now.month, now.day);
     final needAction = vm.campusManager.exams
         .where((e) =>
             e.needsAction(now) &&
@@ -398,8 +397,9 @@ class _AgendaPageState extends State<AgendaPage> {
               ),
             _nextUpBanner(context, now),
             _daySection(L10n.t("agenda.today"), _load.today, now,
-                key: _todaySectionKey),
-            _daySection(L10n.t("agenda.tomorrow"), _load.tomorrow, now),
+                day: dayStart, key: _todaySectionKey),
+            _daySection(L10n.t("agenda.tomorrow"), _load.tomorrow, now,
+                day: DateTime(now.year, now.month, now.day + 1)),
             _nextExamCard(context, vm, now),
             _iliasSection(context),
             if (needAction.isNotEmpty)
@@ -498,8 +498,17 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 
   Widget _daySection(String label, List<IcsOccurrence> occ, DateTime now,
-      {Key? key}) {
+      {Key? key, DateTime? day}) {
     final scheme = Theme.of(context).colorScheme;
+    // change emphasis (R12): while the CHANGED band is un-dismissed, the
+    // day rows a still-unseen change names get an emphasis marker; keys
+    // are the lecture's start block (hour*60+minute), W3's index shape
+    final changed = day == null || _load.changes.isEmpty
+        ? null
+        : _load.changes.blockKeys(day);
+    final movedOrRemoved = changed == null
+        ? const <int>{}
+        : _load.changes.removedOrMovedBlocks(day!); // non-null wherever `changed` is
     return Card(
       key: key,
       child: Padding(
@@ -530,38 +539,68 @@ class _AgendaPageState extends State<AgendaPage> {
               }),
             for (var i = 0; i < occ.length; i++) ...[
               if (i > 0) ..._walkHint(context, occ[i - 1], occ[i]),
-              Opacity(
-                // finished lectures recede; the live one is the anchor
-                opacity: occ[i].end.isBefore(now) ? 0.38 : 1.0,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                          "${_hm(occ[i].start)}–${_hm(occ[i].end)}  ${occ[i].displayTitle}",
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: occ[i].start.isBefore(now) &&
-                                      occ[i].end.isAfter(now)
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures()
-                              ])),
-                      // #17: a roomless personal-ICS event still needs its
-                      // source chip row, so the line renders for it too
-                      if (occ[i].room.isNotEmpty || occ[i].fromPersonalIcs)
-                        AgendaRoomLine(
-                            room: occ[i].room,
-                            ownCalendar: occ[i].fromPersonalIcs),
-                    ],
-                  ),
-                ),
-              ),
+              _dayRow(occ[i], now, changed, movedOrRemoved),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// One lecture row of a day section. Renders exactly like the pre-R12
+  /// inline row unless a still-un-dismissed change names this row's start
+  /// block: then a tertiary dot marks it (the eye finds the row the
+  /// CHANGED band describes without re-reading it), and a room change
+  /// additionally states the delta on its own line.
+  Widget _dayRow(IcsOccurrence occ, DateTime now,
+      Map<int, IcsChange>? changed, Set<int> movedOrRemoved) {
+    final scheme = Theme.of(context).colorScheme;
+    final blockKey = occ.start.hour * 60 + occ.start.minute;
+    final roomDelta = changed == null ? null : changed[blockKey];
+    final touched = roomDelta != null || movedOrRemoved.contains(blockKey);
+    Widget title = Text(
+        "${_hm(occ.start)}–${_hm(occ.end)}  ${occ.displayTitle}",
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+            fontSize: 13,
+            fontWeight: occ.start.isBefore(now) && occ.end.isAfter(now)
+                ? FontWeight.bold
+                : FontWeight.normal,
+            fontFeatures: const [FontFeature.tabularFigures()]));
+    if (touched) {
+      title = Row(children: [
+        SizedBox(
+          width: 12,
+          child: Container(
+            width: 8,
+            height: 8,
+            decoration:
+                BoxDecoration(color: scheme.tertiary, shape: BoxShape.circle),
+          ),
+        ),
+        Expanded(child: title),
+      ]);
+    }
+    return Opacity(
+      // finished lectures recede; the live one is the anchor
+      opacity: occ.end.isBefore(now) ? 0.38 : 1.0,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            title,
+            if (roomDelta != null)
+              Text(
+                  L10n.t("agenda.roomChangedTo",
+                      [roomDelta.oldRoom ?? "", roomDelta.room]),
+                  style: TextStyle(fontSize: 12, color: scheme.tertiary)),
+            // #17: a roomless personal-ICS event still needs its
+            // source chip row, so the line renders for it too
+            if (occ.room.isNotEmpty || occ.fromPersonalIcs)
+              AgendaRoomLine(
+                  room: occ.room, ownCalendar: occ.fromPersonalIcs),
           ],
         ),
       ),
@@ -615,77 +654,14 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 
   /// Live "next up" hero: what is happening now / starting next, with a
-  /// countdown refreshed by the 30 s ticker. Hidden when nothing is within
-  /// 12 h (weekends, evenings) so it never nags.
+  /// countdown refreshed by the minute heartbeat. Hidden when nothing is
+  /// within 12 h (weekends, evenings) so it never nags. The computation
+  /// and the card live in next_up.dart - the home card renders the very
+  /// same hero (R12); the agenda keeps its exact look (no onTap).
   Widget _nextUpBanner(BuildContext context, DateTime now) {
-    final scheme = Theme.of(context).colorScheme;
-    final candidates = <IcsOccurrence>[..._load.today, ..._load.tomorrow]
-      ..sort((a, b) => a.start.compareTo(b.start));
-    IcsOccurrence? running;
-    IcsOccurrence? next;
-    for (final o in candidates) {
-      if (!o.end.isAfter(now)) continue;
-      if (running == null && !o.start.isAfter(now)) running = o;
-      if (next == null && o.start.isAfter(now)) next = o;
-      if (running != null && next != null) break;
-    }
-    final hero = running ?? next;
-    if (hero == null) return const SizedBox.shrink();
-    String detail;
-    if (running != null) {
-      detail = L10n.t("agenda.nowRunning", [_hm(hero.end)]);
-    } else {
-      final until = hero.start.difference(now);
-      if (until.inMinutes < 3) {
-        detail = L10n.t("agenda.startsSoon");
-      } else if (until.inMinutes < 60) {
-        detail = L10n.t("agenda.startsInMin", [until.inMinutes]);
-      } else if (until.inMinutes <= 720) {
-        detail = L10n.t("agenda.startsInHours", [until.inHours]);
-      } else {
-        return const SizedBox.shrink();
-      }
-    }
-    return Card(
-      color: scheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Icon(running != null ? Icons.play_circle : Icons.directions_run,
-                color: scheme.onPrimaryContainer),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(detail,
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: scheme.onPrimaryContainer)),
-                  Text(hero.displayTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 13, color: scheme.onPrimaryContainer)),
-                  if (hero.room.isNotEmpty)
-                    Text(hero.room,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 12, color: scheme.onPrimaryContainer)),
-                ],
-              ),
-            ),
-            Text("${_hm(hero.start)}–${_hm(hero.end)}",
-                style: TextStyle(
-                    fontSize: 12,
-                    color: scheme.onPrimaryContainer,
-                    fontFeatures: const [FontFeature.tabularFigures()])),
-          ],
-        ),
-      ),
-    );
+    final up = NextUp.compute([..._load.today, ..._load.tomorrow], now);
+    if (up == null) return const SizedBox.shrink();
+    return NextUpCard(up: up);
   }
 
   /// Countdown to the nearest registered exam sitting (dates now parsed

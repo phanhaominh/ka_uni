@@ -22,6 +22,22 @@ class TimetableAppointment {
   DateTime end = DateTime.now();
   TimetableAppointmentType type = TimetableAppointmentType.empty;
 
+  /// Course page of the originating ICS occurrence (`URL:` property,
+  /// cascampus); null for hand-entered, HTML-parsed and URL-less rows.
+  /// Display-only: the appointment sheet offers the "open course page"
+  /// row when it points at campus.studium.kit.edu.
+  String? url;
+
+  /// The feed alternates LOCATION for this course's block
+  /// (WebcalFeed.toWeeklyTemplate post-pass): the shown room is right
+  /// for the claimant's date but not guaranteed for the others - the
+  /// card earns a "Raum wchs." chip.
+  bool roomVaries = false;
+
+  /// Mirrors IcsOccurrence.fromPersonalIcs: row came from the student's
+  /// OWN imported ICS block, not the KIT feed (duplicate tell-apart).
+  bool fromPersonalIcs = false;
+
   TimetableAppointment({DateTime? begin, DateTime? end, this.type = TimetableAppointmentType.empty}) {
     if (begin != null) {
       this.begin = begin;

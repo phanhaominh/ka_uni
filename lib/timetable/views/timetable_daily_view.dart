@@ -1,10 +1,14 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/module/models/module.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
+import 'package:kit_mobile/timetable/logic/now_clock.dart';
+import 'package:kit_mobile/timetable/logic/now_line.dart';
 import 'package:kit_mobile/timetable/models/timetable_appointment.dart';
+import 'package:kit_mobile/timetable/models/webcal.dart';
 import 'package:kit_mobile/timetable/pages/timetable_appointment_page.dart';
 import 'package:kit_mobile/tutorials/data/tutorial_manager.dart';
 import 'package:kit_mobile/tutorials/models/tutorial.dart';
@@ -12,15 +16,41 @@ import 'package:provider/provider.dart';
 
 import '../models/timetable_daily.dart';
 
+String _hm(int minutesOfDay) =>
+    "${(minutesOfDay ~/ 60).toString().padLeft(2, "0")}:${(minutesOfDay % 60).toString().padLeft(2, "0")}";
+
+/// "1:30" / "0:45" - a duration, so no hour padding on purpose.
+String _dur(int minutes) =>
+    "${minutes ~/ 60}:${(minutes % 60).toString().padLeft(2, "0")}";
+
+/// A block is "content" when it carries a lecture, tutorial OR lunch break:
+/// the lunch bar reads as day structure, not as a free slot.
+bool _isContent(TimetableAppointment a) =>
+    !a.isEmpty || a.type == TimetableAppointmentType.lunchBreak;
+
 class TimetableDailyView extends StatelessWidget {
   final TimetableDaily tt;
 
-  const TimetableDailyView({super.key, required this.tt});
+  /// The WEEKLY view sets this only on the page whose concrete date is
+  /// today; the model is a weekday template, so "today" can never be
+  /// derived from [tt] itself. Enables the now overlay + running chips.
+  final bool showNowLine;
+
+  /// Feed deltas whose when/oldWhen land on this page's date (the weekly
+  /// view filters). Rows match them by BLOCK TIME only, per the
+  /// isAtTheSameBlockAs precedent - the change carries a real date, the
+  /// placeholder appointments only a block minute.
+  final List<IcsChange> changes;
+
+  const TimetableDailyView(
+      {super.key,
+      required this.tt,
+      this.showNowLine = false,
+      this.changes = const []});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final deviceWidth = MediaQuery.of(context).size.width;
     final tutorialManager = Provider.of<TutorialManager>(context);
     final kitProvider = Provider.of<KITProvider>(context);
 
@@ -49,192 +79,471 @@ class TimetableDailyView extends StatelessWidget {
 
     final appointmentsByBlock = tt.appointmentsWithTutorials(tutorialsByBlock);
 
-    return Column(
-      children: [
-        Column(
-          children: appointmentsByBlock.map((appointments) {
-            final appointment = appointments
-                .where((appointment) =>
-                    !appointment.isEmpty || appointments.length <= 1)
-                .first;
-            bool isTut = appointment.type == TimetableAppointmentType.tutorial;
+    // the appointment a block actually renders: first non-empty entry, or
+    // the lone placeholder when the block holds nothing else
+    final rows = appointmentsByBlock
+        .map((block) => block
+            .whereType<TimetableAppointment>()
+            .where((appointment) =>
+                !appointment.isEmpty || block.length <= 1)
+            .first)
+        .toList(growable: false);
 
-            // try {
-            //   appointment as Tutorial;
-            //   // isTut = true;
-            // } catch (exc) {
-            //   isTut = false;
-            // }
+    if (!rows.any(_isContent)) return _dayFree(context);
 
-            final empty = appointment.isEmpty &&
-                appointment.type != TimetableAppointmentType.lunchBreak;
-            if (empty) {
-              // A free block must read as empty: the placeholder dash and
-              // its time badge used to render like a lecture called "—".
-              return Container(
-                decoration: BoxDecoration(
-                  border: appointment.begin.hour < 17
-                      ? Border(
-                          bottom: BorderSide(
-                              color: theme.brightness == Brightness.light
-                                  ? Colors.black12
-                                  : Colors.white.withValues(alpha: 0.15)))
-                      : null,
+    final blocks = [
+      for (final a in rows)
+        NowBlock(
+            beginMin: a.begin.hour * 60 + a.begin.minute,
+            durationMin: a.duration,
+            border: a.begin.hour < 17)
+    ];
+
+    return LayoutBuilder(builder: (context, constraints) {
+      // ONE factor drives every row height AND the now-line walk, so the
+      // line can never sit over a row it did not measure (was: a hardcoded
+      // 0.9 that overflowed days with long lectures)
+      final now = NowClock.timeSource();
+      final nowMinutes = now.hour * 60 + now.minute;
+      final factor =
+          dayColumnFactor(viewportPx: constraints.maxHeight, blocks: blocks);
+      return Stack(
+        children: [
+          Column(
+            children: [
+              for (var i = 0; i < rows.length; i++) _row(context, rows, i, factor)
+            ],
+          ),
+          if (showNowLine)
+            Positioned.fill(
+              // CustomPaint without hitTestSelf never absorbs taps; the
+              // label is for screen readers, the pixels speak for themselves
+              child: Semantics(
+                label: L10n.t("timetable.nowLineLabel", [
+                  _hm(nowMinutes)
+                ]),
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _NowLinePainter(
+                      blocks: blocks,
+                      pxPerMin: factor,
+                      color: theme.colorScheme.primary,
+                      textStyle: theme.textTheme.bodyLarge
+                              ?.copyWith(color: theme.colorScheme.primary) ??
+                          TextStyle(
+                              color: theme.colorScheme.primary, fontSize: 14),
+                    ),
+                  ),
                 ),
-                child: SizedBox(height: appointment.duration * 0.9),
-              );
-            }
-            return Container(
-              decoration: BoxDecoration(
-                border: appointment.begin.hour < 17
-                    ? Border(
-                        bottom: BorderSide(
-                            color: theme.brightness == Brightness.light
-                                ? Colors.black12
-                                : Colors.white.withValues(alpha: 0.15)))
-                    : null,
               ),
-              child: SizedBox(
-                height: appointment.duration * 0.9,
-                child: Stack(
-                  alignment: Alignment.topLeft,
+            ),
+        ],
+      );
+    });
+  }
+
+  Widget _row(BuildContext context, List<TimetableAppointment> rows, int i,
+      double factor) {
+    final theme = Theme.of(context);
+    final appointment = rows[i];
+    final border = _rowBorder(theme, appointment);
+
+    if (!_isContent(appointment)) {
+      final ghost = _ghostFor(appointment);
+      if (ghost != null) {
+        return _ghostCard(context, appointment, ghost, border, factor);
+      }
+      // a slot between two lectures is worth naming; one at either end of
+      // the day is only a seam
+      final boxedIn = i > 0 &&
+          i < rows.length - 1 &&
+          _isContent(rows[i - 1]) &&
+          _isContent(rows[i + 1]);
+      return Container(
+        // A free block must read as empty: the placeholder dash and
+        // its time badge used to render like a lecture called "—".
+        decoration: BoxDecoration(border: border),
+        child: SizedBox(
+          height: appointment.duration * factor,
+          child: boxedIn
+              ? Center(
+                  child: Text(
+                    L10n.t("timetable.freeGap", [_dur(appointment.duration)]),
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.outline),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                )
+              : null,
+        ),
+      );
+    }
+
+    final isTut = appointment.type == TimetableAppointmentType.tutorial;
+    // lunch shows the localized word, not the raw feed/model title
+    final titleText =
+        appointment.type == TimetableAppointmentType.lunchBreak
+            ? L10n.t("timetable.mittagspause")
+            : appointment.displayTitle;
+    // weekday suffix kills the carousel-wide duplicate Hero tags: lunch
+    // rows share title AND the empty id across all five pages
+    final heroSuffix = "_${tt.weekday.index}";
+    final roomDelta = _roomDeltaFor(appointment);
+    final hasPlace = appointment.place.title.isNotEmpty;
+    final deltaText = roomDelta == null
+        ? null
+        : L10n.t("timetable.changeRoomDelta",
+            [roomDelta.oldRoom!, roomDelta.room]);
+    // asymmetric: the HH:MM badge is Positioned at the top-right of this
+    // Stack, so the text column reserves the badge's footprint on the
+    // right - long titles used to run under it and cut mid-word. The badge
+    // text rides bodyLarge, so the reservation scales with THAT size, not
+    // a hardcoded 14.
+    final badgeFont = theme.textTheme.bodyLarge?.fontSize ?? 16;
+
+    final placeText = Text.rich(
+      TextSpan(
+        children: [
+          if (hasPlace) TextSpan(text: appointment.displayPlace),
+          if (deltaText != null)
+            TextSpan(
+                text: hasPlace
+                    ? deltaText
+                    // no place text to hang the " · " separator on
+                    : deltaText.replaceFirst(" · ", ""),
+                style: TextStyle(color: theme.colorScheme.tertiary)),
+        ],
+      ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
+
+    return Container(
+      decoration: BoxDecoration(border: border),
+      child: SizedBox(
+        height: appointment.duration * factor,
+        child: Stack(
+          alignment: Alignment.topLeft,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque, // the WHOLE row is the target
+              onTap: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (context) => TimetableAppointmentPage(
+                        appointment: appointment,
+                        heroSuffix: "_${tt.weekday.index}")));
+              },
+              child: Container(
+                padding: EdgeInsets.only(
+                    left: 15,
+                    right: 10 +
+                        62 *
+                            MediaQuery.textScalerOf(context)
+                                    .scale(badgeFont) /
+                                badgeFont),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Padding(
-                    //   padding: EdgeInsets.only(left: 15, right: 5, top: 5, bottom: 5),
-                    //   child: VerticalDivider(color: theme.colorScheme.primary,),
-                    // ),
-
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.of(context).push(MaterialPageRoute(
-                            builder: (context) => TimetableAppointmentPage(
-                                appointment: appointment)));
-                      },
-                      child: SizedBox(
-                        width: appointment.type ==
-                                TimetableAppointmentType.lunchBreak
-                            ? null
-                            : deviceWidth * 0.8,
-                        child: Container(
-                          // asymmetric: the HH:MM badge is Positioned at
-                          // the top-right of this Stack, so the text column
-                          // reserves the badge's footprint on the right -
-                          // long titles used to run under it and cut
-                          // mid-word. The badge text grows with the system
-                          // font scale, so a const reservation loses that
-                          // fight on Large/Largest: scale the text-proportional
-                          // part with bodyLarge, keep a constant remainder.
-                          padding: EdgeInsets.only(
-                              left: 15,
-                              right: 10 +
-                                  62 *
-                                      MediaQuery.textScalerOf(context)
-                                          .scale(14) /
-                                      14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              // !isTut ? SizedBox.shrink() : Text("Tutorium:"),
-
-                              appointment.id.isNotEmpty
-                                  ? Hero(
-                                      tag:
-                                          "appointmentTitle_${appointment.title}_${appointment.id}",
-                                      child: Text(
-                                        isTut
-                                            ? L10n.t(
-                                                "timetable.tutorialPrefix",
-                                                [appointment.displayTitle])
-                                            : appointment.displayTitle,
-                                        style: theme.textTheme.titleSmall
-                                            ?.copyWith(
-                                                fontWeight: FontWeight.bold),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ))
-                                  : Text(
-                                      appointment.displayTitle,
-                                      style: theme.textTheme.titleSmall
-                                          ?.copyWith(
-                                              fontWeight: FontWeight.bold),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-
-                              appointment.place.title.isNotEmpty
-                                  ? Hero(
-                                      tag:
-                                          "appointmentPlace_${appointment.title}_${appointment.id}",
-                                      child: Text(
-                                        appointment.displayPlace,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ))
-                                  : SizedBox(
-                                      height: 0,
-                                    ),
-
-                              isTut &&
-                                      appointment is Tutorial &&
-                                      (appointment.notes ?? "").isNotEmpty
-                                  ? Text(
-                                      appointment.notes!,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    )
-                                  : const SizedBox.shrink(),
-
-                              appointment.type ==
-                                      TimetableAppointmentType.lunchBreak
-                                  ? Row(
-                                      children: [
-                                        // CupertinoButton(
-                                        //   child: Text("Speiseplan", style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.primary),),
-                                        //   onPressed: () {},
-                                        //   padding: EdgeInsets.only(left: 0),
-                                        // )
-                                      ],
-                                    )
-                                  : const SizedBox(
-                                      height: 0,
-                                    )
-                            ],
+                    appointment.id.isNotEmpty
+                        ? Hero(
+                            tag:
+                                "appointmentTitle_${appointment.title}_${appointment.id}$heroSuffix",
+                            child: Text(
+                              isTut
+                                  ? L10n.t("timetable.tutorialPrefix",
+                                      [appointment.displayTitle])
+                                  : titleText,
+                              style: theme.textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.bold),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ))
+                        : Text(
+                            titleText,
+                            style: theme.textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 0,
-                      right: 0,
-                      child: ClipRRect(
-                        borderRadius:
-                            const BorderRadius.only(topRight: appBorderRadius),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          children: [
-                            BlockContainer(
-                                padding:
-                                    const EdgeInsets.only(left: 3, bottom: 3),
-                                innerPadding: const EdgeInsets.only(
-                                    left: 6, bottom: 3, top: 3, right: 6),
-                                child: Text(
-                                  "${appointment.begin.hour.toString().padLeft(2, "0")}:${appointment.begin.minute.toString().padLeft(2, "0")}",
-                                  style: theme.textTheme.bodyLarge?.copyWith(
-                                      color: theme.colorScheme.primary),
-                                )),
-                            // Text("${appointment.end.hour.toString().padLeft(2, "0")}:${appointment.end.minute.toString().padLeft(2, "0")}"),
-                          ],
-                        ),
-                      ),
-                    ),
+                    if (hasPlace || deltaText != null)
+                      appointment.id.isNotEmpty
+                          ? Hero(
+                              tag:
+                                  "appointmentPlace_${appointment.title}_${appointment.id}$heroSuffix",
+                              child: _placeSlot(theme, placeText,
+                                  appointment.roomVaries))
+                          : _placeSlot(
+                              theme, placeText, appointment.roomVaries)
+                    else
+                      const SizedBox(height: 0),
+                    isTut &&
+                            appointment is Tutorial &&
+                            (appointment.notes ?? "").isNotEmpty
+                        ? Text(
+                            appointment.notes!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        : const SizedBox.shrink(),
                   ],
                 ),
               ),
-            );
-          }).toList(),
-        )
+            ),
+            Positioned(
+              top: 0,
+              right: 0,
+              child: ClipRRect(
+                borderRadius:
+                    const BorderRadius.only(topRight: appBorderRadius),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    BlockContainer(
+                        padding: const EdgeInsets.only(left: 3, bottom: 3),
+                        innerPadding: const EdgeInsets.only(
+                            left: 6, bottom: 3, top: 3, right: 6),
+                        child: Text(
+                          _hm(appointment.begin.hour * 60 +
+                              appointment.begin.minute),
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                              color: theme.colorScheme.primary),
+                        )),
+                    if (showNowLine)
+                      // the running chip repaints on its own minute tick -
+                      // the page build never waits for the clock
+                      ValueListenableBuilder<int>(
+                        valueListenable: NowClock.minutesOfDay,
+                        builder: (context, minute, _) =>
+                            _runningChip(minute, appointment, theme),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _placeSlot(
+      ThemeData theme, Widget placeText, bool roomVaries) {
+    if (!roomVaries) return placeText;
+    return Row(
+      children: [
+        Expanded(child: placeText),
+        Container(
+          margin: const EdgeInsets.only(left: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.tertiaryContainer,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            L10n.t("timetable.roomVaries"),
+            style: TextStyle(
+                fontSize: 10, color: theme.colorScheme.onTertiaryContainer),
+          ),
+        ),
       ],
     );
   }
+
+  /// begin <= now < end on the WALL CLOCK only: appointment begin/end carry
+  /// stale parse-time dates, so their absolute difference is meaningless -
+  /// compare hour+minute minutes-of-day.
+  Widget _runningChip(
+      int minute, TimetableAppointment appointment, ThemeData theme) {
+    final beginMin =
+        appointment.begin.hour * 60 + appointment.begin.minute;
+    final endMin = appointment.end.hour * 60 + appointment.end.minute;
+    if (beginMin > minute || minute >= endMin) return const SizedBox.shrink();
+    return BlockContainer(
+        padding: const EdgeInsets.only(left: 3, bottom: 3),
+        innerPadding:
+            const EdgeInsets.only(left: 6, bottom: 2, top: 2, right: 6),
+        child: Text(
+          L10n.t("agenda.nowRunning", [_hm(endMin)]),
+          style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.primary),
+        ));
+  }
+
+  /// removed/moved over an EMPTY block: the lecture a student scheduled
+  /// this slot around is gone - show the ghost of what was cancelled.
+  IcsChange? _ghostFor(TimetableAppointment block) {
+    for (final c in changes) {
+      if (c.kind != IcsChangeKind.removed && c.kind != IcsChangeKind.moved) {
+        continue;
+      }
+      if (c.when.hour == block.begin.hour &&
+          c.when.minute == block.begin.minute) {
+        return c;
+      }
+    }
+    return null;
+  }
+
+  /// the live card this change touched, room-wise (changed kind with a real
+  /// old→new room pair, matching block minute), else null
+  IcsChange? _roomDeltaFor(TimetableAppointment appointment) {
+    for (final c in changes) {
+      if (c.kind != IcsChangeKind.changed) continue;
+      final oldRoom = c.oldRoom;
+      if (oldRoom == null || oldRoom.isEmpty || c.room.isEmpty) continue;
+      if (c.when.hour == appointment.begin.hour &&
+          c.when.minute == appointment.begin.minute) {
+        return c;
+      }
+    }
+    return null;
+  }
+
+  Widget _ghostCard(BuildContext context, TimetableAppointment block,
+      IcsChange change, Border? border, double factor) {
+    final theme = Theme.of(context);
+    return Opacity(
+      opacity: 0.4,
+      child: Container(
+        decoration: BoxDecoration(border: border),
+        child: SizedBox(
+          height: block.duration * factor,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 15, right: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  change.title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      decoration: TextDecoration.lineThrough),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  L10n.t("timetable.ghostCancelled"),
+                  style: theme.textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Nothing lecture-shaped all day: the weekly weekend idiom, own words.
+  Widget _dayFree(BuildContext context) {
+    final theme = Theme.of(context);
+    final size = MediaQuery.of(context).size;
+    return Padding(
+        padding: EdgeInsets.symmetric(vertical: size.height * 0.15),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: size.width * 0.8,
+              height: size.height * 0.4,
+            ),
+            Column(
+              children: [
+                Icon(
+                  CupertinoIcons.zzz,
+                  color: theme.colorScheme.primary,
+                  size: 64,
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Text(
+                    L10n.t("timetable.dayFree"),
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                )
+              ],
+            )
+          ],
+        ));
+  }
+
+  Border? _rowBorder(ThemeData theme, TimetableAppointment a) =>
+      a.begin.hour < 17
+          ? Border(
+              bottom: BorderSide(
+                  color: theme.brightness == Brightness.light
+                      ? Colors.black12
+                      : Colors.white.withValues(alpha: 0.15)))
+          : null;
+}
+
+class _NowLinePainter extends CustomPainter {
+  final List<NowBlock> blocks;
+  final double pxPerMin;
+  final Color color;
+  final TextStyle textStyle;
+
+  _NowLinePainter(
+      {required this.blocks,
+      required this.pxPerMin,
+      required this.color,
+      required this.textStyle})
+      : super(repaint: NowClock.minutesOfDay);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // read the live value here - the minute arrives via the repaint
+    // listenable WITHOUT any widget rebuilding
+    final minute = NowClock.minutesOfDay.value;
+    final y = nowLineY(
+        blocks: blocks, minutesOfDay: minute, pxPerMin: pxPerMin);
+    if (y == null) return;
+
+    canvas.drawLine(Offset(0, y), Offset(size.width, y),
+        Paint()
+          ..color = color
+          ..strokeWidth = 2);
+    canvas.drawCircle(Offset(2, y), 2, Paint()..color = color);
+
+    final chip = TextPainter(textDirection: TextDirection.ltr)
+      ..text = TextSpan(text: _hm(minute), style: textStyle)
+      ..layout();
+    // above the line, unless it would climb out of the block (or the line
+    // sits on a gap seam - distance 0) → flip below
+    final below = y - _topOfMinute(minute) < 26;
+    chip.paint(canvas,
+        Offset(size.width - chip.width - 4, below ? y + 2 : y - chip.height - 2));
+  }
+
+  /// y of the top edge of the block (or seam) the minute resolved into;
+  /// mirrors [nowLineY]'s walk. Only consulted for painted minutes.
+  double _topOfMinute(int minute) {
+    double top = 0;
+    for (var i = 0; i < blocks.length; i++) {
+      final b = blocks[i];
+      final bottom = top + b.durationMin * pxPerMin;
+      if (minute >= b.beginMin) {
+        if (minute < b.beginMin + b.durationMin) return top;
+        if (i + 1 >= blocks.length) return top;
+        if (minute < blocks[i + 1].beginMin) {
+          return bottom + (b.border ? 1 : 0);
+        }
+      }
+      top = bottom + (b.border ? 1 : 0);
+    }
+    return 0;
+  }
+
+  @override
+  bool shouldRepaint(_NowLinePainter oldDelegate) =>
+      oldDelegate.blocks != blocks ||
+      oldDelegate.pxPerMin != pxPerMin ||
+      oldDelegate.color != color ||
+      oldDelegate.textStyle != textStyle;
 }

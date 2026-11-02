@@ -27,6 +27,13 @@ const String channelIdDaily = "mei_daily";
 const String channelIdDeadlines = "mei_deadlines";
 const String channelIdChanges = "mei_changes";
 
+
+/// Exact map of notification id bands - every family cancels its own range
+/// before re-arming, so a new family MUST take a fresh gap and join this
+/// list: 10-400 lecture T−30 · 410-499 T−15 re-arm for CHANGED lectures
+/// (R12) · 500-600 exam registration deadlines · 700-799 SignMeUp
+/// deadlines · 900-999 morning digest · 1000-1019 CHANGED heads-up
+/// rotation.
 class MeiNotifications {
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -220,18 +227,54 @@ class MeiNotifications {
       if (!_ready) await init();
       final epoch = teardownEpoch;
       await _cancelRange(10, 400);
+      await _cancelRange(410, 499);
       final now = DateTime.now();
       var id = 10;
+      var changeId = 410;
+      // T−15 re-arm (R12): a lecture the still-un-dismissed CHANGED band
+      // marks moved/removed/room-swapped ALSO gets an alarm 15 min before
+      // its start - the T−30 one may have been armed against the PRE-change
+      // timetable, so the second heads-up confirms the new state close to
+      // the door. Calm lectures never get a second nag: the change index
+      // gates the whole 410 band.
+      final prefs = await SharedPreferences.getInstance();
+      final changes =
+          IcsChange.decode(prefs.getString(WebcalKeys.changes) ?? "");
+      final blockKeysByDay = <DateTime, Map<int, IcsChange>>{};
+      final movedByDay = <DateTime, Set<int>>{};
+      bool touchedByChange(IcsOccurrence o) {
+        final day = DateTime(o.start.year, o.start.month, o.start.day);
+        final block = o.start.hour * 60 + o.start.minute;
+        // W3 index shape: room-changed blocks carry their IcsChange,
+        // moved/removed ones only their block key
+        return blockKeysByDay
+                .putIfAbsent(day, () => changes.blockKeys(day))
+                .containsKey(block) ||
+            movedByDay
+                .putIfAbsent(day, () => changes.removedOrMovedBlocks(day))
+                .contains(block);
+      }
       for (final occ in dedupOccurrences(feed.occurrences)) {
-        if (id > 400) break;
+        if (id > 400 && (changes.isEmpty || changeId > 499)) break;
         final remindAt = occ.start.subtract(const Duration(minutes: 30));
-        if (remindAt.isAfter(now) &&
+        if (id <= 400 &&
+            remindAt.isAfter(now) &&
             remindAt.isBefore(now.add(const Duration(days: 2)))) {
           if (epoch != teardownEpoch) return; // logout mid-flight
           await _zoned(id++, channelIdDaily, occ.displayTitle,
               reminderBody(occ), remindAt,
               deadlines: false,
               payload: NotificationPayload.agendaToday);
+        }
+        if (changes.isEmpty || changeId > 499) continue;
+        final t15 = occ.start.subtract(const Duration(minutes: 15));
+        if (t15.isAfter(now) &&
+            t15.isBefore(now.add(const Duration(days: 2))) &&
+            touchedByChange(occ)) {
+          if (epoch != teardownEpoch) return;
+          await _zoned(changeId++, channelIdDaily, occ.displayTitle,
+              reminderBody(occ), t15,
+              deadlines: false, payload: NotificationPayload.agendaToday);
         }
       }
     } on Object catch (e) {
@@ -396,7 +439,8 @@ class MeiNotifications {
         if (epoch != teardownEpoch) return; // logout mid-flight
         await _zoned(id, channelIdDaily, title, body, at,
             deadlines: false,
-            payload: NotificationPayload.agenda);
+            // the digest names the day's first lectures - open ON them
+            payload: NotificationPayload.agendaToday);
       }
     } on Object catch (e) {
       if (kDebugMode) print("morning digest failed: $e");

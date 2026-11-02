@@ -2365,6 +2365,11 @@ class CampusManager extends KITLoginManager {
   }
 
   Future<bool> loadCachedTimetable() async {
+    // badge restore (R12): the background poll can find deltas while the
+    // app is dead; without this the home dot silently resets on every
+    // cold start until the next foreground fetch re-reads the changes key
+    final prefs = await SharedPreferences.getInstance();
+    timetableChanged = (prefs.getString(_webcalChangesKey) ?? "").isNotEmpty;
     final cached = await _readCachedTimetableSrc();
     if (cached == null || cached.isEmpty) {
       return false;

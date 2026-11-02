@@ -4,11 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/extensions/theme_data_extension.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
+import 'package:kit_mobile/timetable/logic/now_clock.dart';
+import 'package:kit_mobile/timetable/models/timetable_appointment.dart';
 import 'package:kit_mobile/timetable/models/timetable_daily.dart';
 import 'package:kit_mobile/timetable/models/timetable_weekly.dart';
+import 'package:kit_mobile/timetable/models/webcal.dart';
 import 'package:kit_mobile/timetable/views/timetable_daily_view.dart';
 import 'package:kit_mobile/timetable/views/ui_elements/show_today_button.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../state_management/kit_provider.dart';
 
@@ -28,6 +32,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
     _initialWeekday =
         initialWeekday ?? _initialWeekday.fromInt(DateTime.now().weekday - 1);
     _currentRealPage = 10000 + _initialWeekday.idx;
+    _todayRealPage = _currentRealPage;
   }
 
   final _weekdayHeight = 90 * 7 * 0.7 + 200;
@@ -40,6 +45,107 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
   /// The carousel page currently centered; with infinite scroll "today"
   /// starts at 10000 + initial index, one step = ±1 day.
   late int _currentRealPage;
+
+  /// Today's carousel page - separate from [_currentRealPage]: it steps by
+  /// one when NowClock reports a date flip even though the carousel did not
+  /// move; the band label, the now-line page, the past dim and the
+  /// ShowTodayButton anchor all consult it.
+  late int _todayRealPage;
+
+  /// Raw feed cache present -> the grid below is real parsed data, not the
+  /// generic template. The only provable gate for the lectureFree state,
+  /// the same "have we ever cached a timetable" judgement as the agenda's
+  /// _feedCached (agenda_page.dart:176-182).
+  bool _feedCached = false;
+
+  /// Feed deltas grouped by page date; decoded once at init - re-publishes
+  /// while the carousel is open need not repaint the ghosts before the next
+  /// visit (documented per contract §4).
+  Map<String, List<IcsChange>> _changesByDay = const {};
+
+  /// keeps the refcounted arm/disarm balanced across repeated
+  /// didChangeDependencies runs
+  bool _clockArmed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    NowClock.dateOfDay.addListener(_onMidnight);
+    // agenda_page.dart:170's recipe: the deltas live as JSON in prefs
+    SharedPreferences.getInstance().then((prefs) {
+      if (!mounted) return;
+      setState(() {
+        _feedCached = (prefs.getString(WebcalKeys.icsCache) ?? "")
+            .contains("BEGIN:VCALENDAR");
+        _changesByDay =
+            IcsChange.decode(prefs.getString(WebcalKeys.changes) ?? "")
+                .byDayKey();
+      });
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // TickerMode gate copied from the agenda ticker (agenda_page.dart:104-119):
+    // the shared minute heartbeat runs only while this view can be seen, and
+    // reading the flag here registers the dependency, so the very rebuild
+    // that re-exposes the view re-arms it - no stale anchors after the way
+    // back.
+    if (TickerMode.valuesOf(context).enabled) {
+      if (!_clockArmed) {
+        _clockArmed = true;
+        NowClock.arm();
+      }
+    } else if (_clockArmed) {
+      _clockArmed = false;
+      NowClock.disarm();
+    }
+  }
+
+  @override
+  void dispose() {
+    NowClock.dateOfDay.removeListener(_onMidnight);
+    if (_clockArmed) {
+      _clockArmed = false;
+      NowClock.disarm();
+    }
+    super.dispose();
+  }
+
+  /// Midnight roll: exactly ONE setState steps today forward; band, dim,
+  /// now-line and button anchor all follow it - per minute nothing rebuilds.
+  void _onMidnight() {
+    if (mounted) setState(() => _todayRealPage += 1);
+  }
+
+  /// The concrete calendar date carousel page [w] shows. The band heading,
+  /// the past-page dim and the per-page change ghosts must all date through
+  /// here - they may never disagree about what day a page is.
+  DateTime _pageDate(int w) {
+    final now = DateTime.now();
+    final weekdayIdx = w - 10000;
+    final todayWeekdayIdx = now.weekday - 1;
+    return now.add(Duration(days: weekdayIdx - todayWeekdayIdx));
+  }
+
+  /// Deltas landing on [day]; byDayKey keys on `when` only (agenda persist
+  /// semantics), this key format mirrors it.
+  List<IcsChange> _changesFor(DateTime day) {
+    final key = "${day.year.toString().padLeft(4, "0")}-"
+        "${day.month.toString().padLeft(2, "0")}-"
+        "${day.day.toString().padLeft(2, "0")}";
+    return _changesByDay[key] ?? const [];
+  }
+
+  /// carousel_slider's animateToPage is delta arithmetic at itemCount 1
+  /// (getRealIndex folds every target onto the single item's index 0) and
+  /// animateToClosest then shaves one step off toward zero - padding by the
+  /// sign keeps the delta intact, the trick _showToday always relied on.
+  void _animateDelta(int delta) {
+    _carouselSliderController.animateToPage(delta + delta.sign,
+        curve: Curves.easeInOut);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -74,49 +180,94 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
 
   Widget _weekdayCarouselBuilder(BuildContext context, int idx, int w) {
     final vm = Provider.of<KITProvider>(context);
-    final theme = Theme.of(context);
 
     final weekdayIdx = (w - 10000);
 
     final TimetableDaily? tt =
         weekdayIdx % 7 < 5 ? vm.timetable.days[weekdayIdx % 7] : null;
 
+    // Lecture-free week: only ever with the provable reading - a feed
+    // cache exists (so the grid is real parsed data, not the template) AND
+    // no weekday slot holds more than the scaffold toWeeklyTemplate
+    // pre-seeds. Anything less provable keeps the grid: keeping the grid
+    // beats lying.
+    final lectureFree = _feedCached &&
+        vm.timetable.days
+            .take(5)
+            .every((d) => d.appointments.every(_slotVacant));
+
+    // read at build time: pages rebuild on scroll/state only, so the dim
+    // trails the wall clock by at most one interaction
+    final now = DateTime.now();
+    final todayMidnight = DateTime(now.year, now.month, now.day);
+
+    final Widget content;
+    if (tt == null) {
+      content = _dayPlaceholder(context, L10n.t("timetable.weekend"));
+    } else if (lectureFree) {
+      content = _dayPlaceholder(context, L10n.t("timetable.lectureFree"));
+    } else {
+      content = TimetableDailyView(
+        tt: tt,
+        showNowLine: w == _todayRealPage,
+        changes: _changesFor(_pageDate(w)),
+      );
+    }
+
     // The date heading now lives in the fixed band above the carousel
     // viewport (see _dateBand); a page only paints its day blocks.
-    return BlockContainer(
-      innerPadding: EdgeInsets.zero,
-      child: tt != null
-          ? TimetableDailyView(tt: tt)
-          : Padding(
-              padding: EdgeInsets.symmetric(
-                  vertical: MediaQuery.of(context).size.height * 0.15),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  SizedBox(
-                    width: MediaQuery.of(context).size.width * 0.8,
-                    height: _weekdayHeight * 0.4,
-                  ),
-                  Column(
-                    children: [
-                      Icon(
-                        CupertinoIcons.zzz,
-                        color: theme.colorScheme.primary,
-                        size: 64,
-                      ),
-                      Padding(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 5),
-                        child: Text(
-                          L10n.t("timetable.weekend"),
-                          style: theme.textTheme.bodyLarge,
-                        ),
-                      )
-                    ],
-                  )
-                ],
-              )),
+    return Opacity(
+      opacity: _pageDate(w).isBefore(todayMidnight) ? 0.45 : 1,
+      child: GestureDetector(
+        // a ghost column tap glides it to the centre; taps on the centered
+        // page fall through to their own content
+        onTap: () {
+          if (w != _currentRealPage) {
+            _animateDelta(w - _currentRealPage);
+          }
+        },
+        child: BlockContainer(innerPadding: EdgeInsets.zero, child: content),
+      ),
     );
+  }
+
+  /// A slot holds real data only once something claimed it; the empty
+  /// placeholders and the pre-seeded lunch row are scaffold, not lectures.
+  static bool _slotVacant(TimetableAppointment a) =>
+      a.type == TimetableAppointmentType.lunchBreak || a.isEmpty;
+
+  /// The zzz idiom, shared by the weekend page and a lecture-free week.
+  Widget _dayPlaceholder(BuildContext context, String label) {
+    final theme = Theme.of(context);
+    return Padding(
+        padding: EdgeInsets.symmetric(
+            vertical: MediaQuery.of(context).size.height * 0.15),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: MediaQuery.of(context).size.width * 0.8,
+              height: _weekdayHeight * 0.4,
+            ),
+            Column(
+              children: [
+                Icon(
+                  CupertinoIcons.zzz,
+                  color: theme.colorScheme.primary,
+                  size: 64,
+                ),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 5),
+                  child: Text(
+                    label,
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                )
+              ],
+            )
+          ],
+        ));
   }
 
   /// The "Montag · 2. November"/"Heute, …" heading of the centered page.
@@ -129,8 +280,8 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
     final now = DateTime.now();
 
     final weekdayIdx = _currentRealPage - 10000;
-    final todayWeekdayIdx = now.weekday - 1;
-    final date = now.add(Duration(days: weekdayIdx - todayWeekdayIdx));
+    // the same date math the per-page ghosting runs on, from one place
+    final date = _pageDate(_currentRealPage);
 
     final monthStr = L10n.t("timetable.month${date.month}");
     final weekdayShortStr = L10n.weekday(weekdayIdx % 7 + 1);
@@ -177,8 +328,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
             Spacer(),
 
             ShowTodayButton(
-                relativeOffset:
-                    _currentRealPage - (10000 + _initialWeekday.idx),
+                relativeOffset: _currentRealPage - _todayRealPage,
                 onPressed: () => _showToday(_currentRealPage)),
 
             Padding(padding: EdgeInsets.only(right: 5)),
@@ -198,9 +348,5 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
     }
   }
 
-  void _showToday(int w) {
-    int toPage = 10000 + _initialWeekday.index - w;
-    toPage += toPage.sign;
-    _carouselSliderController.animateToPage(toPage, curve: Curves.easeInOut);
-  }
+  void _showToday(int w) => _animateDelta(_todayRealPage - w);
 }

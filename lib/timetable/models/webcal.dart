@@ -53,6 +53,20 @@ class IcsOccurrence {
   /// display-only - matching, fingerprint and dedup ignore it.
   final bool fromPersonalIcs;
 
+  /// Cascampus course page (`URL:` property). The feed attaches
+  /// `https://campus.studium.kit.edu/ev/<token>` to EVERY VEVENT
+  /// (verified wc_now.ics:38,52,66,80,94,106,120,132,146,...,377,388 — one
+  /// per VEVENT; the calendar-level `URL:` at :5 sits outside any VEVENT
+  /// and is never seen). The token is a stable COURSE identity: clones of
+  /// one real series share it (:106/:120/:132) and so do the Nov–Dec
+  /// one-shot chain and the January RRULE re-publication of a
+  /// re-registered course (:223..377 == :200). It is NOT a location
+  /// identity — same-URL occurrences alternate LOCATION — which is why
+  /// roomVaries groups on it. Display-only today; deliberately absent
+  /// from fingerprint and dedupeKey: an internal URL rotation must not
+  /// move the diff baseline.
+  final String? url;
+
   IcsOccurrence(
       {required this.start,
       required this.end,
@@ -61,7 +75,8 @@ class IcsOccurrence {
       required this.uid,
       this.seriesEnd,
       this.endGuessed = false,
-      this.fromPersonalIcs = false});
+      this.fromPersonalIcs = false,
+      this.url});
 
   /// Faculty ICS exports append the course number to SUMMARY
   /// ("... - 3161011", "... - 2145191/2145192") and stuff duplicated tokens
@@ -280,7 +295,7 @@ class WebcalFeed {
 
   static List<IcsOccurrence>? _parseEvent(List<String> block,
       {bool personal = false}) {
-    String? uid, summary, startStr, endStr, rrule, location;
+    String? uid, summary, startStr, endStr, rrule, location, url;
     final exdates = <String>{};
     for (final prop in block) {
       final semi = prop.indexOf(";");
@@ -312,6 +327,9 @@ class WebcalFeed {
         case "LOCATION":
           location = _unescape(value);
           break;
+        case "URL":
+          url = value;
+          break;
         case "EXDATE":
           // multi-value EXDATE lines must split into single stamps -
           // the old code stored them comma-joined, so contains(single)
@@ -342,7 +360,8 @@ class WebcalFeed {
             uid: uid ?? title,
             seriesEnd: start,
             endGuessed: endGuessed,
-            fromPersonalIcs: personal)
+            fromPersonalIcs: personal,
+            url: url)
       ];
     }
 
@@ -384,7 +403,8 @@ class WebcalFeed {
             uid: uid ?? title,
             seriesEnd: seriesEnd,
             endGuessed: endGuessed,
-            fromPersonalIcs: personal)
+            fromPersonalIcs: personal,
+            url: url)
     ];
   }
 
@@ -409,6 +429,8 @@ class WebcalFeed {
   TimetableAppointment _toAppointment(IcsOccurrence occ) {
     final appointment = TimetableAppointment(
         begin: occ.start, end: occ.end, type: TimetableAppointmentType.other);
+    appointment.url = occ.url;
+    appointment.fromPersonalIcs = occ.fromPersonalIcs;
 
     var title = occ.title;
     final m = _idPrefix.firstMatch(title);
@@ -469,9 +491,51 @@ class WebcalFeed {
       }
     }
 
+    // roomVaries post-pass: the feed alternates LOCATION across the
+    // occurrences of ONE course (clone snapshots + re-publications in
+    // wc_now.ics), so the first-wins room on the claimed card can be a
+    // lie for later dates. Mutates ONLY the new bool - the claim loop
+    // above stays byte-identical (webcal/exam_synth tests pin it);
+    // personal-ICS and exam-synth occurrences never join a group.
+    for (var d = 0; d < weekly.days.length; d++) {
+      for (final a in weekly.days[d].appointments) {
+        if (a.isEmpty || a.fromPersonalIcs) continue;
+        final rooms = <String>{};
+        for (final o in occurrences) {
+          if (o.start.weekday != d + 1 ||
+              o.start.hour != a.begin.hour ||
+              o.start.minute != a.begin.minute) {
+            continue;
+          }
+          if (_isFeedCloneOf(o, a)) rooms.add(o.room);
+        }
+        if (rooms.length > 1) a.roomVaries = true;
+      }
+    }
+
     // mark the pre-seeded generic placeholders of touched days as filled-in:
     // untouched slots keep their empty placeholder look, as in the HTML grid
     return weekly;
+  }
+
+  /// Literal copy of `examSynthUidPrefix` (exams/models/exam_synth.dart),
+  /// duplicated after the personal-sentinel precedent to keep this parser
+  /// free of the state layer.
+  static const _examSynthUidPrefix = "kauni-exam-";
+
+  /// Whether [o] is a feed occurrence of the SAME course as claimed
+  /// template card [a] (checked within one weekday+block by the caller):
+  /// the cascampus URL is the group key; where either side lacks one
+  /// (personal ICS imports, URL-less feeds) the title stem is the
+  /// fallback - identical series share UID prefix AND title, and the
+  /// stem is what parse() itself groups series by.
+  static bool _isFeedCloneOf(IcsOccurrence o, TimetableAppointment a) {
+    if (o.fromPersonalIcs || o.uid.startsWith(_examSynthUidPrefix)) {
+      return false;
+    }
+    if (o.url != null && a.url != null) return o.url == a.url;
+    final m = _idPrefix.firstMatch(o.title);
+    return (m == null ? o.title : m.group(2)!) == a.title;
   }
 
   /// Stable fingerprint for the change-diff engine. Only occurrences that
@@ -649,4 +713,55 @@ class IcsChange {
       return const [];
     }
   }
+}
+
+/// Shared index over decoded deltas for the weekly view, the agenda row
+/// emphasis and the T-15 alarm re-arm: one grouping, three consumers, no
+/// drifting block-key math.
+extension IcsChangeIndex on List<IcsChange> {
+  /// Grouped by `yyyy-MM-dd` of [IcsChange.when]. Keyed on `when` ONLY,
+  /// also for removed/moved (whose `oldWhen` marks the vanished slot):
+  /// the agenda band and the persisted dismiss semantics both live a
+  /// delta on the day its NEW state points at - matching that beats
+  /// second-guessing with oldWhen.
+  Map<String, List<IcsChange>> byDayKey() {
+    final out = <String, List<IcsChange>>{};
+    for (final c in this) {
+      out.putIfAbsent(_dayKey(c.when), () => <IcsChange>[]).add(c);
+    }
+    return out;
+  }
+
+  /// Start blocks (`hour*60+minute`) of [day] whose lecture actually
+  /// moved rooms (`changed` with oldRoom != room) -> the LATEST such
+  /// delta wins, so a card ever renders one room-diff line.
+  Map<int, IcsChange> blockKeys(DateTime day) {
+    final out = <int, IcsChange>{};
+    for (final c in this) {
+      if (c.kind != IcsChangeKind.changed || c.oldRoom == c.room) continue;
+      if (!_isOnDay(c.when, day)) continue;
+      final k = c.when.hour * 60 + c.when.minute;
+      final held = out[k];
+      if (held == null || c.when.isAfter(held.when)) out[k] = c;
+    }
+    return out;
+  }
+
+  /// Start blocks of [day] whose lecture is gone or relocated: the slots
+  /// for ghost cards, and where an already-armed reminder is stale.
+  Set<int> removedOrMovedBlocks(DateTime day) => {
+        for (final c in this)
+          if ((c.kind == IcsChangeKind.removed ||
+                  c.kind == IcsChangeKind.moved) &&
+              _isOnDay(c.when, day))
+            c.when.hour * 60 + c.when.minute,
+      };
+
+  static String _dayKey(DateTime d) =>
+      "${d.year.toString().padLeft(4, "0")}-"
+      "${d.month.toString().padLeft(2, "0")}-"
+      "${d.day.toString().padLeft(2, "0")}";
+
+  static bool _isOnDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 }

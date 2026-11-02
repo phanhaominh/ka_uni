@@ -117,13 +117,19 @@ class _KITNavContainerState extends State<KITNavContainer> {
           ),
         ),
       ),
-      body: Stack(
-        children: [
-          [
-            SettingsPage(),
-            KITHomePage(),
-          ][_selectedPage],
-        ],
+      body: IndexedStack(
+        // not the old list-index swap: IndexedStack keeps the unselected
+        // tab's State alive - the Dashboard carousel page and its scroll
+        // positions survive a Settings round-trip. C13 audited: nothing
+        // under lib/settings runs a periodic timer (the only dispose there
+        // tears down a TextEditingController), so the alive-but-hidden tab
+        // nags nothing; its initState work (_OwnIcsSection one-shot
+        // personal-ICS load, _CacheSizeText single directory walk) now also
+        // runs at startup while Dashboard shows - bounded one-shots, an
+        // accepted behavior change; an AppLifecycle pause observer would
+        // have nothing to stop
+        index: _selectedPage,
+        children: const [SettingsPage(), KITHomePage()],
       ),
     );
   }
