@@ -105,7 +105,13 @@ class TimetableDailyView extends StatelessWidget {
                 !appointment.isEmpty || block.length <= 1)
             .first)
         .toList(growable: false)
-      ..sort((a, b) => a.begin.compareTo(b.begin));
+      // time-OF-DAY, never the full stamp: template rows carry mixed dates
+      // (feed occurrence dates vs DateTime.now()-stamped placeholders and
+      // lunch rows), so a raw DateTime compare put Nov-2's 13:00 lunch
+      // above Nov-5's 08:00 lecture on future carousel pages. Dart's
+      // sort is stable: equal-minute rows keep their template order.
+      ..sort((a, b) => (a.begin.hour * 60 + a.begin.minute)
+          .compareTo(b.begin.hour * 60 + b.begin.minute));
 
     if (!rows.any(_isContent)) return _dayFree(context);
 

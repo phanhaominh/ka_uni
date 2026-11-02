@@ -131,4 +131,49 @@ void main() {
     expect(top('Zwischentermin'), lessThan(top('Advanced Mathematics I')),
         reason: '10:00 above the 15:45 lecture it used to trail');
   });
+
+  testWidgets('future carousel page sorts by time-of-day across mixed '
+      'date stamps', (tester) async {
+    // the reported Thu-5.11 breakage: model rows carry mixed DATES -
+    // feed lectures stamped with their real occurrence date, the lunch row
+    // with "today" - and a full-DateTime compare floated 13:00 Lunch of
+    // Nov 2 above the 08:00 lecture of Nov 5
+    final thursday = TimetableDaily(weekday: Weekday.thursday)
+      ..appointments = [
+        TimetableAppointment(
+            type: TimetableAppointmentType.lunchBreak,
+            begin: DateTime(2026, 11, 2, 13, 0),
+            end: DateTime(2026, 11, 2, 14, 0))
+          ..title = '—',
+        ap('Advanced Mathematics I (Lecture)', 4, '31.6 Hörsaalgebäude',
+            DateTime(2026, 11, 5, 8, 0), DateTime(2026, 11, 5, 9, 30)),
+        ap('Tutorial: Materials Science', 5, '30.40',
+            DateTime(2026, 11, 5, 9, 45), DateTime(2026, 11, 5, 11, 15)),
+        ap('Materials Science and Engineering I', 6, '10.30',
+            DateTime(2026, 11, 5, 11, 30), DateTime(2026, 11, 5, 13, 0)),
+      ];
+    await tester.pumpWidget(MaterialApp(
+      home: MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => KITProvider()),
+          ChangeNotifierProvider(create: (c) => SettingsProvider(context: c)),
+          ChangeNotifierProvider(create: (_) => TutorialManager()),
+        ],
+        child: Scaffold(
+            body: SizedBox(
+                height: 1000,
+                child:
+                    TimetableDailyView(tt: thursday, showNowLine: false))),
+      ),
+    ));
+    await tester.pump();
+
+    double top(String needle) =>
+        tester.getTopLeft(find.textContaining(needle, findRichText: true)).dy;
+    expect(top('Advanced Mathematics I'),
+        lessThan(top('Materials Science and Engineering I')),
+        reason: '08:00 before 11:30 regardless of stamp dates');
+    expect(top('Tutorial: Materials Science'), lessThan(top('Mittagspause')),
+        reason: '09:45 before the Nov-2-stamped 13:00 lunch');
+  });
 }
