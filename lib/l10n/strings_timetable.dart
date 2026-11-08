@@ -5,7 +5,7 @@ const Map<String, String> de_timetable = {
   "timetable.tutorials": "Tutorien",
   "timetable.tutorialsDescription": "Verknüpfe Tutorien mit deinen Modulen und lege deren Zeitfenster fest. Die Zeiten entsprechen den regulären Campus-Blöcken.",
   "timetable.noTutorials": "Noch keine Tutorien gespeichert. Nutze den Plus-Button, um das erste Tutorium zu erstellen.",
-  "timetable.addAppointmentsHint": "Füge Termine zum Stundenplan hizu, indem du auf das Stern-Icon klickst.",
+  "timetable.addAppointmentsHint": "Füge Termine zum Stundenplan hinzu, indem du auf das Stern-Icon klickst.",
   "timetable.addTutorial": "Tutorium hinzufügen",
   "timetable.editTutorial": "Tutorium bearbeiten",
   "timetable.selectModule": "Modul auswählen",

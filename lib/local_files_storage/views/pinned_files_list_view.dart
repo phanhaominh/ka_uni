@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/local_files_storage/files_manager.dart';
@@ -16,21 +17,65 @@ class PinnedFilesListView extends StatefulWidget {
 }
 
 class _PinnedFilesListViewState extends State<PinnedFilesListView> {
+  IliasFilesProvider? _manager;
+
+  /// the pinned-file query, memoized for the semester it was loaded for:
+  /// inlining it in the FutureBuilder re-ran it on every rebuild, so any
+  /// unrelated KITProvider notification flashed the whole list
+  Future<List<PinnedFile>>? _files;
+  String? _filesSemester;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // the LISTENER is what has to re-query: pins, renames and unpins land in
+    // prefs and IliasFilesProvider notifies after every write, while plain
+    // rebuilds must not touch the query again
+    final manager = context.read<IliasFilesProvider>();
+    if (!identical(_manager, manager)) {
+      _manager?.removeListener(_onFilesChanged);
+      (_manager = manager).addListener(_onFilesChanged);
+    }
+    _loadFiles();
+  }
+
+  @override
+  void dispose() {
+    _manager?.removeListener(_onFilesChanged);
+    super.dispose();
+  }
+
+  void _onFilesChanged() {
+    if (!mounted) return;
+    setState(() => _loadFiles(force: true));
+  }
+
+  void _loadFiles({bool force = false}) {
+    final semester = KITProvider.currentSemesterString;
+    if (!force && _files != null && _filesSemester == semester) return;
+    _filesSemester = semester;
+    _files = _manager!.getFilesForSemester(semester);
+  }
+
   @override
   Widget build(BuildContext context) {
     final vm = Provider.of<KITProvider>(context);
     final filesManager = Provider.of<IliasFilesProvider>(context);
 
     return FutureBuilder<List<PinnedFile>>(
-      future:
-          filesManager.getFilesForSemester(KITProvider.currentSemesterString),
+      future: _files,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 
         if (snapshot.hasError) {
-          return Center(child: Text(L10n.t('files.errorWithReason', [snapshot.error!])));
+          // the raw exception belongs in the console: it used to be
+          // interpolated straight into the UI ("Fehler: PathNotFound...")
+          if (kDebugMode) {
+            print("Pinned files query failed: ${snapshot.error}");
+          }
+          return Center(child: Text(L10n.t('common.refreshFailed')));
         }
 
         final files = snapshot.data ?? const [];
@@ -57,18 +102,34 @@ class _PinnedFilesListViewState extends State<PinnedFilesListView> {
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    child: const Icon(CupertinoIcons.pencil),
-                    onPressed: () => _renameFile(context, filesManager, file),
-                  ),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    child: const Icon(
-                      CupertinoIcons.pin_slash,
-                      color: Colors.red,
+                  Tooltip(
+                    message: L10n.t('files.renameFile'),
+                    child: Semantics(
+                      button: true,
+                      label: L10n.t('files.renameFile'),
+                      child: CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        child: const Icon(CupertinoIcons.pencil),
+                        onPressed: () =>
+                            _renameFile(context, filesManager, file),
+                      ),
                     ),
-                    onPressed: () => _removeFile(context, filesManager, file),
+                  ),
+                  Tooltip(
+                    message: L10n.t('files.removeFile'),
+                    child: Semantics(
+                      button: true,
+                      label: L10n.t('files.removeFile'),
+                      child: CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        child: const Icon(
+                          CupertinoIcons.pin_slash,
+                          color: Colors.red,
+                        ),
+                        onPressed: () =>
+                            _removeFile(context, filesManager, file),
+                      ),
+                    ),
                   ),
                 ],
               ),

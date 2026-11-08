@@ -82,11 +82,20 @@ class TimetableDailyView extends StatelessWidget {
   /// placeholder appointments only a block minute.
   final List<IcsChange> changes;
 
+  /// Whether this page's rows may open their detail page. The weekly view
+  /// sets it ONLY for the centered page: a side page's rows used to win the
+  /// tap arena over the page's centering gesture, so tapping a lecture on a
+  /// not-yet-centered day opened a full-screen detail instead of gliding the
+  /// carousel. When false the row detector stays silent and the page-level
+  /// centering tap (in timetable_weekly_view) receives the tap.
+  final bool rowTapsEnabled;
+
   const TimetableDailyView(
       {super.key,
       required this.tt,
       this.showNowLine = false,
-      this.changes = const []});
+      this.changes = const [],
+      this.rowTapsEnabled = true});
 
   @override
   Widget build(BuildContext context) {
@@ -316,12 +325,16 @@ class TimetableDailyView extends StatelessWidget {
         height: boxH,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque, // the WHOLE row is the target
-          onTap: () {
-            Navigator.of(context).push(MaterialPageRoute(
-                builder: (context) => TimetableAppointmentPage(
-                    appointment: appointment,
-                    heroSuffix: "_${tt.weekday.index}")));
-          },
+          // null on side pages: nothing enters the arena, so the page's
+          // centering tap wins instead of a premature detail push
+          onTap: rowTapsEnabled
+              ? () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (context) => TimetableAppointmentPage(
+                          appointment: appointment,
+                          heroSuffix: "_${tt.weekday.index}")));
+                }
+              : null,
           child: Container(
             padding:
                 const EdgeInsets.symmetric(horizontal: defaultPagePadding),
@@ -444,14 +457,17 @@ class TimetableDailyView extends StatelessWidget {
   }
 
   /// removed/moved over an EMPTY block: the lecture a student scheduled
-  /// this slot around is gone - show the ghost of what was cancelled.
+  /// this slot around is gone - show the ghost of what was cancelled. A
+  /// moved delta surfaces on the day it VACATED (webcal byGhostDayKey), so
+  /// its vacated time (oldWhen), not the new one, names the empty block.
   IcsChange? _ghostFor(TimetableAppointment block) {
     for (final c in changes) {
       if (c.kind != IcsChangeKind.removed && c.kind != IcsChangeKind.moved) {
         continue;
       }
-      if (c.when.hour == block.begin.hour &&
-          c.when.minute == block.begin.minute) {
+      final vacated = c.kind == IcsChangeKind.moved ? c.oldWhen! : c.when;
+      if (vacated.hour == block.begin.hour &&
+          vacated.minute == block.begin.minute) {
         return c;
       }
     }

@@ -297,7 +297,9 @@ void main() {
           IcsChange(
               kind: IcsChangeKind.changed,
               title: "Algorithmen",
-              when: DateTime(2026, 11, 2, 10),
+              // relative to now: the band only shows changes of UPCOMING
+              // lectures, so a hardcoded date would silently expire
+              when: DateTime.now().add(const Duration(days: 1)),
               room: "10.30",
               oldRoom: "10.10"),
         ]),
@@ -361,7 +363,9 @@ void main() {
             IcsChange(
                 kind: IcsChangeKind.changed,
                 title: "Aenderung $i",
-                when: DateTime(2026, 11, 2, 10 + i),
+                // upcoming (see band contract above): keeps the band
+                // rendered above the today card whatever day this runs
+                when: DateTime.now().add(Duration(days: 1 + i)),
                 room: "10.3$i",
                 oldRoom: "10.1$i"),
         ]),

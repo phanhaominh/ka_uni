@@ -13,6 +13,7 @@ import 'package:kit_mobile/home/views/padded_title.dart';
 import 'package:kit_mobile/common_ui/mei_failure_banner.dart';
 import 'package:kit_mobile/exams/views/exams_page.dart';
 import 'package:kit_mobile/agenda/views/agenda_page.dart';
+import 'package:kit_mobile/navigation/logic/push_page.dart';
 import 'package:kit_mobile/agenda/logic/next_up.dart';
 import 'package:kit_mobile/timetable/logic/now_clock.dart';
 import 'package:kit_mobile/timetable/models/webcal.dart';
@@ -96,11 +97,12 @@ class _KITHomePageState extends State<KITHomePage> {
           actions: [
             CupertinoButton(
               padding: const EdgeInsets.symmetric(horizontal: 6),
-              onPressed: () {
-                Navigator.of(context).push(MaterialPageRoute(
-                    builder: (context) => const AgendaPage()));
-              },
-              child: Semantics(
+              onPressed: () => pushPageOnce(Navigator.of(context),
+                  routeName: AgendaPage.routeName,
+                  page: (_) => const AgendaPage()),
+              child: Tooltip(
+                message: L10n.t("agenda.title"),
+                child: Semantics(
                 button: true,
                 label: L10n.t("agenda.title"),
                 child: Badge(
@@ -110,15 +112,16 @@ class _KITHomePageState extends State<KITHomePage> {
                   child: const Icon(CupertinoIcons.calendar, size: 22),
                 ),
               ),
+              ),
             ),
             CupertinoButton(
               padding: const EdgeInsets.symmetric(horizontal: 6),
-              onPressed: () {
-                Navigator.of(context).push(MaterialPageRoute(
-                    builder: (context) =>
-                        const ExamsPage()));
-              },
-              child: Semantics(
+              onPressed: () => pushPageOnce(Navigator.of(context),
+                  routeName: ExamsPage.routeName,
+                  page: (_) => const ExamsPage()),
+              child: Tooltip(
+                message: L10n.t("exams.title"),
+                child: Semantics(
                 button: true,
                 label: L10n.t("exams.title"),
                 child: Badge(
@@ -130,6 +133,7 @@ class _KITHomePageState extends State<KITHomePage> {
                       CupertinoIcons.checkmark_seal,
                       size: 22),
                 ),
+              ),
               ),
             ),
             CupertinoButton(
@@ -186,11 +190,9 @@ class _KITHomePageState extends State<KITHomePage> {
                     CupertinoButton(
                         padding: const EdgeInsets.symmetric(
                             horizontal: pageGutter, vertical: spaceSm),
-                        onPressed: () {
-                          Navigator.of(context).push(MaterialPageRoute(
-                              builder: (BuildContext context) =>
-                                  TimetableEditPage()));
-                        },
+                        onPressed: () => pushPageOnce(Navigator.of(context),
+                            routeName: "/timetableEdit",
+                            page: (_) => TimetableEditPage()),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -228,7 +230,10 @@ class _KITHomePageState extends State<KITHomePage> {
                             }));
                           },
                           padding: EdgeInsets.all(10),
-                          child: Icon(CupertinoIcons.refresh),
+                          child: Tooltip(
+                            message: L10n.t("settings.reloadingModules"),
+                            child: Icon(CupertinoIcons.refresh),
+                          ),
                         )
                       ],
                     ),
@@ -242,10 +247,9 @@ class _KITHomePageState extends State<KITHomePage> {
                       title: L10n.t("settings.pinnedFiles"),
                       trailing: CupertinoButton(
                           child: Text(L10n.t("settings.viewAll")),
-                          onPressed: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (BuildContext context) =>
-                                      FilesCachePage()))),
+                          onPressed: () => pushPageOnce(Navigator.of(context),
+                              routeName: "/filesCache",
+                              page: (_) => FilesCachePage())),
                     ),
                     PinnedFilesListView(),
                     const SizedBox(height: spaceXl),
@@ -335,6 +339,10 @@ class _NextUpHomeCardState extends State<NextUpHomeCard>
 
   @override
   Widget build(BuildContext context) {
+    // listen for campus refreshes: pull-to-refresh rewrites the ICS cache,
+    // and the hero used to keep showing the pre-refresh lecture until the
+    // next app resume
+    context.watch<KITProvider>();
     return ValueListenableBuilder<int>(
       valueListenable: NowClock.minutesOfDay,
       builder: (context, _, __) {
@@ -345,8 +353,9 @@ class _NextUpHomeCardState extends State<NextUpHomeCard>
         if (up == null) return const SizedBox.shrink();
         return NextUpCard(
           up: up,
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (context) => const AgendaPage(scrollToToday: true))),
+          onTap: () => pushPageOnce(Navigator.of(context),
+              routeName: AgendaPage.routeName,
+              page: (_) => const AgendaPage(scrollToToday: true)),
         );
       },
     );

@@ -58,38 +58,51 @@ class _HierarchicTableViewState extends State<HierarchicTableView> {
       }
       seenGroup = seenGroup || isGroup;
 
-      children.add(GestureDetector(
-        onTap: () => _openModule(row),
-        child: Padding(
-          padding: EdgeInsets.only(
-              left: isGroup ? pageGutter : pageGutter + spaceXl,
-              top: isGroup ? spaceLg : spaceXs,
-              bottom: spaceSm,
-              right: pageGutter),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  row.title,
-                  maxLines: 3,
-                  style: isGroup
-                      ? theme.textTheme.titleMedium
-                      : theme.textTheme.bodyMedium,
-                ),
+      // rows are tap targets, but a bare GestureDetector announces nothing
+      // to screen readers: label with the same content the eyes get
+      children.add(Semantics(
+        button: true,
+        label: row.grade.isEmpty ? row.title : "${row.title}, ${row.grade}",
+        child: GestureDetector(
+          // opaque: taps in the padding around the texts must count too
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _openModule(row),
+          // non-group rows were ~36dp tall - below the 48dp touch target
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+              padding: EdgeInsets.only(
+                  left: isGroup ? pageGutter : pageGutter + spaceXl,
+                  top: isGroup ? spaceLg : spaceXs,
+                  bottom: spaceSm,
+                  right: pageGutter),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      row.title,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: isGroup
+                          ? theme.textTheme.titleMedium
+                          : theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                  // C12: truncate, don't blank - the old `length < 6`
+                  // gate silently hid any real grade string
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 120),
+                    child: Text(
+                      row.grade,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                    ),
+                  ),
+                ],
               ),
-              // C12: truncate, don't blank - the old `length < 6`
-              // gate silently hid any real grade string
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 120),
-                child: Text(
-                  row.grade,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ));

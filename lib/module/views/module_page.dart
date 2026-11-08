@@ -98,7 +98,7 @@ class _ModuleViewState extends State<ModuleView> {
                   children: [
                     SizedBox(
                       width: MediaQuery.of(context).size.width * 0.85,
-                      child: Text(module.title, style: theme.textTheme.headlineMedium, maxLines: 5,),
+                      child: Text(module.title, style: theme.textTheme.headlineMedium, maxLines: 5, overflow: TextOverflow.ellipsis,),
                     ),
                     // Icon(CupertinoIcons.star)
                   ],

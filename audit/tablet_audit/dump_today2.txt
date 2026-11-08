@@ -1,0 +1,29 @@
+10	info	338 69	Hi, &#10;HaoMinh	View
+12	TAP	631 69	Agenda	Button
+14	TAP	690 69	Exam Registration	Button
+16	TAP	759 69	Show profile	Button
+19	info	419 137	Could not update the timetable (KIT site changed?).	View
+20	info	50 201	Mon	View
+21	info	218 201	Today, November 2	View
+22	info	386 201	Mon	View
+25	TAP	40 594	Weekend :)	View
+26	TAP	400 594	Current time: 19:01	View
+27	TAP	400 286	09:45&#10;Engineering Mechanics I (Lecture) (V), Langhoff et al., MACH	View
+28	TAP	400 395	11:30&#10;Mechanical Design A (Lecture) (V), Grauberger	View
+29	TAP	400 486	13:00&#10;Lunch break	View
+30	TAP	760 594	Free · 1:45	View
+31	TAP	762 286	08:00&#10;Materials Science and Engineering I (Lecture) (V), Gibmeier,	View
+32	TAP	762 395	09:45&#10;Engineering Mechanics I (Lecture) (V), Langhoff et al., MACH	View
+33	TAP	762 613	13:00&#10;Lunch break	View
+34	TAP	400 1008	Edit timetable	Button
+35	info	215 1087	Current modules in WS 26/27	View
+37	info	131 1127	Last updated: 02.11.2026 18:58	View
+40	info	138 1182	Mechanical Design A	View
+41	info	405 1182	Basics of Manufacturing Technology	View
+42	info	666 1182	International Management - Practical insights	View
+44	TAP	178 1158	&#10;Settings	Button
+45	TAP	178 1158	Settings	Button
+46	TAP	400 1158	&#10;Dashboard	Button
+47	TAP	400 1158	Dashboard	Button
+48	TAP	621 1158	&#10;ILIAS	Button
+49	info	621 1158	ILIAS	ImageView

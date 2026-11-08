@@ -7,6 +7,7 @@ import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/module/models/module.dart';
+import 'package:kit_mobile/state_management/ilias/ilias_manager.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:kit_mobile/toasts/models/toasts_provider.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -100,10 +101,9 @@ class IliasPageView extends StatefulWidget {
 
   final KITModule module;
   final Future<String> PHPSESSID_Future;
-  final bool isFileView;
 
   const IliasPageView(this.module,
-      {super.key, required this.PHPSESSID_Future, this.isFileView = false});
+      {super.key, required this.PHPSESSID_Future});
 
   @override
   State<StatefulWidget> createState() {
@@ -134,6 +134,18 @@ class _IliasPageViewWState extends State<IliasPageView> {
   /// button queries the controller live instead.
   Future<bool?> canGoForwardFuture = Future.value(false);
 
+  /// Main-frame load progress (0..100); drives the hairline bar under
+  /// the control bar so a first load shows movement instead of a blank
+  /// flash until the page paints.
+  int _loadProgress = 0;
+
+  /// One-shot per SSO-wall episode: a session that died mid-browse
+  /// bounces the webview onto the login wall, and the wall re-fires
+  /// onUrlChange on every hop - recovery must run once, not loop.
+  /// Re-armed by any non-wall navigation (incl. the reload it causes),
+  /// released by a failed recovery so the next episode can retry.
+  bool _ssoWallLatched = false;
+
   @override
   void initState() {
     super.initState();
@@ -143,8 +155,23 @@ class _IliasPageViewWState extends State<IliasPageView> {
 
     _controller.setNavigationDelegate(NavigationDelegate(
         onUrlChange: _navigationDelegateOnUrlChange,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() => _loadProgress = progress);
+        },
+        onPageFinished: (_) {
+          if (!mounted) return;
+          setState(() => _loadProgress = 0);
+        },
         onNavigationRequest: (NavigationRequest req) {
           if (isIliasSendfileUrl(req.url)) {
+            // nothing to mirror without a usable ref_id: preventing the
+            // navigation there used to swallow the tap outright, so an
+            // unparseable sendfile link must load in the webview itself
+            if (sendfileFileName(req.url, title: widget.module.title) ==
+                null) {
+              return NavigationDecision.navigate;
+            }
             _saveAsFile(req.url);
             return NavigationDecision.prevent;
           }
@@ -159,11 +186,7 @@ class _IliasPageViewWState extends State<IliasPageView> {
       final settingsVM = Provider.of<SettingsProvider>(context, listen: false);
       _phpsessid = value;
 
-      if (widget.isFileView && widget.module.iliasLink != null) {
-        await _saveAsFile(widget.module.iliasLink!);
-      } else {
-        await _launchPage(settingsVM.defaultIliasPage.value);
-      }
+      await _launchPage(settingsVM.defaultIliasPage.value);
     });
   }
 
@@ -172,6 +195,19 @@ class _IliasPageViewWState extends State<IliasPageView> {
     setState(() {
       canGoForwardFuture = _controller.canGoForward();
     });
+
+    // mid-session dead cookie: ILIAS bounces the webview onto its / the
+    // KIT IdP's login wall. Recover exactly once per episode (the
+    // recovery reload itself re-enters the wall), and never while a
+    // re-auth is already in flight.
+    if (IliasManager.looksLikeLoginWall(urlChange.url ?? "")) {
+      if (!_ssoWallLatched && !_retrying) {
+        _ssoWallLatched = true;
+        _refreshSession();
+      }
+    } else {
+      _ssoWallLatched = false;
+    }
 
     if (kDebugMode) {
       print("Changed: ${urlChange.url}");
@@ -183,12 +219,6 @@ class _IliasPageViewWState extends State<IliasPageView> {
   static final Map<String, Future<void>> _downloadsInFlight = {};
 
   Future<String?> _saveAsFile(String url) {
-    final interceptable =
-        sendfileFileName(url, title: widget.module.title) != null;
-    if (!interceptable) {
-      // TODO: callback!
-      return Future.value();
-    }
     final inFlight = _downloadsInFlight[url];
     if (inFlight != null) return inFlight.then((_) => _pathFor(url));
     final future = _doSaveAsFile(url);
@@ -319,7 +349,97 @@ class _IliasPageViewWState extends State<IliasPageView> {
           ? "https://ilias.studium.kit.edu/ilias.php?baseClass=ildashboardgui&cmd=show"
           : "https://ilias.studium.kit.edu/ilias.php?baseClass=ilmembershipoverviewgui";
     }
-    _controller.loadRequest(Uri.parse(link));
+    // re-auth/refresh must land back on the page the user is looking
+    // at; only a webview that never loaded anything falls back to the
+    // configured entry page
+    final current = await _controller.currentUrl();
+    if (current != null && current.isNotEmpty) {
+      _controller.loadRequest(Uri.parse(current));
+    } else {
+      _controller.loadRequest(Uri.parse(link));
+    }
+  }
+
+  /// Re-authenticates from scratch and pushes the fresh cookie into the
+  /// webview engine via [_launchPage]; the strip's refresh chip and the
+  /// mid-session SSO-wall recovery share this path.
+  Future<String> _refreshSession() async {
+    final vm = Provider.of<KITProvider>(context, listen: false);
+    final toastsProvider =
+        Provider.of<ToastsProvider>(context, listen: false);
+    setState(() {
+      _phpsessid = "";
+      _retrying = true;
+    });
+
+    String newPHPSESSIONID = "";
+    try {
+      // same ceiling as the initial gate: a re-auth that hangs
+      // must end on the retry card, not a dead strip spinner
+      await vm.iliasManager
+          .authorize(refreshSession: true)
+          .timeout(_sessionTimeout);
+      newPHPSESSIONID =
+          await vm.iliasManager.getPHPSESSID().timeout(_sessionTimeout);
+    } on Object catch (_) {
+      // fall through to the empty-session auth-failed path
+    }
+
+    if (newPHPSESSIONID.isEmpty) {
+      // the webview is gone behind the auth-failed gate by now, so let a
+      // later wall re-trigger recovery once the user retries
+      _ssoWallLatched = false;
+      toastsProvider.showTextToast(L10n.t("ilias.refreshError"));
+    }
+
+    if (mounted) {
+      setState(() {
+        _phpsessid = newPHPSESSIONID;
+        _retrying = false;
+      });
+    }
+    if (newPHPSESSIONID.isNotEmpty && mounted) {
+      // the refresh gesture must act on the VISIBLE page: only
+      // _launchPage pushes the fresh PHPSESSID into the webview
+      // engine's cookie jar and reloads - without this the strip
+      // spinner ends and the stale-cookie page just sits there
+      await _launchPage(Provider.of<SettingsProvider>(context, listen: false)
+          .defaultIliasPage.value);
+    }
+    return newPHPSESSIONID;
+  }
+
+  /// Auth-failed gate retry. The gate fires after 20s but a legitimate
+  /// SSO chain can run for a minute+, and a forced full re-auth would
+  /// wipe the cookies of a chain that succeeded seconds after the
+  /// timeout - so join the in-flight chain first, and only re-auth from
+  /// scratch when it truly yields nothing.
+  Future<void> _retryFromGate() async {
+    setState(() => _retrying = true);
+    String session = "";
+    try {
+      // getPHPSESSID joins in-flight chains with internal bounds;
+      // deliberately NOT capped by _sessionTimeout - waiting the chain
+      // out is the whole point here
+      session = await Provider.of<KITProvider>(context, listen: false)
+          .iliasManager
+          .getPHPSESSID();
+    } on Object catch (_) {
+      // the bounded join swallows its own failures; fall through to the
+      // hard re-auth below
+    }
+    if (session.isEmpty) {
+      await _refreshSession();
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _phpsessid = session;
+      _retrying = false;
+    });
+    await _launchPage(
+        Provider.of<SettingsProvider>(context, listen: false)
+            .defaultIliasPage.value);
   }
 
   /// Back = webview history first; the page only pops once the webview
@@ -334,54 +454,11 @@ class _IliasPageViewWState extends State<IliasPageView> {
 
   @override
   Widget build(BuildContext context) {
-    final vm = Provider.of<KITProvider>(context);
-    final toastsProvider = Provider.of<ToastsProvider>(context);
     final theme = Theme.of(context);
 
     return FutureBuilder(
         future: _sessionFuture,
         builder: (context, snapshot) {
-          Future<String> refreshSession() async {
-            setState(() {
-              _phpsessid = "";
-              _retrying = true;
-            });
-
-            String newPHPSESSIONID = "";
-            try {
-              // same ceiling as the initial gate: a re-auth that hangs
-              // must end on the retry card, not a dead strip spinner
-              await vm.iliasManager
-                  .authorize(refreshSession: true)
-                  .timeout(_sessionTimeout);
-              newPHPSESSIONID = await vm.iliasManager
-                  .getPHPSESSID()
-                  .timeout(_sessionTimeout);
-            } on Object catch (_) {
-              // fall through to the empty-session auth-failed path
-            }
-
-            if (newPHPSESSIONID.isEmpty) {
-              toastsProvider.showTextToast(L10n.t("ilias.refreshError"));
-            }
-
-            if (mounted) {
-              setState(() {
-                _phpsessid = newPHPSESSIONID;
-                _retrying = false;
-              });
-            }
-            if (newPHPSESSIONID.isNotEmpty && mounted) {
-              // the refresh gesture must act on the VISIBLE page: only
-              // _launchPage pushes the fresh PHPSESSID into the webview
-              // engine's cookie jar and reloads - without this the strip
-              // spinner ends and the stale-cookie page just sits there
-              await _launchPage(Provider.of<SettingsProvider>(context,
-                      listen: false)
-                  .defaultIliasPage.value);
-            }
-            return newPHPSESSIONID;
-          }
 
           if (!snapshot.hasData || _phpsessid.isEmpty) {
             // loading vs auth-failed: an EMPTY resolution means the SSO
@@ -425,11 +502,9 @@ class _IliasPageViewWState extends State<IliasPageView> {
                       style: theme.textTheme.bodyMedium),
                   SizedBox(height: 8),
                   CupertinoButton(
-                    // refreshSession now loads the page itself once the
-                    // session is back (cookie jar + reload), so the gate
-                    // retry and the strip's refresh chip share exactly
-                    // one launch path
-                    onPressed: () => refreshSession(),
+                    // joins any still-running SSO chain before forcing
+                    // a fresh one - see _retryFromGate
+                    onPressed: () => _retryFromGate(),
                     child: Text(L10n.t("ilias.retry")),
                   ),
                 ],
@@ -448,37 +523,51 @@ class _IliasPageViewWState extends State<IliasPageView> {
           // of web content instead. (The chips stayed glass - the strip
           // is translucent over the page background, and nothing ever
           // scrolls behind it.)
-          return Scaffold(
+          // system back walks the webview history first (same rule as
+          // the strip chevron); the route only pops once the webview
+          // sits on its first entry. The loading/auth-failed gates
+          // above keep the default pop - back must never trap the user
+          // on a page that never loaded.
+          return PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop) _onBack();
+            },
+            child: Scaffold(
               body: Column(
-            children: [
-              _IliasControlBar(
-                showBack: Navigator.of(context).canPop(),
-                showForward: !widget.isFileView,
-                canGoForward: canGoForwardFuture,
-                onBack: _onBack,
-                onForward: () => _controller.goForward(),
-                onRefresh: refreshSession,
-              ),
-              Expanded(
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                        child: WebViewWidget(controller: _controller)),
-                    if (isBusy)
-                      Center(
-                        child: GlassContainer(
-                          useOwnLayer: true,
-                          child: Padding(
-                            padding: EdgeInsets.all(10),
-                            child: KITProgressIndicator(),
+                children: [
+                  _IliasControlBar(
+                    showBack: Navigator.of(context).canPop(),
+                    canGoForward: canGoForwardFuture,
+                    onBack: _onBack,
+                    onForward: () => _controller.goForward(),
+                    onRefresh: _refreshSession,
+                  ),
+                  if (_loadProgress > 0 && _loadProgress < 100)
+                    LinearProgressIndicator(
+                        value: _loadProgress / 100, minHeight: 2),
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                            child: WebViewWidget(controller: _controller)),
+                        if (isBusy)
+                          Center(
+                            child: GlassContainer(
+                              useOwnLayer: true,
+                              child: Padding(
+                                padding: EdgeInsets.all(10),
+                                child: KITProgressIndicator(),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                  ],
-                ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ));
+            ),
+          );
         });
   }
 }
@@ -515,7 +604,6 @@ Widget _glassChip(IconData icon, VoidCallback? onPressed, String tooltip) {
 /// then pop); forward follows the controller; refresh re-authorizes.
 class _IliasControlBar extends StatelessWidget {
   final bool showBack;
-  final bool showForward;
   final Future<bool?> canGoForward;
   final VoidCallback onBack;
   final VoidCallback onForward;
@@ -523,7 +611,6 @@ class _IliasControlBar extends StatelessWidget {
 
   const _IliasControlBar(
       {required this.showBack,
-      required this.showForward,
       required this.canGoForward,
       required this.onBack,
       required this.onForward,
@@ -542,16 +629,15 @@ class _IliasControlBar extends StatelessWidget {
             if (showBack)
               _glassChip(CupertinoIcons.chevron_left, onBack,
                   L10n.t("ilias.backTooltip")),
-            if (showForward)
-              FutureBuilder(
-                  future: canGoForward,
-                  builder: (context, snapshot) {
-                    final enabled = snapshot.hasData && snapshot.data!;
-                    return _glassChip(
-                        CupertinoIcons.chevron_right,
-                        enabled ? onForward : null,
-                        L10n.t("ilias.forwardTooltip"));
-                  }),
+            FutureBuilder(
+                future: canGoForward,
+                builder: (context, snapshot) {
+                  final enabled = snapshot.hasData && snapshot.data!;
+                  return _glassChip(
+                      CupertinoIcons.chevron_right,
+                      enabled ? onForward : null,
+                      L10n.t("ilias.forwardTooltip"));
+                }),
             const Spacer(),
             // the wordmark owns the strip's center: three glass glyphs
             // alone never said which service this browser belongs to

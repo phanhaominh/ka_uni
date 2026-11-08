@@ -356,8 +356,11 @@ class SignMeUpManager {
       final list = decoded is Map<String, dynamic>
           ? (decoded["procedures"] as List<dynamic>? ?? [])
           : decoded as List<dynamic>;
+      // an unnamed procedure renders as literal "?" in agenda rows, the
+      // mine card and the deadline notification - it is meaningless, drop it
       procedures = list
           .whereType<Map<String, dynamic>>()
+          .where((e) => (e["name"] as String?)?.isNotEmpty == true)
           .map((e) => SignMeUpProcedure.fromJson(e))
           .toList();
       procedures.sort((a, b) {
@@ -418,8 +421,10 @@ class SignMeUpManager {
       }
       final list =
           ((jsonDecode(reg.body) as Map)["registrations"] as List?) ?? const [];
+      // unnamed -> "?" in the mine card and deadline notifications; drop
       mine = list
           .whereType<Map<String, dynamic>>()
+          .where((e) => (e["name"] as String?)?.isNotEmpty == true)
           .map((e) => SignMeUpRegistration.fromJson(e))
           .toList();
       loadedMine = true;

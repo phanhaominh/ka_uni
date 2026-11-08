@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:kit_mobile/common_ui/alpha_badge.dart';
+import 'package:kit_mobile/common_ui/max_width_body.dart';
 import 'package:kit_mobile/credentials/data/credentials_provider.dart';
 import 'package:kit_mobile/credentials/models/auth_result.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
@@ -64,74 +65,78 @@ class LoginPageState extends State<LoginPage> {
             AnimatedOpacity(
                 opacity: !credsVM.loggingIn ? 1 : 0,
                 duration: Duration(milliseconds: 250),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    Column(
-                      children: [
-                        GestureDetector(
-                          onTap: !kDebugMode
-                              ? null
-                              : () async {
-                                  await credsVM.loadCredentials();
-                                },
-                          child: Text(L10n.t("settings.hello"),
-                              style: theme.textTheme.headlineLarge
-                                  ?.copyWith(fontWeight: FontWeight.bold)),
-                        ),
-                        Text(
-                          L10n.t("settings.welcomeKarlsruhe"),
-                          style: theme.textTheme.headlineSmall
-                              ?.copyWith(color: theme.colorScheme.primary),
-                        ),
-                        // Text("Wilkommen im KIT", style: theme.textTheme.headlineSmall?.copyWith(color: theme.primaryColor),),
-                      ],
-                    ),
-                    // (!credsVM.credentialsLoaded || credsVM.loggingIn) ? const KITProgressIndicator() :
-                    Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          child: CupertinoTextField(
-                            controller: _usernameInputController,
-                            placeholder: "Username (uxxxx)",
-                            enabled: (credsVM.credentialsLoaded &&
-                                !credsVM.loggingIn),
-                            autocorrect: false,
-                            style: theme.textTheme.bodyMedium,
-                            decoration: myCupertinoInputDecoration,
+                child: MaxWidthBody(
+                  // tablet: the credential inputs must not stretch to the
+                  // full 1260 dp; phones (<900 dp) are untouched
+                  maxWidth: 420,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Column(
+                        children: [
+                          GestureDetector(
+                            onTap: !kDebugMode
+                                ? null
+                                : () async {
+                                    await credsVM.loadCredentials();
+                                  },
+                            child: Text(L10n.t("settings.hello"),
+                                style: theme.textTheme.headlineLarge
+                                    ?.copyWith(fontWeight: FontWeight.bold)),
                           ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          child: CupertinoTextField(
-                            controller: _passwordInputController,
-                            // onChanged: (val) => _passwordInputController.text,
-                            placeholder: L10n.t("settings.password"),
-                            enabled: (credsVM.credentialsLoaded &&
-                                !credsVM.loggingIn),
-                            keyboardType: TextInputType.visiblePassword,
-                            obscureText: true,
-                            style: theme.textTheme.bodyMedium,
-                            decoration: myCupertinoInputDecoration,
+                          Text(
+                            L10n.t("settings.welcomeKarlsruhe"),
+                            style: theme.textTheme.headlineSmall
+                                ?.copyWith(color: theme.colorScheme.primary),
                           ),
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            CupertinoButton(
-                                child: Icon(CupertinoIcons.info),
-                                onPressed: () => Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                        builder: (context) => InfoPage()))),
-                            CupertinoButton(
-                                child: Text(L10n.t("settings.login")),
-                                onPressed: () => _submitLogin(credsVM, vm))
-                          ],
-                        )
-                      ],
-                    )
-                  ],
+                        ],
+                      ),
+                      Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            child: CupertinoTextField(
+                              controller: _usernameInputController,
+                              placeholder: L10n.t("settings.usernamePlaceholder"),
+                              enabled:
+                                  (credsVM.credentialsLoaded &&
+                                      !credsVM.loggingIn),
+                              autocorrect: false,
+                              style: theme.textTheme.bodyMedium,
+                              decoration: myCupertinoInputDecoration,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            child: CupertinoTextField(
+                              controller: _passwordInputController,
+                              placeholder: L10n.t("settings.password"),
+                              enabled:
+                                  (credsVM.credentialsLoaded &&
+                                      !credsVM.loggingIn),
+                              keyboardType: TextInputType.visiblePassword,
+                              obscureText: true,
+                              style: theme.textTheme.bodyMedium,
+                              decoration: myCupertinoInputDecoration,
+                            ),
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              CupertinoButton(
+                                  child: Icon(CupertinoIcons.info),
+                                  onPressed: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                          builder: (context) => InfoPage()))),
+                              CupertinoButton(
+                                  child: Text(L10n.t("settings.login")),
+                                  onPressed: () => _submitLogin(credsVM, vm))
+                            ],
+                          )
+                        ],
+                      )
+                    ],
+                  ),
                 )),
             AnimatedPositioned(
                 top: _awaitingAuthentication

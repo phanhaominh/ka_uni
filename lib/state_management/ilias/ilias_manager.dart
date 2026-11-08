@@ -137,11 +137,7 @@ class IliasManager extends KITLoginManager {
     final url = asObject is http.BaseResponseWithUrl
         ? asObject.url.toString()
         : (response.request?.url.toString() ?? "");
-    if (url.contains("login.php") ||
-        url.contains("cmd=force_login") ||
-        url.contains("SingleSignOn") ||
-        url.contains("sso.kit.edu") ||
-        url.contains("oauth2/authorize")) {
+    if (looksLikeLoginWall(url)) {
       return true;
     }
     // marker hunt on HTML only: PDF downloads run through the same
@@ -151,6 +147,17 @@ class IliasManager extends KITLoginManager {
       return false;
     }
     return body().contains("Lokale ILIAS-Anmeldung");
+  }
+
+  /// Login-wall URL signatures, shared by the HTTP-level check in
+  /// [_looksLoggedOut] and the webview's mid-session SSO-wall recovery
+  /// (ilias_page_view): the two detectors must never drift apart.
+  static bool looksLikeLoginWall(String url) {
+    return url.contains("login.php") ||
+        url.contains("cmd=force_login") ||
+        url.contains("SingleSignOn") ||
+        url.contains("sso.kit.edu") ||
+        url.contains("oauth2/authorize");
   }
 
   /// Re-runs SSO when the ILIAS session died, then retries once; if the

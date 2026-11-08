@@ -72,7 +72,11 @@ class RelevantModulesView extends StatelessWidget {
           )
         else
           SizedBox(
-            height: 300,
+            // large font scales grow the 3-line tile texts; a fixed 300
+            // produced overflow stripes - grow the strip with the text
+            // scale (effective factor via scale(100), capped at 1.6x)
+            height:
+                300 * (MediaQuery.textScalerOf(context).scale(100) / 100).clamp(1.0, 1.6),
             child: GridView.count(
               crossAxisCount: 2,
               // GridView computes mainAxisExtent = crossAxisExtent / ratio,

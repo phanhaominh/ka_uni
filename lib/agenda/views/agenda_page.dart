@@ -22,6 +22,7 @@ import '../../signmeup/signmeup_manager.dart';
 import '../../signmeup/signmeup_mine_card.dart';
 import '../../state_management/kit_provider.dart';
 import '../../timetable/models/webcal.dart';
+import '../../navigation/logic/push_page.dart';
 import '../../timetable/logic/ics_export_action.dart';
 
 /// Merged agenda: ICS "CHANGED" band + today/tomorrow lectures + ILIAS
@@ -175,6 +176,13 @@ class _AgendaPageState extends State<AgendaPage> {
   Future<void> _refreshOnce() async {
     final vm = context.read<KITProvider>();
     final now = DateTime.now();
+    // the stale footer tells the user to PULL - honoring that means the
+    // feed+exams re-fetch here, not just a cache re-read (ILIAS fetches
+    // live below); failures fall through to the unchanged staleness stamp
+    try {
+      await vm.campusManager.fetchTimetable();
+      await vm.campusManager.fetchExams();
+    } on Object catch (_) {}
 
     // local data first: the agenda must never sit on a spinner because of
     // the network round-trips below
@@ -408,7 +416,15 @@ class _AgendaPageState extends State<AgendaPage> {
                 !vm.campusManager.examsLoaded &&
                 !vm.campusManager.examsSurfaceBroken)
               _pendingCard(context, L10n.t("agenda.examsLoading")),
-            if (smuRows.isNotEmpty) _signMeUpSection(context, smuRows),
+            if (smuRows.isNotEmpty)
+              _signMeUpSection(context, smuRows)
+            else if (!vm.signMeUpManager.loadedMine &&
+                vm.signMeUpManager.procedures.isNotEmpty)
+              // procedures are anonymous data; without a PROVEN "mine" fetch
+              // every open one would scream "act now" at a student who long
+              // registered - say it is not current instead of lying
+              _pendingCard(
+                  context, L10n.t("agenda.signMeUpNotCurrent", [])),
             // my registrations + outcomes directly below the open
             // procedures: offers and results belong together
             if (myRegs.isNotEmpty)
@@ -450,6 +466,14 @@ class _AgendaPageState extends State<AgendaPage> {
     );
   }
 
+  /// Stored deltas are capped newest-50 sorted oldest-first; the band may
+  /// only show ones that still concern upcoming lectures, freshest first.
+  List<IcsChange> _freshChanges() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return _load.changes.where((c) => !c.when.isBefore(today)).toList().reversed.toList();
+  }
+
   Widget _changedBand(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Card(
@@ -462,21 +486,24 @@ class _AgendaPageState extends State<AgendaPage> {
             Row(children: [
               Icon(Icons.trending_up, color: scheme.onTertiaryContainer),
               const SizedBox(width: 8),
-              Text(L10n.t("agenda.timetableChangedN", [_load.changes.length]),
+              Text(L10n.t("agenda.timetableChangedN", [_freshChanges().length]),
                   style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: scheme.onTertiaryContainer)),
             ]),
             const SizedBox(height: 6),
-            for (final c in _load.changes.take(6))
+            // stored deltas are sorted oldest-first with a 50-entry cap:
+            // show the NEWEST that still concern upcoming lectures, or the
+            // freshest KIT edit hides behind months of stale ones
+            for (final c in _freshChanges().take(6))
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 1),
                 child: Text(c.describe(),
                     style: TextStyle(
                         fontSize: 13, color: scheme.onTertiaryContainer)),
               ),
-            if (_load.changes.length > 6)
-              Text(L10n.t("agenda.moreChanges", [_load.changes.length - 6]),
+            if (_freshChanges().length > 6)
+              Text(L10n.t("agenda.moreChanges", [_freshChanges().length - 6]),
                   style: TextStyle(
                       fontSize: 12,
                       fontStyle: FontStyle.italic,
@@ -485,7 +512,6 @@ class _AgendaPageState extends State<AgendaPage> {
               alignment: Alignment.centerRight,
               child: Semantics(
                 button: true,
-                hint: "agenda-dismiss-changes",
                 child: TextButton(
                     onPressed: _dismissChanges,
                     child: Text(L10n.t("agenda.dismiss"))),
@@ -893,8 +919,9 @@ class _AgendaPageState extends State<AgendaPage> {
               // Filled CTA on the danger card: bare text hid the one
               // action that still prevents a failed attempt
               child: FilledButton(
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => const ExamsPage())),
+                onPressed: () => pushPageOnce(Navigator.of(context),
+                    routeName: ExamsPage.routeName,
+                    page: (_) => const ExamsPage()),
                 // label now sits on the button's own surface, so the old
                 // primary-green-on-red-container contrast problem is gone
                 child: Text(L10n.t("agenda.toRegistration")),
@@ -914,6 +941,9 @@ class _AgendaPageState extends State<AgendaPage> {
   /// SignMeUp procedures needing action now or opening within 3 days.
   List<({SignMeUpProcedure p, bool open})> _signMeUpRows(
       KITProvider vm, DateTime now) {
+    // without a PROVEN "mine" fetch this process cannot tell "not yet
+    // registered" from "fetch failed" - stay silent, never shout
+    if (!vm.signMeUpManager.loadedMine) return const [];
     final rows = <({SignMeUpProcedure p, bool open})>[];
     final registered = vm.signMeUpManager.registeredProcedureIds;
     for (final p in vm.signMeUpManager.procedures) {

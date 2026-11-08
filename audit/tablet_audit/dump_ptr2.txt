@@ -1,0 +1,15 @@
+9	TAP	37 69	Back&#10;Back	Button
+10	info	146 69	Agenda	View
+11	TAP	768 69	&#10;Export timetable…	Button
+12	info	400 192	Refresh	View
+16	info	400 180	Today&#10;Loading timetable…	View
+18	info	400 296	Tomorrow&#10;Loading timetable…	View
+20	info	400 412	ILIAS&#10;Loading messages…	View
+22	info	400 581	Exam registration open&#10;IT and Data Science · until 22.11.2026&#10;	View
+23	TAP	695 639	Register	Button
+25	info	400 845	SignMeUp registrations&#10;Environmental Justice: How Power Relations 	View
+26	TAP	653 945	Open in SignMeUp	Button
+28	info	400 1107	My registrations	View
+29	TAP	400 1082	MKL A/MD A Workshop&#10;pending	View
+30	TAP	400 1142	EMI WS 2026-2027 Lab Courses&#10;pending	View
+31	TAP	400 1196	Intercultural Communications: USA and Germany&#10;pending&#10;rank 3	View

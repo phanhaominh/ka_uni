@@ -418,10 +418,12 @@ void main() {
           oldRoom: 'HS6',
           oldWhen: DateTime(2026, 11, 2, 16)),
     ];
-    final byDay = changes.byDayKey();
-    expect(byDay['2026-11-02'], hasLength(4));
-    // moved keys on WHEN, not on the vanished oldWhen slot
-    expect(byDay['2026-11-03'], hasLength(1));
+    final ghost = changes.byGhostDayKey();
+    // moved ghosts land on the day they VACATED (oldWhen), not on the new
+    // day where the lecture itself already fills the block
+    expect(ghost['2026-11-02'], hasLength(5));
+    expect(ghost['2026-11-02']!.last.title, 'C');
+    expect(ghost['2026-11-03'], isNull);
     final blocks = changes.blockKeys(DateTime(2026, 11, 2, 23, 59));
     expect(blocks.keys, {8 * 60}); // room-unchanged "A2" excluded
     expect(blocks[8 * 60]!.room, 'HS3'); // latest delta of the block wins

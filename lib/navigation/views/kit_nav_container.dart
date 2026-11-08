@@ -6,6 +6,7 @@ import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:kit_mobile/extensions/theme_data_extension.dart';
 import 'package:kit_mobile/home/views/home_page.dart';
 import 'package:kit_mobile/ilias/views/ilias_page_view.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/settings/views/settings_page.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:provider/provider.dart';
@@ -63,57 +64,67 @@ class _KITNavContainerState extends State<KITNavContainer> {
       bottomSheet: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 50),
-          child: ClipRRect(
-            borderRadius: bottomNavigationBorderRadius,
-            child: BackdropFilter(
-              // sigma 14 was too weak under the pill: menu text behind the
-              // dock stayed readable and read as ghosting
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: theme.isLightMode
-                      ? Colors.white.withValues(alpha: 0.8)
-                      : Colors.black.withValues(alpha: 0.55),
-                  border: Border.all(
-                    color: Colors.grey.withValues(alpha: 0.15),
+          // wide-screen cap: at 1280 dp the pill stretched to ~1180 dp and
+          // the three icons floated apart; a phone (<480 dp inner) is
+          // untouched
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: ClipRRect(
+                borderRadius: bottomNavigationBorderRadius,
+                child: BackdropFilter(
+                  // sigma 14 was too weak under the pill: menu text behind
+                  // the dock stayed readable and read as ghosting
+                  filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: theme.isLightMode
+                          ? Colors.white.withValues(alpha: 0.8)
+                          : Colors.black.withValues(alpha: 0.55),
+                      border: Border.all(
+                        color: Colors.grey.withValues(alpha: 0.15),
+                      ),
+                      borderRadius: bottomNavigationBorderRadius,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        customBottomNavBarButton(0, CupertinoIcons.settings,
+                            title: L10n.t("nav.settings")),
+                        customBottomNavBarButton(1, CupertinoIcons.home,
+                            title: L10n.t("nav.dashboard")),
+                        customBottomNavBarButton(2, null,
+                            // the real ILIAS brand tile: a generic glyph
+                            // (first a paperclip) never read as "ILIAS"
+                            assetIcon: "assets/images/ilias_icon.png",
+                            title: "ILIAS",
+                            customAction: () {
+                              // one-page rule: ILIAS is a heavy SSO page
+                              // holding its own WebView - burst clip taps
+                              // must not stack copies of it; a tap while one
+                              // is already on the stack is a no-op,
+                              // mirroring the deep-link router
+                              final open = _iliasRoute;
+                              if (open != null && open.navigator != null) {
+                                return;
+                              }
+                              final route = MaterialPageRoute(
+                                  settings: RouteSettings(
+                                      name: IliasPageView.routeName),
+                                  builder: (BuildContext context) =>
+                                      IliasPageView(KITModule(),
+                                          PHPSESSID_Future: vm.iliasManager
+                                              .getPHPSESSID()));
+                              Navigator.of(context).push(route);
+                              _iliasRoute = route;
+                              // popping frees the slot: the next tap pushes fresh
+                              route.popped.whenComplete(() {
+                                if (_iliasRoute == route) _iliasRoute = null;
+                              });
+                            })
+                      ],
+                    ),
                   ),
-                  borderRadius: bottomNavigationBorderRadius,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    customBottomNavBarButton(0, CupertinoIcons.settings,
-                        title: "Settings"),
-                    customBottomNavBarButton(1, CupertinoIcons.home,
-                        title: "Dashboard"),
-                    customBottomNavBarButton(
-                        2, null,
-                        // the real ILIAS brand tile: a generic glyph
-                        // (first a paperclip) never read as "ILIAS"
-                        assetIcon: "assets/images/ilias_icon.png",
-                        title: "ILIAS",
-                        customAction: () {
-                          // one-page rule: ILIAS is a heavy SSO page holding
-                          // its own WebView - burst clip taps must not stack
-                          // copies of it; a tap while one is already on the
-                          // stack is a no-op, mirroring the deep-link router
-                          final open = _iliasRoute;
-                          if (open != null && open.navigator != null) return;
-                          final route = MaterialPageRoute(
-                              settings: RouteSettings(
-                                  name: IliasPageView.routeName),
-                              builder: (BuildContext context) => IliasPageView(
-                                  KITModule(),
-                                  PHPSESSID_Future:
-                                      vm.iliasManager.getPHPSESSID()));
-                          Navigator.of(context).push(route);
-                          _iliasRoute = route;
-                          // popping frees the slot: the next tap pushes fresh
-                          route.popped.whenComplete(() {
-                            if (_iliasRoute == route) _iliasRoute = null;
-                          });
-                        })
-                  ],
                 ),
               ),
             ),
@@ -150,6 +161,8 @@ class _KITNavContainerState extends State<KITNavContainer> {
         child: Semantics(
           button: true,
           label: title,
+          // TalkBack: announce which tab is active, not just that there is one
+          selected: targetIdx == _selectedPage,
           child: assetIcon.isNotEmpty
               // brand tiles keep their own colors: the grey "unselected"
               // treatment only applies to template glyphs

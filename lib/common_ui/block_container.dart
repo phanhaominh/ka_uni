@@ -27,31 +27,38 @@ class BlockContainer extends StatelessWidget {
     final theme = Theme.of(context);
 
     if (settingsVM.liquidAssEverywhere.value) {
-      return Padding(
-        padding: padding ?? const EdgeInsets.all(cardGutter),
-        child: GlassContainer(
-          child: Padding(
-            padding: innerPadding ??
-                const EdgeInsets.only(top: 10, bottom: 10, left: 15, right: 15),
-            child: child,
+      return Opacity(
+        // the param was dead until the home favorite-star chip started
+        // requesting 0.8
+        opacity: opacity,
+        child: Padding(
+          padding: padding ?? const EdgeInsets.all(cardGutter),
+          child: GlassContainer(
+            child: Padding(
+              padding: innerPadding ??
+                  const EdgeInsets.only(top: 10, bottom: 10, left: 15, right: 15),
+              child: child,
+            ),
           ),
         ),
       );
     }
 
-    return Padding(
-      padding: padding ?? const EdgeInsets.all(cardGutter),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.all(appBorderRadius),
-          color: backgroundColor ?? theme.cardColor,
-          boxShadow: withShadow ? [
-            BoxShadow(blurRadius: 5, color: Colors.black12)
-          ] : []
+    return Opacity(
+      opacity: opacity,
+      child: Padding(
+        padding: padding ?? const EdgeInsets.all(cardGutter),
+        child: Container(
+          decoration: BoxDecoration(
+              borderRadius: BorderRadius.all(appBorderRadius),
+              color: backgroundColor ?? theme.cardColor,
+              boxShadow: withShadow
+                  ? [BoxShadow(blurRadius: 5, color: Colors.black12)]
+                  : []),
+          padding: innerPadding ??
+              const EdgeInsets.only(top: 10, bottom: 10, left: 15, right: 15),
+          child: child,
         ),
-        padding: innerPadding ??
-            const EdgeInsets.only(top: 10, bottom: 10, left: 15, right: 15),
-        child: child,
       ),
     );
   }

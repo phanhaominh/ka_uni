@@ -15,18 +15,21 @@ class MeiFailureBanner extends StatelessWidget {
     final cm = vm.campusManager;
     String? text;
     Color? color;
+    // the -600/-700/-800 shades sit at ~3:1 on the dark scaffold; the
+    // same hues at -300/-400 stay legible on both brightnesses
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     if (cm.botChallengeAlgorithmChanged) {
       text = L10n.t("notifs.bannerBotProtection");
-      color = Colors.red.shade700;
+      color = isDark ? Colors.red.shade400 : Colors.red.shade700;
     } else if (cm.examsSurfaceBroken && cm.timetableSurfaceBroken) {
       text = L10n.t("notifs.bannerBoth");
-      color = Colors.red.shade600;
+      color = isDark ? Colors.red.shade400 : Colors.red.shade600;
     } else if (cm.examsSurfaceBroken) {
       text = L10n.t("notifs.bannerExams");
-      color = Colors.orange.shade800;
+      color = isDark ? Colors.orange.shade300 : Colors.orange.shade800;
     } else if (cm.timetableSurfaceBroken) {
       text = L10n.t("notifs.bannerTimetable");
-      color = Colors.orange.shade800;
+      color = isDark ? Colors.orange.shade300 : Colors.orange.shade800;
     } else {
       text = null;
     }

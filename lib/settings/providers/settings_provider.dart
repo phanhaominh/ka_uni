@@ -16,6 +16,10 @@ const languageKey = L10n.languagePrefKey;
 const themeModeKey = "PREF_themeMode";
 
 class SettingsProvider extends ChangeNotifier {
+  /// Theme mode read synchronously from prefs in main() BEFORE runApp;
+  /// seeds the [theme] setting so the first frame is already correct
+  /// (restore-after-first-frame used to flash light→dark every launch).
+  static String seedThemeMode = "system";
   static SettingsProvider? _instance;
 
   final BuildContext context;
@@ -59,9 +63,13 @@ class SettingsProvider extends ChangeNotifier {
   );
 
   /// App theme; "system" follows the device light/dark setting.
-  MultipleChoiceSetting<String> theme = MultipleChoiceSetting(
+  /// Seeded synchronously in main() from prefs (see [seedThemeMode]) so the
+  /// FIRST MaterialApp frame already uses the stored mode instead of
+  /// flashing the default before the async [prepare] restores it.
+  MultipleChoiceSetting<String> theme = MultipleChoiceSetting<String>(
     valueKey: themeModeKey,
-    choices: ["system", "light", "dark"],
+    choices: const ["system", "light", "dark"],
+    defaultValue: seedThemeMode,
     notifyCallback: () => _instance?.notifyListeners(),
   );
 

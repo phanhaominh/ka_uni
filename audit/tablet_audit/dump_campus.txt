@@ -1,0 +1,6 @@
+6	info	399 439	vqvault@gmail.com	TextView
+7	info	399 502	Terms of Service	TextView
+10	TAP	399 606	Google Play gives you access to millions of apps to use or install. Li	TextView
+11	TAP	399 720	By using Google Play, you agree to the Google Play Terms of Service.	TextView
+13	TAP	502 808	Decline	Button
+14	TAP	616 808	Accept	Button

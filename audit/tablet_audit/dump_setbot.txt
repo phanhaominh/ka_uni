@@ -1,0 +1,23 @@
+9	info	76 69	Settings	View
+12	info	87 151	Language	View
+13	TAP	455 151	System	Button
+14	info	96 215	Appearance	View
+15	TAP	464 215	System	Button
+16	info	65 306	ILIAS	View
+17	info	89 373	Start page	View
+18	TAP	458 373	Dashboard	Button
+19	info	133 464	Own timetable (ICS)	View
+20	info	167 523	No own calendar imported	View
+22	TAP	131 632	Save link	Button
+23	TAP	294 632	Import file…	Button
+24	TAP	689 632	Remove	Button
+25	TAP	236 706	Export timetable (all sources)…	Button
+26	info	87 813	File cache	View
+27	TAP	400 880	Size&#10;0.0 MB&#10;Manage	View
+28	TAP	400 984	Log out	Button
+30	TAP	178 1158	&#10;Settings	Button
+31	TAP	178 1158	Settings	Button
+32	TAP	400 1158	&#10;Dashboard	Button
+33	TAP	400 1158	Dashboard	Button
+34	TAP	621 1158	&#10;ILIAS	Button
+35	info	621 1158	ILIAS	ImageView

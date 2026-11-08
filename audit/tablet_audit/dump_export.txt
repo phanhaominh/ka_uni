@@ -1,0 +1,15 @@
+9	TAP	37 69	Back&#10;Back	Button
+10	info	146 69	Agenda	View
+11	TAP	768 69	&#10;Export timetable…	Button
+15	info	400 180	Today&#10;Loading timetable…	View
+17	info	400 296	Tomorrow&#10;Loading timetable…	View
+19	info	400 548	ILIAS&#10;2 new	View
+20	TAP	400 434	lecture notes_MSE_I_Chapter VII 02112026.pdf	Button
+21	TAP	400 498	lecture notes_MSE_I_Chapter VI 02122026.pdf	Button
+22	TAP	400 562	lecture notes_MSE_I_Chapter V 02112026.pdf	Button
+23	TAP	400 626	lecture notes_MSE_I_Chapter VIII 02112026.pdf	Button
+24	TAP	400 690	lecture notes_MSE_I_Chapter IV 02112026.pdf	Button
+26	info	400 854	Exam registration open&#10;IT and Data Science · until 22.11.2026&#10;	View
+27	TAP	695 912	Register	Button
+29	info	400 1090	SignMeUp registrations&#10;Environmental Justice: How Power Relations 	View
+30	TAP	653 1201	Open in SignMeUp	Button

@@ -16,6 +16,7 @@ import 'package:kit_mobile/toasts/models/toasts_provider.dart';
 import 'package:kit_mobile/toasts/views/toasts_overlay.dart';
 import 'package:kit_mobile/tutorials/data/tutorial_manager.dart';
 import 'package:liquid_glass_widgets/liquid_glass_setup.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 
 import 'constants/view_constants.dart';
@@ -31,6 +32,17 @@ void main() async {
   L10n.setSystemLanguage(
       PlatformDispatcher.instance.locale.languageCode == "en" ? "en" : "de");
   await L10n.reload();
+  // mirror the language preload for the theme: without this the FIRST
+  // MaterialApp frame renders ThemeMode.system and a stored "dark" flips
+  // light->OLED-black one frame later, visibly, every single launch
+  try {
+    final stored =
+        (await SharedPreferences.getInstance()).getString(themeModeKey);
+    if (stored != null &&
+        (stored == "light" || stored == "dark" || stored == "system")) {
+      SettingsProvider.seedThemeMode = stored;
+    }
+  } on Object catch (_) {}
   await LiquidGlassWidgets.initialize();
   // notifications/WorkManager are optional: a PlatformException here (custom
   // ROM, denied alarm permission, misbehaving provider) used to abort main()

@@ -1,0 +1,33 @@
+10	info	338 69	KA&#10;.Uni	View
+12	TAP	631 69	Agenda	Button
+14	TAP	690 69	Exam Registration	Button
+16	TAP	759 69	Show profile	Button
+21	info	99 146	Pinned files	View
+22	TAP	736 146	View all	Button
+23	info	400 194	No files found.	View
+24	info	101 258	My modules	View
+25	TAP	400 309	Orientation Exam	View
+26	TAP	400 363	Advanced Mathematics I	View
+27	TAP	400 407	Engineering Mechanics I	View
+28	TAP	400 462	Bachelor's Thesis	View
+29	TAP	400 516	Bachelor's Thesis	View
+30	TAP	400 560	Presentation	View
+31	TAP	400 615	Internship in Industry	View
+32	TAP	400 669	Internship in Industry	View
+33	TAP	400 724	Advanced Mathematics	View
+34	TAP	400 778	Advanced Mathematics I Prerequisite	View
+35	TAP	400 822	Advanced Mathematics I	View
+36	TAP	400 866	Advanced Mathematics II Prerequisite	View
+37	TAP	400 910	Advanced Mathematics II	View
+38	TAP	400 954	Advanced Mathematics III Prerequisite	View
+39	TAP	400 998	Advanced Mathematics III	View
+40	TAP	400 1053	Electrical Engineering and Mechatronics	View
+41	TAP	400 1107	Tutorial Basics of Mechatronics	View
+42	TAP	400 1151	Basics of Mechatronics	View
+43	TAP	400 1194	Basics of Electrical Engineering	View
+45	TAP	178 1158	&#10;Settings	Button
+46	TAP	178 1158	Settings	Button
+47	TAP	400 1158	&#10;Dashboard	Button
+48	TAP	400 1158	Dashboard	Button
+49	TAP	621 1158	&#10;ILIAS	Button
+50	info	621 1158	ILIAS	ImageView

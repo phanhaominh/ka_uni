@@ -8,6 +8,7 @@ import 'package:kit_mobile/parsing/models/hierarchic_table_row.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../module/views/module_page.dart';
 import '../../utils/string_prettifiers.dart';
 
@@ -30,20 +31,37 @@ class RelevantModuleView extends StatelessWidget {
                 Padding(
                   // clear the favorite-star bubble in the top-right corner
                   padding: const EdgeInsets.only(right: 28),
-                  child: Text(sanitizeModuleTitle(module.title), maxLines: 3, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),),
+                  child: Text(
+                    sanitizeModuleTitle(module.title),
+                    maxLines: 3,
+                    // long titles end in "…" instead of raw clipped pixels
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
                 ),
 
 
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        child: Icon(CupertinoIcons.info_circle),
-                        onPressed: () async {
-                          final moduleToShow = _getModuleToShow(vm);
-                          Navigator.of(context).push(MaterialPageRoute(builder: (BuildContext context) => ModuleView(module: moduleToShow)));
-                        }
+                    Tooltip(
+                      // icon-only affordance: without a label TalkBack
+                      // announces "button" and nothing else
+                      message: L10n.t("module.infoButton"),
+                      child: Semantics(
+                        button: true,
+                        label: L10n.t("module.infoButton"),
+                        child: CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            child: Icon(CupertinoIcons.info_circle),
+                            onPressed: () async {
+                              final moduleToShow = _getModuleToShow(vm);
+                              Navigator.of(context).push(MaterialPageRoute(
+                                  builder: (BuildContext context) =>
+                                      ModuleView(module: moduleToShow)));
+                            }),
+                      ),
                     ),
 
                     // feed-admitted modules may legitimately have no

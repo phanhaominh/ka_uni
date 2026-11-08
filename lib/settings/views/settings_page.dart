@@ -6,6 +6,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
+import 'package:kit_mobile/common_ui/max_width_body.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:kit_mobile/local_files_storage/files_manager.dart';
@@ -34,6 +35,10 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   bool _loggingOut = false;
+  /// lets the cache-size row re-walk after the cache manager pops:
+  /// deletions there otherwise left a stale "12.3 MB" on screen
+  final GlobalKey<_CacheSizeTextState> _cacheSizeKey =
+      GlobalKey<_CacheSizeTextState>();
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +58,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   .push(MaterialPageRoute(builder: (context) => InfoPage())))
         ],
       ),
-      body: SingleChildScrollView(
+      body: MaxWidthBody(
+        child: SingleChildScrollView(
         child: Container(
           // extra bottom room: the floating dock pill overlays the scroll
           // view, and the last rows (Cache/Log out) must reach above it
@@ -154,11 +160,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 // the whole card opens the cache manager: before, only the
                 // small "Manage" label responded; it stays as the visual
                 // affordance for the same action
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (BuildContext context) => FilesCachePage())),
-                  child: ConstrainedBox(
+                child: Semantics(
+                  button: true,
+                  label: L10n.t("settings.sectionFileCache"),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () async {
+                      await Navigator.of(context).push(MaterialPageRoute(
+                          builder: (BuildContext context) =>
+                              FilesCachePage()));
+                      _cacheSizeKey.currentState?.refresh();
+                    },
+                    child: ConstrainedBox(
                     // >= 48 dp tap target
                     constraints: const BoxConstraints(minHeight: 48),
                     child: Column(
@@ -166,7 +179,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       children: [
                         SettingRow(
                           title: L10n.t("settings.cacheSize"),
-                          trailing: const _CacheSizeText(),
+                          trailing: _CacheSizeText(key: _cacheSizeKey),
                         ),
                         Row(
                           mainAxisSize: MainAxisSize.min,
@@ -186,6 +199,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ],
                     ),
                   ),
+                ),
                 ),
               ),
 
@@ -287,6 +301,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
       ),
+      ),
     );
   }
 
@@ -364,7 +379,13 @@ class _OwnIcsSectionState extends State<_OwnIcsSection> {
     setState(() => _busy = true);
     String? err;
     try {
-      if (!clear) err = await op();
+      if (clear) {
+        // the button used to run a no-op closure here: the import lived on
+        // in prefs and stayed merged across restarts behind a success toast
+        await cm.clearPersonalIcs();
+      } else {
+        err = await op();
+      }
     } catch (_) {
       // A dead link or a pick cancelled mid-flight used to leave _busy
       // true forever, silently disabling all three buttons.
@@ -462,14 +483,15 @@ class _OwnIcsSectionState extends State<_OwnIcsSection> {
 /// on every unrelated rebuild (any setting toggle notifying the providers
 /// below) and each recreation is a recursive directory walk.
 class _CacheSizeText extends StatefulWidget {
-  const _CacheSizeText();
+  const _CacheSizeText({super.key});
 
   @override
   State<_CacheSizeText> createState() => _CacheSizeTextState();
 }
 
 class _CacheSizeTextState extends State<_CacheSizeText> {
-  late final Future<int> _sizeFuture;
+  // not `late final`: refresh() swaps it after the cache page pops
+  late Future<int> _sizeFuture;
 
   @override
   void initState() {
@@ -478,6 +500,14 @@ class _CacheSizeTextState extends State<_CacheSizeText> {
         .localFileStorageManager
         .getCacheSize();
   }
+
+  /// re-walks the cache directory; called when FilesCachePage pops since
+  /// deletions there change the size this row displays
+  void refresh() => setState(() {
+        _sizeFuture = Provider.of<IliasFilesProvider>(context, listen: false)
+            .localFileStorageManager
+            .getCacheSize();
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -556,8 +586,12 @@ class SettingsSectionTitle extends StatelessWidget {
         children: [
           Text(
             title,
+            // Colors.grey measured 2.7:1 on the light appleGrey scaffold;
+            // onSurfaceVariant is the theme's own caption ink (AA in both)
             style: theme.textTheme.bodyMedium?.copyWith(
-                fontSize: 15, fontWeight: FontWeight.bold, color: Colors.grey),
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurfaceVariant),
           )
         ],
       ),

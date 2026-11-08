@@ -1,0 +1,33 @@
+10	info	338 69	KA&#10;.Uni	View
+12	TAP	631 69	Agenda	Button
+14	TAP	690 69	Exam Registration	Button
+16	TAP	759 69	Show profile	Button
+21	TAP	400 127	IT and Data Science	View
+22	TAP	400 169	Python Course on IT and Data Science	View
+23	TAP	400 213	IT and Data Science	View
+24	TAP	400 257	Group Work IT and Data Science	View
+25	TAP	400 312	Machines and Processes of Energy Conversion	View
+26	TAP	400 366	Machines and Processes of Energy Conversion, Lab Course	View
+27	TAP	400 410	Machines and Processes of Energy Conversion	View
+28	TAP	400 465	Manufacturing Technology and Materials Science	View
+29	TAP	400 519	Basics of Manufacturing Technology	View
+30	TAP	400 563	Materials Science I and II	View
+31	TAP	400 607	Materials Science Lab Course	View
+32	TAP	400 662	Measurement and Control Systems	View
+33	TAP	400 716	Basics in Measurement and Control Systems	View
+34	TAP	400 771	Mechanical Design	View
+35	TAP	400 825	Mechanical Design A, Workshop	View
+36	TAP	400 869	Mechanical Design A	View
+37	TAP	400 913	Drive System Engineering A: Automotive Systems	View
+38	TAP	400 957	Methods and Processes of Sustainable Engineering	View
+39	TAP	400 1001	CAE-Basics	View
+40	TAP	400 1045	CAE-Basics Workshop	View
+41	TAP	400 1100	Technical Thermodynamics	View
+42	TAP	400 1154	Tutorial Technical Thermodynamics and Heat Transfer I	View
+43	TAP	400 1196	Technical Thermodynamics and Heat Transfer I	View
+45	TAP	178 1158	&#10;Settings	Button
+46	TAP	178 1158	Settings	Button
+47	TAP	400 1158	&#10;Dashboard	Button
+48	TAP	400 1158	Dashboard	Button
+49	TAP	621 1158	&#10;ILIAS	Button
+50	info	621 1158	ILIAS	ImageView

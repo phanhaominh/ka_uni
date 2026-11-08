@@ -79,7 +79,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
             .contains("BEGIN:VCALENDAR");
         _changesByDay =
             IcsChange.decode(prefs.getString(WebcalKeys.changes) ?? "")
-                .byDayKey();
+                .byGhostDayKey();
       });
     });
   }
@@ -126,11 +126,13 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
     final now = DateTime.now();
     final weekdayIdx = w - 10000;
     final todayWeekdayIdx = now.weekday - 1;
-    return now.add(Duration(days: weekdayIdx - todayWeekdayIdx));
+    // calendar-day arithmetic: Duration(days:) is absolute time and lands a
+    // wall-clock hour off across DST, mis-dating every page near midnight
+    return DateTime(now.year, now.month, now.day + (weekdayIdx - todayWeekdayIdx));
   }
 
-  /// Deltas landing on [day]; byDayKey keys on `when` only (agenda persist
-  /// semantics), this key format mirrors it.
+  /// Deltas whose ghost lands on [day] (built by IcsChangeIndex.byGhostDayKey:
+  /// moved deltas key on their vacated oldWhen, everything else on when).
   List<IcsChange> _changesFor(DateTime day) {
     final key = "${day.year.toString().padLeft(4, "0")}-"
         "${day.month.toString().padLeft(2, "0")}-"
@@ -165,6 +167,13 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
             options: CarouselOptions(
               enableInfiniteScroll: true,
               initialPage: _initialWeekday.idx,
+              // on a ~1280 dp tablet the 0.8 default leaves 128 dp fat peeks
+              // per side: half-rendered neighbour-day glyphs and a fat band
+              // where stray taps hijack page jumps; cap the peek to ~64 dp.
+              // Phones keep the exact 0.8 they were designed with.
+              viewportFraction: MediaQuery.sizeOf(context).width >= 900
+                  ? 1.0 - 128.0 / MediaQuery.sizeOf(context).width
+                  : 0.8,
               // the header moved out of the pages into the fixed band,
               // so subtract it here: total height and card placement
               // stay exactly as before
@@ -235,6 +244,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
         tt: tt,
         showNowLine: w == _todayRealPage,
         changes: _changesFor(_pageDate(w)),
+        rowTapsEnabled: w == _currentRealPage,
       );
     }
 

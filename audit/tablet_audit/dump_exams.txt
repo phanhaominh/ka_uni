@@ -1,0 +1,13 @@
+9	TAP	37 69	Back&#10;Back	Button
+10	info	216 69	Exam Registration	View
+13	info	400 669	Act now	View
+14	info	237 294	IT and Data Science&#10;Exam: Do, 26.11.2026 17:30 - 19:00  •  30.95 A	View
+15	info	105 362	NOT registered	View
+16	info	224 514	Production Operations Management-Project&#10;Register by: 30.11.2026 2	View
+17	info	105 569	NOT registered	View
+18	info	180 721	Tutorial Engineering Mechanics III&#10;Register by: 07.12.2026 23:59&#	View
+19	info	105 777	NOT registered	View
+20	info	273 929	Tutorial Technical Thermodynamics and Heat Transfer I&#10;Register by:	View
+21	info	105 985	NOT registered	View
+22	info	175 1124	CAE-Basics Workshop&#10;Register by: 31.01.2027 23:59&#10;Examiner: Dü	View
+23	info	105 1191	NOT registered	View

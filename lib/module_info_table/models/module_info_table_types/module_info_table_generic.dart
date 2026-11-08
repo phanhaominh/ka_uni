@@ -17,7 +17,7 @@ class ModuleInfoTableGeneric extends StatelessWidget {
         SizedBox(height: 10,),
 
         Table(
-          border: TableBorder.all(color: Colors.black, borderRadius: BorderRadius.all(Radius.circular(8))),
+          border: TableBorder.all(color: theme.dividerColor, borderRadius: BorderRadius.all(Radius.circular(8))),
           children: [
             TableRow(
                 children: table.colTitles.map((title) {

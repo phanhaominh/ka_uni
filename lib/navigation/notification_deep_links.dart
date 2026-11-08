@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../agenda/views/agenda_page.dart';
+import 'logic/push_page.dart';
 import '../exams/views/exams_page.dart';
 import '../notifications/notification_payload.dart';
 
@@ -92,7 +93,15 @@ class NotificationDeepLinkRouter {
   /// by main.dart the moment profileReady flips false (not only from
   /// KITNavContainer.dispose, which lags the AnimatedSwitcher exit and
   /// never runs on an in-place profileReady flap); idempotent.
-  void shellGone() => _shellReady = false;
+  void shellGone() {
+    _shellReady = false;
+    // the whole shell (and every page on it) died un-popped: with popped
+    // pending forever, the registry's auto-removal never runs (F4). By
+    // now currentState is already null for a disposing Navigator; the
+    // per-Navigator map strands at worst one dead Set until process end
+    final nav = navigatorKey.currentState;
+    if (nav != null) ActivePages.clearFor(nav);
+  }
 
   void drain() {
     if (!_shellReady) return;
@@ -100,8 +109,25 @@ class NotificationDeepLinkRouter {
     if (nav == null) return; // Navigator detached: hold, retry on resume
     final link = queue.take();
     if (link == null) return;
+    final routeName = switch (link) {
+      NotificationDeepLink.agenda ||
+      NotificationDeepLink.agendaToday ||
+      NotificationDeepLink.agendaChanges =>
+        AgendaPage.routeName,
+      NotificationDeepLink.exams => ExamsPage.routeName,
+    };
     final stale = _pushed;
-    if (stale != null && stale.navigator == nav) {
+    final mineStale =
+        stale != null && stale.navigator == nav && stale.isActive;
+    if (!mineStale && ActivePages.isOpen(nav, routeName)) {
+      // a MANUALLY opened sibling (appbar calendar -> AgendaPage) counts as
+      // the page: pushing a second copy would leave the user back-pressing
+      // through clones; keep the link for the next drain instead of losing
+      // the tap while the sibling exists
+      queue.set(link);
+      return;
+    }
+    if (mineStale) {
       // one-page rule: the previous deep-link page is still on the stack
       // (same or different target) — remove it before pushing, so a burst
       // of taps cannot stack pages that each run a full refresh
@@ -109,14 +135,7 @@ class NotificationDeepLinkRouter {
     }
     final route = MaterialPageRoute(
         // the pages' existing routeName constants as route identity
-        settings: RouteSettings(
-            name: switch (link) {
-              NotificationDeepLink.agenda ||
-              NotificationDeepLink.agendaToday ||
-              NotificationDeepLink.agendaChanges =>
-                AgendaPage.routeName,
-              NotificationDeepLink.exams => ExamsPage.routeName,
-            }),
+        settings: RouteSettings(name: routeName),
         builder: (_) => switch (link) {
               NotificationDeepLink.agenda => const AgendaPage(),
               NotificationDeepLink.agendaToday =>
@@ -125,6 +144,7 @@ class NotificationDeepLinkRouter {
                 const AgendaPage(highlightChanges: true),
               NotificationDeepLink.exams => const ExamsPage(),
             });
+    ActivePages.track(nav, routeName, route);
     nav.push(route);
     _pushed = route;
     // the user popping (or a later tap's removal) frees the slot, so the
@@ -139,5 +159,6 @@ class NotificationDeepLinkRouter {
     _shellReady = false;
     queue.clear();
     _pushed = null;
+    ActivePages.resetForTest();
   }
 }

@@ -110,6 +110,17 @@ void main() {
   // no-Belegung lectures; imported titles must drive BOTH the agenda and
   // the exam gate with their raw "- 0140000" / "(Tutorial - Group 4)" forms.
   group("faculty ICS import", () {
+    // dates RELATIVE to the run: parse trims occurrences older than
+    // now-1d, so the fixed Nov-6 seeds silently aged out of the enrolled
+    // title set and the import stopped gating exams
+    String two(int n) => n.toString().padLeft(2, "0");
+    String stamp(DateTime d) =>
+        "${d.year}${two(d.month)}${two(d.day)}"
+        "T${two(d.hour)}${two(d.minute)}${two(d.second)}";
+    final d1 = DateTime.now().add(const Duration(days: 2));
+    final d2 = DateTime.now().add(const Duration(days: 3));
+    final u = DateTime.now().add(const Duration(days: 120));
+    final until = "${u.year}${two(u.month)}${two(u.day)}T235959Z";
     final facultyIcs =
         '''BEGIN:VCALENDAR
 PRODID:-//Fakultät für Maschinenbau//de
@@ -117,23 +128,23 @@ VERSION:2.0
 BEGIN:VEVENT
 UID:am1lec
 SUMMARY:Advanced Mathematics I (Lecture) - 0140000
-DTSTART:20261104T080000
-DTEND:20261104T100000
-RRULE:FREQ=WEEKLY;UNTIL=20270220T235959Z
+DTSTART:${stamp(DateTime(d1.year, d1.month, d1.day, 8, 0))}
+DTEND:${stamp(DateTime(d1.year, d1.month, d1.day, 10, 0))}
+RRULE:FREQ=WEEKLY;UNTIL=$until
 LOCATION:Auditorium at Fasanengarten
 END:VEVENT
 BEGIN:VEVENT
 UID:em3tut
 SUMMARY:Engineering Mechanics I (Tutorial) - 3161011
-DTSTART:20261106T094500
-DTEND:20261106T113000
+DTSTART:${stamp(DateTime(d2.year, d2.month, d2.day, 9, 45))}
+DTEND:${stamp(DateTime(d2.year, d2.month, d2.day, 11, 30))}
 LOCATION:Gottlieb-Daimler-HS
 END:VEVENT
 BEGIN:VEVENT
 UID:am1t4
 SUMMARY:Advanced Mathematics I (Tutorial - Group 4) - 010150015
-DTSTART:20261104T154500
-DTEND:20261104T173000
+DTSTART:${stamp(DateTime(d1.year, d1.month, d1.day, 15, 45))}
+DTEND:${stamp(DateTime(d1.year, d1.month, d1.day, 17, 30))}
 LOCATION:Fachschaft Mathematik am KIT
 END:VEVENT
 END:VCALENDAR

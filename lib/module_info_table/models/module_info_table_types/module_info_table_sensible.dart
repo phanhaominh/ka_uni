@@ -46,7 +46,7 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             table.caption.length > 30 ?
-            Expanded(child: Text(table.caption, style: theme.textTheme.titleMedium, maxLines: 3,))
+            Expanded(child: Text(table.caption, style: theme.textTheme.titleMedium, maxLines: 3, overflow: TextOverflow.ellipsis,))
             : Text(table.caption, style: theme.textTheme.titleMedium),
             _isBusy ? SizedBox(width: 5,) : SizedBox.shrink(),
             _isBusy ? KITProgressIndicator() : SizedBox.shrink()
@@ -78,13 +78,20 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
                       children: [
                         SizedBox(
                           width: mq.size.width * 0.5,
-                          child: Text(titleCell.body, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold), maxLines: 3,),
+                          child: Text(titleCell.body, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold), maxLines: 3, overflow: TextOverflow.ellipsis,),
                         ),
                         Text(termCellBody),
                       ],
                     ),
 
-                    (row.favoriteToggleCell == null || titleCell.body.toLowerCase().contains("tutorium")) ? Text("") : CupertinoButton(
+                    (row.favoriteToggleCell == null || titleCell.body.toLowerCase().contains("tutorium")) ? Text("") : Semantics(
+                      button: true,
+                      // icon-only button: ON/OFF must be announced; reuses the
+                      // toggle-result toasts, dedicated label keys don't exist
+                      label: row.favoriteToggleCell!.isFavorite
+                          ? L10n.t("module.addedToTimetable")
+                          : L10n.t("module.removedFromTimetable"),
+                      child: CupertinoButton(
                         child: Icon(row.favoriteToggleCell!.isFavorite ? CupertinoIcons.star_fill : CupertinoIcons.star),
                         onPressed: () async {
                           setState(() {
@@ -103,9 +110,11 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
                               if (table.parentModule.row == null) {
                                 await Haptics.vibrate(HapticsType.error);
                                 toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
-                                if (mounted) setState(() {
-                                  _isBusy = false;
-                                });
+                                if (mounted) {
+                                  setState(() {
+                                    _isBusy = false;
+                                  });
+                                }
                                 await vm.campusManager.fetchAllModules();
                                 return;
                               }
@@ -115,9 +124,11 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
                               if (newRowEntry == null) {
                                 await Haptics.vibrate(HapticsType.error);
                                 toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
-                                if (mounted) setState(() {
-                                  _isBusy = false;
-                                });
+                                if (mounted) {
+                                  setState(() {
+                                    _isBusy = false;
+                                  });
+                                }
                                 await vm.campusManager.fetchAllModules();
                                 return;
                               }
@@ -159,7 +170,8 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
                             }
                           }
                         }
-                    )
+                      ),
+                    ),
                   ],
                 )
               ],

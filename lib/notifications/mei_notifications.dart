@@ -423,7 +423,7 @@ class MeiNotifications {
       final epoch = teardownEpoch;
       final now = DateTime.now();
       for (var ahead = 1; ahead <= 2; ahead++) {
-        final day = now.add(Duration(days: ahead));
+        final day = DateTime(now.year, now.month, now.day + ahead);
         final occ = feed.occurrences
             .where((o) =>
                 o.start.year == day.year &&

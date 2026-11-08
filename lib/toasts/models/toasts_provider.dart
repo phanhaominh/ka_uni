@@ -8,10 +8,12 @@ class ToastsProvider extends ChangeNotifier {
 
   static const defaultAnimationDuration = Duration(milliseconds: 500);
   static const _defaultDuration = Duration(seconds: 3);
-  static const _defaultBackgroundColor = Colors.grey;
+
   static const _defaultForegroundColor = Colors.black;
 
-  Color backgroundColor = _defaultBackgroundColor;
+  /// explicit caller color or null: the overlay then falls back to the
+  /// theme's card color (black-on-black was the old dark-mode bug)
+  Color? backgroundColor;
   Color? foregroundColor;
   String message = "You are not supposed to see this ;)";
 
@@ -22,7 +24,7 @@ class ToastsProvider extends ChangeNotifier {
 
   Future<void> showTextToast(String message, {
     Duration duration = _defaultDuration,
-    Color backgroundColor = _defaultBackgroundColor,
+    Color? backgroundColor,
     Color? foregroundColor}) async {
     // replace-latest instead of reject-while-showing: dropping the incoming
     // toast hid e.g. "refresh failed" behind the older "reloading..." toast
@@ -59,9 +61,9 @@ class ToastsProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  void reset({notify = true}) {
+  void reset({bool notify = true}) {
     message = "";
-    backgroundColor = _defaultBackgroundColor;
+    backgroundColor = null;
     foregroundColor = _defaultForegroundColor;
     isShowing = false;
 

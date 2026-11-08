@@ -192,11 +192,24 @@ void main() {
       expect(tue, isNotEmpty);
       expect(tue.every((o) => o.start.weekday == DateTime.tuesday), isTrue);
       expect(tue.first.room, contains('Architektur'));
-      // parser horizon clamps to ~now..now+56d: first surviving instance is
-      // a Tuesday after the capture date, the series runs into February;
-      // wall time must stay 15:45 even though the series starts in CEST
-      // (Duration(days:7) expansion used to slide it to 14:45 after Oct 26)
-      expect(tue.first.start, DateTime(2026, 11, 3, 15, 45));
+      // parser horizon clamps to ~now..now+56d: the first surviving
+      // instance is the EARLIEST Tuesday the wall clock still admits -
+      // computed, not pinned, so the suite survives its own birthdays.
+      // The invariant actually under test is the 15:45 wall time: the
+      // series starts in CEST and Duration(days:7) expansion used to
+      // slide it to 14:45 after the Oct 26 DST switch
+      final ref = DateTime.now();
+      var expectFirst = DateTime(ref.year, ref.month, ref.day, 15, 45);
+      // back off below the trim cutoff (now-1d) to a Tuesday more than a
+      // week early, then step by the series period (7d) until the cutoff
+      // admits it: exactly the parser's first survivor, whatever today is
+      final cutoff = ref.subtract(const Duration(days: 1));
+      expectFirst = expectFirst.subtract(Duration(
+          days: (expectFirst.weekday - DateTime.tuesday + 7) % 7 + 7));
+      while (expectFirst.isBefore(cutoff)) {
+        expectFirst = expectFirst.add(const Duration(days: 7));
+      }
+      expect(tue.first.start, expectFirst);
       expect(tue.last.seriesEnd!.isAfter(DateTime(2027, 2, 1)), isTrue);
     });
   });

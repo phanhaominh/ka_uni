@@ -2,10 +2,10 @@
 
 const Map<String, String> de_files = {
   "files.viewerTitle": "Document",
-  "files.cacheTitle": "Dateien Cache",
+  "files.cacheTitle": "Dateicache",
   "files.deleteAll": "Alle Löschen",
   "files.confirmDeletionTitle": "Dateilöschung bestätigen",
-  "files.confirmDeletionBody": "Möchtest du den Dateicache für {0} löchen?",
+  "files.confirmDeletionBody": "Möchtest du den Dateicache für {0} löschen?",
   "files.allFilesInSemester": "alle Dateien im {0}",
   "files.cancel": "Abbrechen",
   "files.delete": "Löschen",
@@ -43,6 +43,7 @@ const Map<String, String> de_files = {
   "module.addedToTimetable": "Wurde zum Stundenplan hinzugefügt!",
   "module.removedFromTimetable": "Wurde vom Stundenplan entfernt!",
   "module.loadError": "Modul konnte nicht geladen werden",
+  "module.infoButton": "Modul-Details anzeigen",
 };
 
 const Map<String, String> en_files = {
@@ -87,4 +88,5 @@ const Map<String, String> en_files = {
   "module.addedToTimetable": "Added to the timetable!",
   "module.removedFromTimetable": "Removed from the timetable!",
   "module.loadError": "Could not load the module",
+  "module.infoButton": "Show module details",
 };

@@ -26,7 +26,9 @@ class ShowTodayButton extends StatelessWidget {
       children: [
         (relativeOffset).abs() <= 1 ? SizedBox.shrink() : CupertinoButton(
             padding: EdgeInsets.zero,
-            minimumSize: Size(0, 0),
+            // 48 dp hit area; padding stays zero so the glyph layout
+            // (visualSize) is unchanged
+            minimumSize: Size(48, 48),
             onPressed: onPressed,
 
             child: Row(

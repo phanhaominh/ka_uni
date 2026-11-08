@@ -1,0 +1,34 @@
+10	info	338 69	KA&#10;.Uni	View
+12	TAP	631 69	Agenda	Button
+14	TAP	690 69	Exam Registration	Button
+16	TAP	759 69	Show profile	Button
+19	info	419 137	Could not update the timetable (KIT site changed?).	View
+21	info	400 235	HaoMinh Phan&#10;2778369	View
+22	info	118 345	Degree program	View
+23	info	492 345	Mechanical Engineering (International) Bachelor	View
+24	info	87 413	Semester	View
+25	info	712 413	WS 26/27	View
+26	info	96 481	Grade (avg)	View
+27	info	313 481	0,0	View
+28	info	486 481	CP	View
+29	info	745 481	0,0	View
+30	TAP	400 553	Grades &amp; credits	View
+31	info	46 647	Tue	View
+32	info	236 647	Tomorrow, November 3	View
+33	info	427 647	Tue	View
+36	TAP	40 944	Current time: 18:53	View
+37	TAP	37 731	09:45&#10;Engineering Mechanics I (Lecture) (V), Langhoff et al., MACH	View
+38	TAP	37 841	11:30&#10;Mechanical Design A (Lecture) (V), Grauberger	View
+39	TAP	37 932	13:00&#10;Lunch break	View
+40	TAP	400 944	Free · 1:45	View
+41	TAP	400 731	08:00&#10;Materials Science and Engineering I (Lecture) (V), Gibmeier,	View
+42	TAP	400 841	09:45&#10;Engineering Mechanics I (Lecture) (V), Langhoff et al., MACH	View
+43	TAP	400 1059	13:00&#10;Lunch break	View
+45	TAP	762 714	13:00&#10;Lunch break	View
+46	TAP	762 805	14:00&#10;Mechanical Design A (Tutorial) (Ü), Grauberger et al.	View
+49	TAP	178 1158	&#10;Settings	Button
+50	TAP	178 1158	Settings	Button
+51	TAP	400 1158	&#10;Dashboard	Button
+52	TAP	400 1158	Dashboard	Button
+53	TAP	621 1158	&#10;ILIAS	Button
+54	info	621 1158	ILIAS	ImageView

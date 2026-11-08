@@ -28,8 +28,9 @@ class _InfoPageState extends State<InfoPage> {
 
     bool isPersonalized = vm.profileReady;
 
-    final greeting =
-        isPersonalized ? "Hi, ${vm.student.name.repr}!" : L10n.t("settings.hello");
+    final greeting = isPersonalized
+        ? L10n.t("settings.helloName", [vm.student.name.repr])
+        : L10n.t("settings.hello");
 
     return Scaffold(
       appBar: AppBar(
@@ -41,18 +42,29 @@ class _InfoPageState extends State<InfoPage> {
           ],
         ),
         actions: [
-          CupertinoButton(
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              child: SvgPicture.asset(
-                "assets/images/GitHub.svg",
-                colorFilter: ColorFilter.mode(
-                    theme.colorScheme.primary, BlendMode.srcIn),
+          // brand literal: an unlabeled SVG icon would announce nothing
+          Semantics(
+            button: true,
+            label: "GitHub",
+            child: CupertinoButton(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: SvgPicture.asset(
+                  "assets/images/GitHub.svg",
+                  colorFilter: ColorFilter.mode(
+                      theme.colorScheme.primary, BlendMode.srcIn),
+                ),
               ),
+              // a missing or refusing launcher stays a no-op, never throws
+              // inside the tap
+              onPressed: () {
+                try {
+                  launchUrl(Uri.parse("https://github.com/DEMIDOB/ka_uni"))
+                      .catchError((_) => false);
+                } on Object catch (_) {}
+              },
             ),
-            onPressed: () =>
-                launchUrl(Uri.parse("https://github.com/DEMIDOB/ka_uni")),
           )
         ],
         centerTitle: true,
@@ -97,7 +109,11 @@ class _InfoPageState extends State<InfoPage> {
                 CupertinoButton(
                     child: Text(L10n.t("info.privacyPolicy")),
                     onPressed: () {
-                      launchUrlString("https://dandemidov.com/ka_uni/privacy_policy/");
+                      try {
+                        launchUrlString(
+                                "https://dandemidov.com/ka_uni/privacy_policy/")
+                            .catchError((_) => false);
+                      } on Object catch (_) {}
                     }),
 
                 InfoViewFaqSection(

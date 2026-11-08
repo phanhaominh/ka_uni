@@ -1,0 +1,29 @@
+10	info	338 69	KA&#10;.Uni	View
+12	TAP	631 69	Agenda	Button
+14	TAP	690 69	Exam Registration	Button
+16	TAP	759 69	Show profile	Button
+21	TAP	40 356	Current time: 18:57	View
+22	TAP	37 136	13:00&#10;Lunch break	View
+23	TAP	400 356	Free · 1:45	View
+24	TAP	400 256	13:00&#10;Lunch break	View
+26	TAP	400 651	Edit timetable	Button
+27	info	215 730	Current modules in WS 26/27	View
+29	info	131 770	Last updated: 02.11.2026 18:48	View
+32	info	138 892	Mechanical Design A	View
+34	TAP	217 944	ILIAS	Button
+35	info	405 892	Basics of Manufacturing Technology	View
+37	TAP	483 944	ILIAS	Button
+38	info	666 892	International Management - Practical insights	View
+40	TAP	749 944	ILIAS	Button
+41	info	138 1091	Materials Science I and II	View
+43	TAP	217 1143	ILIAS	Button
+44	info	405 1091	Engineering Mechanics I	View
+46	TAP	483 1143	ILIAS	Button
+47	info	666 1091	International Production Operations Management	View
+49	TAP	749 1143	ILIAS	Button
+51	TAP	178 1158	&#10;Settings	Button
+52	TAP	178 1158	Settings	Button
+53	TAP	400 1158	&#10;Dashboard	Button
+54	TAP	400 1158	Dashboard	Button
+55	TAP	621 1158	&#10;ILIAS	Button
+56	info	621 1158	ILIAS	ImageView

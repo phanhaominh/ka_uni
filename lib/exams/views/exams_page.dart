@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
+import '../../common_ui/max_width_body.dart';
 import '../../l10n/l10n.dart';
+import '../../state_management/campus/campus_manager.dart';
 import '../../toasts/models/toasts_provider.dart';
 import '../../state_management/kit_provider.dart';
 import '../models/exam_list.dart';
@@ -69,7 +71,8 @@ class ExamsPage extends StatelessWidget {
       appBar: AppBar(title: Text(L10n.t("exams.title"))),
       // one refresh affordance for ALL branches (loading/error/empty/list):
       // the empty list especially needs a manual re-sync
-      body: RefreshIndicator(
+      body: MaxWidthBody(
+        child: RefreshIndicator(
         onRefresh: () async {
           final toasts = context.read<ToastsProvider>();
           final ok = await cm.fetchExams();
@@ -123,8 +126,10 @@ class ExamsPage extends StatelessWidget {
                     _section(context, L10n.t("exams.sectionCatalog"), catalog,
                         now,
                         quiet: true),
+                  _freshFooter(context, cm),
                 ],
               ),
+      ),
       ),
     );
   }
@@ -253,4 +258,34 @@ class ExamsPage extends StatelessWidget {
         backgroundColor: scheme.errorContainer,
         side: BorderSide(color: scheme.error),
       );
+  /// "Stand: HH:MM" / orange staleness — cascampus is fetched live on every
+  /// login but NOTHING else refreshes it: without this a pull at 08:00 and
+  /// a pull three days later render identically (agenda footer, same rule)
+  Widget _freshFooter(BuildContext context, CampusManager cm) {
+    final scheme = Theme.of(context).colorScheme;
+    final at = cm.examsFetchedAt;
+    if (at == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text(L10n.t("exams.staleUnknown"),
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: scheme.error)),
+      );
+    }
+    final age = DateTime.now().difference(at);
+    final stale = age > const Duration(hours: 6);
+    final label = stale
+        ? L10n.t("exams.staleData", ["${age.inHours} h"])
+        : L10n.t("exams.asOf", [
+            "${at.hour.toString().padLeft(2, '0')}:"
+                "${at.minute.toString().padLeft(2, '0')}"
+          ]);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Text(label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              fontSize: 11, color: stale ? scheme.error : scheme.outline)),
+    );
+  }
 }

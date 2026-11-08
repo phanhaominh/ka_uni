@@ -342,9 +342,16 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
             style: TextStyle(fontSize: 12, color: scheme.outline)),
         CupertinoButton(
           padding: const EdgeInsets.only(top: 2),
-          minimumSize: Size.zero,
-          onPressed: () =>
-              launchUrl(uri, mode: LaunchMode.externalApplication),
+          // 48 dp hit area: the label row alone measured ~30 dp tall
+          minimumSize: const Size(48, 48),
+          // a missing or refusing launcher stays a no-op instead of
+          // throwing inside the tap
+          onPressed: () {
+            try {
+              launchUrl(uri, mode: LaunchMode.externalApplication)
+                  .catchError((_) => false);
+            } on Object catch (_) {}
+          },
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

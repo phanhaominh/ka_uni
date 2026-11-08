@@ -1,0 +1,6 @@
+9	TAP	37 69	Back&#10;Back	Button
+10	TAP	400 661	10.91&#10;flutter_map	ImageView
+11	TAP	763 1179	&#10;Attributions	Button
+14	TAP	400 821	Engineering Mechanics I (Lecture) (V), Langhoff et al., MACH&#10;Room:	View
+15	TAP	728 672	&#10;Hide details	Button
+16	TAP	400 811	Directions	Button

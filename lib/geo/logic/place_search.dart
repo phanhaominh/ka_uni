@@ -1,6 +1,7 @@
 import 'package:fuzzywuzzy/fuzzywuzzy.dart';
 
 import '../../agenda/logic/walk_hint.dart';
+import '../../l10n/l10n.dart';
 import '../models/kit_place.dart';
 
 /// Ranking logic for the Raum-Finder ([PlaceSearchPage]): a pure function
@@ -149,8 +150,10 @@ List<PlaceMatch> rankPlaces(List<KITPlace> places, String query,
       : out;
 }
 
-/// "874 m" / "1,2 km" - German decimal comma, one decimal for km.
+/// "874 m" / "1,2 km" (de) / "1.2 km" (en): one decimal for km, decimal
+/// comma only where German is the active language.
 String formatCampusDistance(double meters) {
   if (meters < 1000) return "${meters.round()} m";
-  return "${(meters / 1000).toStringAsFixed(1).replaceAll('.', ',')} km";
+  final km = (meters / 1000).toStringAsFixed(1);
+  return L10n.isEnglish ? "$km km" : "${km.replaceAll('.', ',')} km";
 }

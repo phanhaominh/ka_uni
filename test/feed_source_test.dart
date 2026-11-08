@@ -10,17 +10,22 @@ import 'package:kit_mobile/timetable/models/webcal.dart';
 /// calendars - which once produced a phantom 50-delta "all your lectures
 /// are cancelled" band.
 void main() {
+  // fixture clock for the PARSE, not just the fingerprint: parse trims
+  // occurrences to [now-1d, now+56d] against the WALL clock, which aged
+  // the E2E fixture (1970-DST + Nov-2026 seeds) out of its own window and
+  // made parse return null - the trim guard must not expire the fixtures
+  // under a growing suite
+  final clock = DateTime(2026, 10, 30, 18);
   final real = WebcalFeed.parse(
-      File('test/fixtures/wc_now.ics').readAsStringSync())!;
+      File('test/fixtures/wc_now.ics').readAsStringSync(), now: clock)!;
   final e2e = WebcalFeed.parse(
-      File('test/fixtures/webcal_e2e.ics').readAsStringSync())!;
+      File('test/fixtures/webcal_e2e.ics').readAsStringSync(), now: clock)!;
 
   test("unrelated calendars have different fingerprints", () {
-    // fixture clock, not the wall clock: the E2E calendar is 1970-DST test
-    // data so any real-clock window leaves it empty - once the real
-    // fixture ages out too, both fingerprints are '' and equal
-    expect(real.fingerprint(at: DateTime(2026, 10, 30, 18)),
-        isNot(e2e.fingerprint(at: DateTime(2026, 10, 30, 18))));
+    // both sides of the fingerprint sit in the same fixture-clock window:
+    // unrelated calendars must produce different digests, never two empty
+    // ones that trivially compare equal
+    expect(real.fingerprint(at: clock), isNot(e2e.fingerprint(at: clock)));
   });
 
   test("cross-calendar diff is the phantom flood the guard prevents", () {
@@ -31,6 +36,7 @@ void main() {
 
   test("re-seeded baseline diffs clean against itself", () {
     expect(e2e.changesSince(WebcalFeed.parse(
-        File('test/fixtures/webcal_e2e.ics').readAsStringSync())!), isEmpty);
+        File('test/fixtures/webcal_e2e.ics').readAsStringSync(),
+        now: clock)!), isEmpty);
   });
 }

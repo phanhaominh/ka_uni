@@ -12,7 +12,7 @@ const Map<String, String> de_settings = {
   "settings.sectionOwnTimetable": "Eigener Stundenplan (ICS)",
   "settings.ownIcsNone": "Kein eigener Kalender importiert",
   "settings.ownIcsLoaded": "{0} Kurse aus eigenem Kalender importiert",
-  "settings.ownIcsUrlHint": "Link zu Ihrer .ics-Datei (optional)",
+  "settings.ownIcsUrlHint": "Link zu deiner .ics-Datei (optional)",
   "settings.ownIcsSave": "Link speichern",
   "settings.ownIcsFile": "Datei importieren…",
   "settings.ownIcsClear": "Entfernen",
@@ -55,7 +55,8 @@ const Map<String, String> de_settings = {
   // login view
   "settings.hello": "Hallo",
   "settings.helloName": "Hallo, {0}",
-  "settings.welcomeKarlsruhe": "Wilkommen in Karlsruhe",
+  "settings.welcomeKarlsruhe": "Willkommen in Karlsruhe",
+  "settings.usernamePlaceholder": "Benutzername (uxxxx)",
   "settings.password": "Passwort",
   "settings.login": "Einloggen",
   // profile view
@@ -74,7 +75,7 @@ const Map<String, String> de_settings = {
   "settings.aboutIntro":
       "Wir sind sehr froh, dass du dich für diese App interessiert! Von Studenten für Studenten: Diese App dient dazu, dein Studentenleben am KIT freundlicher und einfacher zu machen. ",
   "settings.faqSecurityTitle":
-      "Wie kann ich mir sicher sein, dass meine Daten nicht gestolen werden?",
+      "Wie kann ich mir sicher sein, dass meine Daten nicht gestohlen werden?",
   "settings.faqSecurityBody":
       "Alles wird nur auf deinem Gerät verarbeitet, als würdest du das Campus-Portal in deinem Web-Browser benutzen. Die App ist auch open-source. Das heißt, du kannst dir den Code anschauen, um sicherzustellen, dass alles in Ordnung ist. Du kannst auch das Repo klonen und deine eigene Version benutzen.",
   "settings.faqContributeTitle": "Kann ich zur Entwicklung beitragen?",
@@ -82,7 +83,7 @@ const Map<String, String> de_settings = {
       "Ja! Wir würden uns darüber sehr freuen! Wenn du dich mit Flutter auskennst und beitragen möchtest, kontaktiere uns per Telegram: @XtremeUserInterfaces.",
   "settings.faqRoadmapTitle": "Wie geht es weiter?",
   "settings.faqRoadmapBody":
-      "Viele Features sind geplannt, wie z.B. ILIAS, Benachrichtigungen über Änderungen und noch mehr! Daran arbeiten wir jetzt. Wenn du Ideen hast, welche Features es noch in der App geben soll und/oder wie wir die App noch verbessern könnten, dann schreibe uns gerne!",
+      "Viele Features sind geplant, wie z.B. ILIAS, Benachrichtigungen über Änderungen und noch mehr! Daran arbeiten wir jetzt. Wenn du Ideen hast, welche Features es noch in der App geben soll und/oder wie wir die App noch verbessern könnten, dann schreibe uns gerne!",
 };
 
 const Map<String, String> en_settings = {
@@ -140,6 +141,7 @@ const Map<String, String> en_settings = {
   "settings.hello": "Hello",
   "settings.helloName": "Hello, {0}",
   "settings.welcomeKarlsruhe": "Welcome to Karlsruhe",
+  "settings.usernamePlaceholder": "Username (uxxxx)",
   "settings.password": "Password",
   "settings.login": "Log in",
   // profile view

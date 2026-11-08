@@ -1,0 +1,30 @@
+10	info	338 69	KA&#10;.Uni	View
+12	TAP	631 69	Agenda	Button
+14	TAP	690 69	Exam Registration	Button
+16	TAP	759 69	Show profile	Button
+21	TAP	400 108	Mechanical Design	View
+22	TAP	400 132	Mechanical Design A, Workshop	View
+23	TAP	400 176	Mechanical Design A	View
+24	TAP	400 220	Drive System Engineering A: Automotive Systems	View
+25	TAP	400 263	Methods and Processes of Sustainable Engineering	View
+26	TAP	400 307	CAE-Basics	View
+27	TAP	400 351	CAE-Basics Workshop	View
+28	TAP	400 407	Technical Thermodynamics	View
+29	TAP	400 460	Tutorial Technical Thermodynamics and Heat Transfer I	View
+30	TAP	400 504	Technical Thermodynamics and Heat Transfer I	View
+31	TAP	400 548	Tutorial Technical Thermodynamics and Heat Transfer II	View
+32	TAP	400 592	Technical Thermodynamics and Heat Transfer II	View
+33	TAP	400 648	International Production Operations Management	View
+34	TAP	400 701	International Production Operations Management	View
+35	TAP	400 745	International Production Operations Management: Project	View
+36	TAP	400 801	International Project	View
+37	TAP	400 855	International Project	View
+38	TAP	400 910	Key Competencies	View
+39	TAP	400 964	Scientific Work and Empirical Research Methods	View
+40	TAP	400 1008	International Management - Practical insights	View
+42	TAP	178 1158	&#10;Settings	Button
+43	TAP	178 1158	Settings	Button
+44	TAP	400 1158	&#10;Dashboard	Button
+45	TAP	400 1158	Dashboard	Button
+46	TAP	621 1158	&#10;ILIAS	Button
+47	info	621 1158	ILIAS	ImageView

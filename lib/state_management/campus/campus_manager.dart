@@ -39,6 +39,9 @@ class CampusManager extends KITLoginManager {
   List<ExamEntry> exams = [];
   bool examsLoaded = false;
   bool isFetchingExams = false;
+  /// when the exam list last came from the server; runtime-only like the
+  /// list itself (exams have no disk cache), feeds the freshness footer
+  DateTime? examsFetchedAt;
 
   Student student;
 
@@ -274,6 +277,7 @@ class CampusManager extends KITLoginManager {
     enrolledLectureTitles = {};
     exams = [];
     examsLoaded = false;
+    examsFetchedAt = null;
     examsSurfaceBroken = false;
     isFetchingExams = false;
     allModulesFetched = false;
@@ -2275,6 +2279,7 @@ class CampusManager extends KITLoginManager {
         examsSurfaceBroken = false;
         exams = parsed;
         examsLoaded = true;
+        examsFetchedAt = DateTime.now();
         // mirror the registered sittings into the merged timetable feed;
         // agenda / digest / reminders / ICS export pick them up unseen
         await reapplyExamSynth(buildExamSynthBlock(parsed));

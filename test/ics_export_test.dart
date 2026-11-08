@@ -186,7 +186,7 @@ class _RecordingToasts extends ToastsProvider {
   @override
   Future<void> showTextToast(String message,
       {Duration duration = Duration.zero,
-      Color backgroundColor = Colors.grey,
+      Color? backgroundColor,
       Color? foregroundColor}) async {
     shown.add(message);
   }

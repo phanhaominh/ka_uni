@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../exams/models/exam_list.dart';
 import 'timetable_appointment.dart';
 import 'timetable_daily.dart';
 import 'timetable_weekly.dart';
@@ -482,7 +483,9 @@ class WebcalFeed {
     }
     appointment.title = title;
 
-    if (occ.room.isNotEmpty) {
+    // a placeholder LOCATION ("-", "--", "ILIAS") must not render as a
+    // room name nor seed the map-CTA query (agenda gates it the same way)
+    if (occ.room.isNotEmpty && !ExamTerm.isPlaceholderRoom(occ.room)) {
       appointment.place = KITPlace()
         ..title = occ.room
         ..dataUrl = "";
@@ -507,10 +510,10 @@ class WebcalFeed {
     // lectures as one-shot chains (wc_now.ics "Nov-Dec chain") that the
     // cascampus HTML grid shows across the whole horizon - they are
     // recognisable by the cascampus URL every feed VEVENT carries.
-    final weekStart = reference
-        .subtract(Duration(days: reference.weekday - 1))
-        .copyWith(hour: 0, minute: 0, second: 0, millisecond: 0, microsecond: 0);
-    final weekEnd = weekStart.add(const Duration(days: 7));
+    final weekStart = DateTime(
+        reference.year, reference.month, reference.day - (reference.weekday - 1));
+    final weekEnd = DateTime(
+        reference.year, reference.month, reference.day - (reference.weekday - 1) + 7);
 
     for (final occ in occurrences) {
       final weekdayIdx = occ.start.weekday - 1;
@@ -781,15 +784,15 @@ class IcsChange {
 /// emphasis and the T-15 alarm re-arm: one grouping, three consumers, no
 /// drifting block-key math.
 extension IcsChangeIndex on List<IcsChange> {
-  /// Grouped by `yyyy-MM-dd` of [IcsChange.when]. Keyed on `when` ONLY,
-  /// also for removed/moved (whose `oldWhen` marks the vanished slot):
-  /// the agenda band and the persisted dismiss semantics both live a
-  /// delta on the day its NEW state points at - matching that beats
-  /// second-guessing with oldWhen.
-  Map<String, List<IcsChange>> byDayKey() {
+  /// Grouped by the date a GHOST belongs to: for moved that is the slot
+  /// the lecture VACATED ([IcsChange.oldWhen]) - keyed on `when` the ghost
+  /// would need an empty block at the NEW time, where the lecture itself
+  /// now sits, so moved deltas would render nowhere.
+  Map<String, List<IcsChange>> byGhostDayKey() {
     final out = <String, List<IcsChange>>{};
     for (final c in this) {
-      out.putIfAbsent(_dayKey(c.when), () => <IcsChange>[]).add(c);
+      final d = c.kind == IcsChangeKind.moved ? c.oldWhen! : c.when;
+      out.putIfAbsent(_dayKey(d), () => <IcsChange>[]).add(c);
     }
     return out;
   }

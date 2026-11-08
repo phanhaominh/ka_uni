@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../common_ui/kit_logo.dart';
+import '../../l10n/l10n.dart';
 import '../../settings/providers/settings_provider.dart';
 import '../../state_management/kit_provider.dart';
 
@@ -14,6 +15,10 @@ class KaUniAppBarTitle extends StatelessWidget {
     final settingsVM = Provider.of<SettingsProvider>(context);
     final theme = Theme.of(context);
 
+    // split the localized template around the name so the name keeps its
+    // primary-color tint in every locale
+    final greetingParts = L10n.t("settings.helloName").split("{0}");
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -21,19 +26,20 @@ class KaUniAppBarTitle extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           child: settingsVM.showingProfile.value
               ? const KITLogo()
-              : Row(
-            children: [
-              Text(
-                "Hi, ",
-                style: theme.textTheme.titleLarge,
-              ),
-              Text(
-                vm.student.name.firstName,
-                style: theme.textTheme.titleLarge
-                    ?.copyWith(color: theme.colorScheme.primary),
-              )
-            ],
-          ),
+              : Text.rich(
+                  TextSpan(
+                    style: theme.textTheme.titleLarge,
+                    children: [
+                      TextSpan(text: greetingParts.first),
+                      TextSpan(
+                        text: vm.student.name.firstName,
+                        style: TextStyle(color: theme.colorScheme.primary),
+                      ),
+                      if (greetingParts.length > 1)
+                        TextSpan(text: greetingParts[1]),
+                    ],
+                  ),
+                ),
         )
       ],
     );

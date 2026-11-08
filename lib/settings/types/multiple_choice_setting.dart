@@ -8,9 +8,10 @@ class MultipleChoiceSetting<T> extends Setting<T> {
   MultipleChoiceSetting({
     required super.valueKey,
     required this.choices,
+    T? defaultValue,
     super.notifyCallback,
   }) : choicesSet = choices.toSet(),
-        super(defaultValue: choices.isEmpty ? "" : choices[0]);
+        super(defaultValue: defaultValue ?? (choices.isEmpty ? "" : choices[0]));
 
   @override
   Future<void> set(T newValue) async {

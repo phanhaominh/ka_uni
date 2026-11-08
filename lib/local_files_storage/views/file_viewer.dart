@@ -88,6 +88,7 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
                 if (!mounted) return;
                 Navigator.pop(context);
               },
+              tooltip: L10n.t("files.delete"),
               icon: Icon(CupertinoIcons.delete))
         ],
       ),
@@ -97,9 +98,12 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
             filePath: widget.path,
             // iPad Safe Mode: Avoid conflicting scroll configurations
             enableSwipe: widget.isIPadSafe ? true : true,
-            swipeHorizontal: widget.isIPadSafe
-                ? false
-                : true, // Vertical scrolling is safer on iPad
+            // Android's back gesture IS a horizontal edge swipe: with
+            // horizontal paging the PDF view ate it and the viewer could
+            // not be left by the gesture users reach for. Continuous
+            // vertical scrolling has that conflict on neither platform
+            // (and the iPad path already ran vertically).
+            swipeHorizontal: false,
             autoSpacing:
                 widget.isIPadSafe ? true : false, // Let PDFKit handle spacing
             pageFling: widget.isIPadSafe

@@ -125,12 +125,20 @@ class ProfileView extends StatelessWidget {
                 padding: EdgeInsets.only(top: 7),
                 child: SizedBox(
                   width: MediaQuery.of(context).size.width * 0.36,
+                  // fixed 0.36*screen budget: the German label overflows it
+                  // at large font scales without Flexible + ellipsis
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(L10n.t("settings.avgGrade"), style: theme.textTheme.titleMedium,),
-
-                      Text(vm.student.avgMark.toString(), style: theme.textTheme.titleMedium,),
+                      Flexible(
+                        child: Text(L10n.t("settings.avgGrade"),
+                            style: theme.textTheme.titleMedium,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(vm.student.avgMark.toString(),
+                          style: theme.textTheme.titleMedium),
                     ],
                   ),
                 ),
@@ -140,13 +148,18 @@ class ProfileView extends StatelessWidget {
                 padding: EdgeInsets.only(top: 7),
                 child: SizedBox(
                   width: MediaQuery.of(context).size.width * 0.36,
-                  // padding: EdgeInsets.only(top: 10, bottom: 10, left: 15, right: 15),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(L10n.t("settings.creditsShort"), style: theme.textTheme.titleMedium,),
-
-                      Text(vm.student.ectsAcquired, style: theme.textTheme.titleMedium,),
+                      Flexible(
+                        child: Text(L10n.t("settings.creditsShort"),
+                            style: theme.textTheme.titleMedium,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(vm.student.ectsAcquired,
+                          style: theme.textTheme.titleMedium),
                     ],
                   ),
                 )
