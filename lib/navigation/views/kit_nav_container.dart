@@ -67,7 +67,15 @@ class _KITNavContainerState extends State<KITNavContainer> {
           // wide-screen cap: at 1280 dp the pill stretched to ~1180 dp and
           // the three icons floated apart; a phone (<480 dp inner) is
           // untouched
-          child: Center(
+          // Row, NOT Center: the bottomSheet slot hands out tight-WIDE,
+          // loose-TALL-to-full-height constraints; Center expands to the
+          // full height and floats its child dead-center of the screen -
+          // on every phone the dock "detached" from the bottom edge (b46
+          // regression, reported as the floating pill).
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
               child: ClipRRect(
@@ -128,6 +136,8 @@ class _KITNavContainerState extends State<KITNavContainer> {
                 ),
               ),
             ),
+              ),
+            ],
           ),
         ),
       ),
