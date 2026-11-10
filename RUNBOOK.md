@@ -252,3 +252,29 @@ boot race cleared on first refresh; exam sheet renders full list.
 
 Diagnostic footer (`As of <stamp>`) + `WebcalKeys.diag` kept until the
 next stale-scare proves them dead weight - then cut.
+
+## Wave b51: one rhythm for the whole week (0.8.3+51)
+
+Complaint: home strip "sometimes huge gaps, sometimes cramped, blocks
+placed inconsistently". Culprit: R15 per-day fitting - every carousel page
+chose its OWN px/min from [0.3, 0.9] to fill the 742px viewport AND the
+column centred vertically (`Alignment.centerLeft`). A light day therefore
+rendered at 0.9 centred mid-card while the neighbour day squashed to 0.35
+flush: same lecture, different height, different y - and 3h voids scaled
+up to 160px of dead band.
+
+New model (`logic/now_line.dart`, pure): `weekPxPerMin` picks ONE px/min
+from the BUSIEST weekday (gaps count folded at 40 min via `dayEffort`),
+`dayColumnHeights` pays every row: content floored at 48px (never a
+text smear), free rows folded at 40-min-worth (chip still names the real
+gap) with honest small gaps untouched below it, and a uniform shrink pass
+as the only overflow route (never a clip/stripe). Column is TOP-anchored
+like every calendar: 08:00 sits at the same pixel on every page; a light
+day simply ends early. Now-line walks the SAME height list (minutes
+interpolate per row), keeping painted == measured. `dayColumnFactor` and
+vertical centring are gone.
+
+`TimetableDailyView.dayRows`/`blocksFor` are static now (weekly pre-pass
+feeds the scale picker with the same occurrence-filtered geometry the
+pages render). Tests: floor/cap/uniform-fit/busiest-decides/equal-durations-
+equal-pixels + seam-policy walk updated to `heights:`.

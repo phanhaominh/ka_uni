@@ -79,10 +79,18 @@ void main() {
 
       // end-to-end, mirroring the painted Column: 11:35 resolves INSIDE
       // the lecture block (5 px in), never near the gap band's bottom...
-      expect(nowLineY(blocks: blocks, minutesOfDay: 11 * 60 + 35, pxPerMin: 1),
+      expect(
+          nowLineY(
+              blocks: blocks,
+              heights: const [60, 150, 90],
+              minutesOfDay: 11 * 60 + 35),
           closeTo(60 + 1 + 150 + 1 + 5, 1e-9));
       // ...and the placeholder's nominal start lands 45 min INTO the band
-      expect(nowLineY(blocks: blocks, minutesOfDay: 9 * 60 + 45, pxPerMin: 1),
+      expect(
+          nowLineY(
+              blocks: blocks,
+              heights: const [60, 150, 90],
+              minutesOfDay: 9 * 60 + 45),
           closeTo(60 + 1 + 45, 1e-9));
     });
   });

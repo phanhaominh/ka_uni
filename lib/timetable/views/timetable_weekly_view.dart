@@ -5,6 +5,7 @@ import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/timetable/logic/now_clock.dart';
+import 'package:kit_mobile/timetable/logic/now_line.dart';
 import 'package:kit_mobile/timetable/models/timetable_appointment.dart';
 import 'package:kit_mobile/timetable/models/timetable_daily.dart';
 import 'package:kit_mobile/timetable/models/timetable_weekly.dart';
@@ -58,6 +59,37 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
   /// the same "have we ever cached a timetable" judgement as the agenda's
   /// _feedCached (agenda_page.dart:176-182).
   bool _feedCached = false;
+
+  /// ONE px/min for every carousel page of this week (see [weekPxPerMin]):
+  /// recomputed per build from all five weekday templates so a lecture is
+  /// the same height on Monday and on Friday. Swiping between days must
+  /// never re-scale the wall clock - the old per-day fit made every page
+  /// place its rows at different y (inconsistency report, 11.11).
+  double _weekPxPerMin = timetableIdealPxPerMin;
+
+  /// Effort inputs for [weekPxPerMin]: each weekday filtered through the
+  /// SAME occurrence predicate the carousel builder applies to its page
+  /// (next occurrence of that weekday as canonical - the template repeats
+  /// weekly; an EXDATE week differing a little only nudges the scale).
+  List<List<NowBlock>> _weekBlocks(KITProvider vm) {
+    final todayIdx = DateTime.now().weekday - 1;
+    final out = <List<NowBlock>>[];
+    for (var idx = 0; idx < 5 && idx < vm.timetable.days.length; idx++) {
+      final template = vm.timetable.days[idx];
+      final d = _pageDate(_todayRealPage + ((idx - todayIdx) % 7 + 7) % 7);
+      final pageDate = DateTime(d.year, d.month, d.day);
+      final tt = TimetableDaily(weekday: template.weekday)
+        ..appointments = template.appointments
+            .where((a) =>
+                a.isEmpty ||
+                a.type == TimetableAppointmentType.lunchBreak ||
+                a.occurrenceDates == null ||
+                a.occurrenceDates!.contains(pageDate))
+            .toList();
+      out.add(TimetableDailyView.blocksFor(tt));
+    }
+    return out;
+  }
 
   /// Feed deltas grouped by page date; decoded once at init - re-publishes
   /// while the carousel is open need not repaint the ghosts before the next
@@ -153,12 +185,16 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
 
   @override
   Widget build(BuildContext context) {
+    final vm = Provider.of<KITProvider>(context);
     // the band's titleLarge text grows with the system font scale; a hard
     // 48px cap would paint overflow stripes across the always-visible
     // header on Large/Largest settings, so both the band and the carousel
     // subtraction scale with the very text line that sets the height
     final textScale = MediaQuery.textScalerOf(context).scale(28) / 28;
     final bandHeight = _dateBandHeight * textScale;
+    final viewportPx = _weekdayHeight - 40 - bandHeight;
+    // week-wide rhythm BEFORE the pages build (itemBuilder runs after)
+    _weekPxPerMin = weekPxPerMin(viewportPx: viewportPx, days: _weekBlocks(vm));
     return Column(
       children: [
         _dateBand(context, bandHeight),
@@ -179,7 +215,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
               // the header moved out of the pages into the fixed band,
               // so subtract it here: total height and card placement
               // stay exactly as before
-              height: _weekdayHeight - 40 - bandHeight,
+              height: viewportPx,
               // feeds the REAL page index to the date band - with
               // itemCount 1 the onPageChanged index is always 0 and
               // useless
@@ -247,6 +283,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
         showNowLine: w == _todayRealPage,
         changes: _changesFor(_pageDate(w)),
         rowTapsEnabled: w == _currentRealPage,
+        pxPerMin: _weekPxPerMin,
       );
     }
 

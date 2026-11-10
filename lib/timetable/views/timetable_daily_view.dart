@@ -126,12 +126,56 @@ class TimetableDailyView extends StatelessWidget {
   /// centering tap (in timetable_weekly_view) receives the tap.
   final bool rowTapsEnabled;
 
+  /// One px/min for the whole week (see [weekPxPerMin]): every carousel
+  /// page renders on the SAME scale, so equal lecture durations are equal
+  /// heights on every day. Null (standalone use) falls back to this day's
+  /// own week scale.
+  final double? pxPerMin;
+
   const TimetableDailyView(
       {super.key,
       required this.tt,
       this.showNowLine = false,
       this.changes = const [],
-      this.rowTapsEnabled = true});
+      this.rowTapsEnabled = true,
+      this.pxPerMin});
+
+  /// The rows one day column renders, from [tt] + tutorial attachments:
+  /// first non-empty per block, chronological by TIME-OF-DAY (template
+  /// rows carry mixed dates - a raw DateTime compare put Nov-2's 13:00
+  /// lunch above Nov-5's 08:00 lecture on future carousel pages; Dart's
+  /// sort is stable: equal-minute rows keep their template order), scaffold
+  /// voids outside the content range trimmed (they used to eat up to half
+  /// the page at full scale - only the void BETWEEN real rows carries
+  /// meaning and a chip), zero-minute placeholders dropped (they claim no
+  /// pixels and no chip, and an invisible 90-minute void used to open
+  /// between flush neighbours).
+  static List<TimetableAppointment> dayRows(
+      TimetableDaily tt, Map<int, List<Tutorial>> tutorialsByBlock) {
+    final rows = tt
+        .appointmentsWithTutorials(tutorialsByBlock)
+        .map((block) => block
+            .whereType<TimetableAppointment>()
+            .where((appointment) => !appointment.isEmpty || block.length <= 1)
+            .first)
+        .toList(growable: false)
+      ..sort((a, b) => (a.begin.hour * 60 + a.begin.minute)
+          .compareTo(b.begin.hour * 60 + b.begin.minute));
+    if (!rows.any(_isContent)) return rows;
+    final trimmed = rows.sublist(
+        rows.indexWhere(_isContent), rows.lastIndexWhere(_isContent) + 1);
+    return [
+      for (var i = 0; i < trimmed.length; i++)
+        if (_isContent(trimmed[i]) || _rowMin(trimmed, i) > 0) trimmed[i]
+    ];
+  }
+
+  /// The layout/now-line geometry feed of a day WITHOUT tutorials merged
+  /// (week-scale picker - tutorial rows are user-local noise for the
+  /// busiest-day decision; a tutorial-heavier day is caught by the exact
+  /// fit pass in [dayColumnHeights]).
+  static List<NowBlock> blocksFor(TimetableDaily tt) =>
+      dayColumnBlocks(dayRows(tt, const {}));
 
   @override
   Widget build(BuildContext context) {
@@ -162,44 +206,10 @@ class TimetableDailyView extends StatelessWidget {
       tutorialsByBlock.putIfAbsent(tutorial.blockIndex, () => []).add(tutorial);
     }
 
-    final appointmentsByBlock = tt.appointmentsWithTutorials(tutorialsByBlock);
+    // the rendered column (see [dayRows]: merge, sort, trim, drop voids)
+    final day = dayRows(tt, tutorialsByBlock);
 
-    // the appointment a block actually renders: first non-empty entry, or
-    // the lone placeholder when the block holds nothing else
-    // The template appends non-colliding events (personal ICS, one-shot
-    // feed entries) after the generic blocks, and tutorials attach by
-    // generic block INDEX - so the list order must stay untouched until
-    // the merge is done; only then order the rendered rows chronologically
-    // (gaps, seams and the now-line all assume time order: a 10:00 own
-    // appointment used to render below the 15:45 lecture).
-    final rows = appointmentsByBlock
-        .map((block) => block
-            .whereType<TimetableAppointment>()
-            .where((appointment) => !appointment.isEmpty || block.length <= 1)
-            .first)
-        .toList(growable: false)
-      // time-OF-DAY, never the full stamp: template rows carry mixed dates
-      // (feed occurrence dates vs DateTime.now()-stamped placeholders and
-      // lunch rows), so a raw DateTime compare put Nov-2's 13:00 lunch
-      // above Nov-5's 08:00 lecture on future carousel pages. Dart's
-      // sort is stable: equal-minute rows keep their template order.
-      ..sort((a, b) => (a.begin.hour * 60 + a.begin.minute)
-          .compareTo(b.begin.hour * 60 + b.begin.minute));
-
-    if (!rows.any(_isContent)) return _dayFree(context);
-
-    // Leading/trailing scaffold voids outside the content range used to
-    // eat up to half the page at full scale; only the void BETWEEN real
-    // rows carries meaning (and a chip), so trim outside the range.
-    final trimmed = rows.sublist(
-        rows.indexWhere(_isContent), rows.lastIndexWhere(_isContent) + 1);
-    // Scaffold placeholder rows with no minutes of their own (see _rowMin)
-    // claim no pixels and no chip - keep them out so the column's height
-    // budget is wall-clock truth only.
-    final day = [
-      for (var i = 0; i < trimmed.length; i++)
-        if (_isContent(trimmed[i]) || _rowMin(trimmed, i) > 0) trimmed[i]
-    ];
+    if (!day.any(_isContent)) return _dayFree(context);
 
     final mins = [for (var i = 0; i < day.length; i++) _rowMin(day, i)];
     final seams = dayColumnSeams(day);
@@ -209,22 +219,30 @@ class TimetableDailyView extends StatelessWidget {
     final blocks = dayColumnBlocks(day);
 
     return LayoutBuilder(builder: (context, constraints) {
-      // ONE factor drives every row height AND the now-line walk, so the
-      // line can never sit over a row it did not measure (was: a hardcoded
-      // 0.9 that overflowed days with long lectures)
+      // ONE height list drives every row AND the now-line walk (see
+      // [dayColumnHeights]), so the line can never sit over a row it did
+      // not measure. The scale is the WEEK's ([pxPerMin], decided by the
+      // busiest carousel page) - not this day's own fit: per-day fitting
+      // made 08:00 start at a different height on every page and 90-minute
+      // lectures claim different pixel heights side by side (the
+      // "placement is inconsistent" report).
       final now = NowClock.timeSource();
       final nowMinutes = now.hour * 60 + now.minute;
-      final factor =
-          dayColumnFactor(viewportPx: constraints.maxHeight, blocks: blocks);
-      // Exact column height (rows + seam hairlines). A light day (two
-      // morning lectures on a Friday) must not dangle at the top of the
-      // tall carousel card with a dead void under it - the whole column,
-      // now-line included, centres as ONE unit; a full day measures the
-      // viewport anyway and stays exactly as before.
-      final columnH = blocks.fold<double>(
-          0, (s, b) => s + b.durationMin * factor + (b.border ? 1 : 0));
+      final pxPerMin = this.pxPerMin ??
+          weekPxPerMin(viewportPx: constraints.maxHeight, days: [blocks]);
+      final heights = dayColumnHeights(
+          pxPerMin: pxPerMin,
+          blocks: blocks,
+          viewportPx: constraints.maxHeight);
+      // Exact column height (rows + seam hairlines). The column is TOP-
+      // anchored like every calendar ever drawn: a light day ends early,
+      // but 08:00 sits at the same pixel on every page. (It used to centre
+      // as one unit - "days with few events float in mid-card" was the
+      // direct inconsistency complaint, 11.11.)
+      final columnH = heights.fold<double>(0, (s, h) => s + h) +
+          blocks.fold<double>(0, (s, b) => s + (b.border ? 1 : 0));
       return Align(
-        alignment: Alignment.centerLeft,
+        alignment: Alignment.topLeft,
         child: SizedBox(
           width: constraints.maxWidth,
           height: columnH,
@@ -233,7 +251,7 @@ class TimetableDailyView extends StatelessWidget {
               Column(
                 children: [
                   for (var i = 0; i < day.length; i++)
-                    _rowWithSeam(context, day, mins, i, factor, seams[i],
+                    _rowWithSeam(context, day, mins, i, heights[i], seams[i],
                         constraints.maxWidth)
                 ],
               ),
@@ -247,7 +265,7 @@ class TimetableDailyView extends StatelessWidget {
                       child: CustomPaint(
                         painter: _NowLinePainter(
                           blocks: blocks,
-                          pxPerMin: factor,
+                          heights: heights,
                           color: theme.colorScheme.primary,
                           textStyle: theme.textTheme.bodyLarge?.copyWith(
                                   color: theme.colorScheme.primary) ??
@@ -269,10 +287,10 @@ class TimetableDailyView extends StatelessWidget {
   /// One 1px hairline between consecutive blocks, inset to the text
   /// gutter so it never touches the card's rounded frame. EXACTLY 1px,
   /// drawn iff [seam] - the same flag the blocks list handed to
-  /// dayColumnFactor/nowLineY, so the line only sits where a measured row is.
+  /// dayColumnHeights/nowLineY, so the line only sits where a measured row is.
   Widget _rowWithSeam(BuildContext context, List<TimetableAppointment> rows,
-      List<int> mins, int i, double factor, bool seam, double fullW) {
-    final row = _row(context, rows, mins, i, factor, fullW);
+      List<int> mins, int i, double boxH, bool seam, double fullW) {
+    final row = _row(context, rows, mins, i, boxH, fullW);
     if (!seam) return row;
     return Column(
       children: [
@@ -287,14 +305,14 @@ class TimetableDailyView extends StatelessWidget {
   }
 
   Widget _row(BuildContext context, List<TimetableAppointment> rows,
-      List<int> mins, int i, double factor, double fullW) {
+      List<int> mins, int i, double boxH, double fullW) {
     final theme = Theme.of(context);
     final appointment = rows[i];
 
     if (!_isContent(appointment)) {
       final ghost = _ghostFor(appointment);
       if (ghost != null) {
-        return _ghostCard(context, appointment, ghost, factor, mins[i]);
+        return _ghostCard(context, appointment, ghost, boxH);
       }
       // a slot between two lectures is worth naming; one at either end of
       // the day is only a seam
@@ -308,7 +326,7 @@ class TimetableDailyView extends StatelessWidget {
       // column's geometry contract says must stay readable. Scaling it
       // down would keep a sub-pixel-height smudge on the seam instead; at
       // under one line height the gap simply is not worth naming.
-      final gapBox = mins[i] * factor;
+      final gapBox = boxH;
       final gapLineH = MediaQuery.textScalerOf(context)
               .scale(theme.textTheme.bodySmall?.fontSize ?? 12) *
           1.45;
@@ -345,11 +363,11 @@ class TimetableDailyView extends StatelessWidget {
         : L10n.t(
             "timetable.changeRoomDelta", [roomDelta.oldRoom!, roomDelta.room]);
 
-    // duration-pinned height doubles as the geometry the now-line walks,
-    // so a 60-min block must give up text lines instead of pushing its
-    // words over the neighbour's first row (what an unbounded text
-    // column inside a fixed SizedBox did: AUDIT-test bled into KLAUSUR)
-    final boxH = mins[i] * factor;
+    // the fitted row height ([dayColumnHeights]) doubles as the geometry
+    // the now-line walks, so a 60-min block must give up text lines
+    // instead of pushing its words over the neighbour's first row (what an
+    // unbounded text column inside a fixed SizedBox did: AUDIT-test bled
+    // into KLAUSUR)
     final textScale = MediaQuery.textScalerOf(context);
     // the HH:MM rides bodyLarge and claims a line of its own at the top
     // of the column, so the title/place budget starts below it; the row
@@ -583,7 +601,7 @@ class TimetableDailyView extends StatelessWidget {
   }
 
   Widget _ghostCard(BuildContext context, TimetableAppointment block,
-      IcsChange change, double factor, int min) {
+      IcsChange change, double boxH) {
     final theme = Theme.of(context);
     // same recipe as the lecture row (ClipRect + FittedBox scaleDown +
     // top-left + min-size Column): a real gap is routinely 15-30 min =
@@ -594,7 +612,7 @@ class TimetableDailyView extends StatelessWidget {
       opacity: deadContentOpacity,
       child: ClipRect(
         child: SizedBox(
-          height: min * factor,
+          height: boxH,
           child: FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.topLeft,
@@ -664,13 +682,13 @@ class TimetableDailyView extends StatelessWidget {
 
 class _NowLinePainter extends CustomPainter {
   final List<NowBlock> blocks;
-  final double pxPerMin;
+  final List<double> heights;
   final Color color;
   final TextStyle textStyle;
 
   _NowLinePainter(
       {required this.blocks,
-      required this.pxPerMin,
+      required this.heights,
       required this.color,
       required this.textStyle})
       : super(repaint: NowClock.minutesOfDay);
@@ -686,8 +704,7 @@ class _NowLinePainter extends CustomPainter {
     // read the live value here - the minute arrives via the repaint
     // listenable WITHOUT any widget rebuilding
     final minute = NowClock.minutesOfDay.value;
-    final y =
-        nowLineY(blocks: blocks, minutesOfDay: minute, pxPerMin: pxPerMin);
+    final y = nowLineY(blocks: blocks, heights: heights, minutesOfDay: minute);
     if (y == null) return;
 
     // the stroke stops short of the rounded card frame instead of
@@ -732,7 +749,7 @@ class _NowLinePainter extends CustomPainter {
     double top = 0;
     for (var i = 0; i < blocks.length; i++) {
       final b = blocks[i];
-      final bottom = top + b.durationMin * pxPerMin;
+      final bottom = top + heights[i];
       if (minute >= b.beginMin) {
         if (minute < b.beginMin + b.durationMin) return (top, bottom);
         if (i + 1 >= blocks.length) return (top, bottom);
@@ -762,7 +779,7 @@ class _NowLinePainter extends CustomPainter {
   @override
   bool shouldRepaint(_NowLinePainter oldDelegate) =>
       oldDelegate.blocks != blocks ||
-      oldDelegate.pxPerMin != pxPerMin ||
+      oldDelegate.heights != heights ||
       oldDelegate.color != color ||
       oldDelegate.textStyle != textStyle;
 }

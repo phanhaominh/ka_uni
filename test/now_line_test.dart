@@ -7,133 +7,167 @@ const morning = [
   NowBlock(beginMin: 585, durationMin: 105, border: true),
 ];
 
+// 1 px/min walk of [morning]: 90 + seam + 105.
+const morningH = [90.0, 105.0];
+
 void main() {
   test("before the first block there is no line", () {
-    expect(nowLineY(blocks: morning, minutesOfDay: 7 * 60 + 30, pxPerMin: 1),
+    expect(
+        nowLineY(blocks: morning, heights: morningH, minutesOfDay: 7 * 60 + 30),
         isNull);
   });
 
   test("at or after the last block's end there is no line", () {
     // last block ends at 11:30 = 690
-    expect(nowLineY(blocks: morning, minutesOfDay: 690, pxPerMin: 1), isNull);
-    expect(
-        nowLineY(blocks: morning, minutesOfDay: 22 * 60, pxPerMin: 1), isNull);
+    expect(nowLineY(blocks: morning, heights: morningH, minutesOfDay: 690),
+        isNull);
+    expect(nowLineY(blocks: morning, heights: morningH, minutesOfDay: 22 * 60),
+        isNull);
     // one minute earlier is still inside
-    expect(nowLineY(blocks: morning, minutesOfDay: 689, pxPerMin: 1),
+    expect(nowLineY(blocks: morning, heights: morningH, minutesOfDay: 689),
         closeTo(90 + 1 + 104, 1e-9));
   });
 
   test("inside a block the line rides its minute offset", () {
-    // 8:30, 1 px/min → 30 px into the first block
-    expect(nowLineY(blocks: morning, minutesOfDay: 8 * 60 + 30, pxPerMin: 1),
+    // 8:30 = 30 min into the 90-min (90-px-high) first row
+    expect(nowLineY(blocks: morning, heights: morningH, minutesOfDay: 510),
         closeTo(30, 1e-9));
-  });
-
-  test("later blocks stack content height PLUS their border", () {
-    // 10:15 in block 2: block 1 paints 90 px content + 1 px border
-    expect(nowLineY(blocks: morning, minutesOfDay: 10 * 60 + 15, pxPerMin: 1),
-        closeTo(90 + 1 + 30, 1e-9));
-    // without the border the seam is 1 px earlier - the walk must mirror the
-    // real column where only begin.hour < 17 rows draw a bottom border
-    const noBorder = [
-      NowBlock(beginMin: 480, durationMin: 90),
-      NowBlock(beginMin: 585, durationMin: 105),
-    ];
-    expect(nowLineY(blocks: noBorder, minutesOfDay: 10 * 60 + 15, pxPerMin: 1),
-        closeTo(120, 1e-9));
+    // 10:30 = 45 min into the second row, which sits below 90px + 1px seam
+    expect(nowLineY(blocks: morning, heights: morningH, minutesOfDay: 630),
+        closeTo(90 + 1 + 45, 1e-9));
   });
 
   test("a minute in a dead gap sticks to the previous block's bottom seam", () {
-    // 9:35: block 1 ended at 9:30, block 2 starts at 9:45 - zero height
-    // gap; the line parks on the seam INCLUDING block 1's border
-    expect(nowLineY(blocks: morning, minutesOfDay: 9 * 60 + 35, pxPerMin: 1),
+    // 9:40 is inside neither block (first ends 9:30, second starts 9:45)
+    expect(nowLineY(blocks: morning, heights: morningH, minutesOfDay: 580),
         closeTo(91, 1e-9));
-    const noBorder = [
-      NowBlock(beginMin: 480, durationMin: 90),
-      NowBlock(beginMin: 585, durationMin: 105),
-    ];
-    expect(nowLineY(blocks: noBorder, minutesOfDay: 9 * 60 + 35, pxPerMin: 1),
-        closeTo(90, 1e-9));
   });
 
   test("a minute on a block boundary belongs to the block starting there", () {
-    // adjacent blocks (no gap): 9:30 = end of block 1 = first minute of 2
-    const adjacent = [
-      NowBlock(beginMin: 480, durationMin: 90),
-      NowBlock(beginMin: 570, durationMin: 105),
-    ];
-    expect(nowLineY(blocks: adjacent, minutesOfDay: 9 * 60 + 30, pxPerMin: 1),
-        closeTo(90, 1e-9));
+    expect(nowLineY(blocks: morning, heights: morningH, minutesOfDay: 585),
+        closeTo(91, 1e-9));
   });
 
-  test("a gap-band block walks the wall window its pixels cover", () {
-    // lecture 8:00..9:00, then a GAP row owning the whole 9:00..11:30 gap:
-    // its beginMin is the previous row's END (what dayColumnBlocks feeds),
-    // not the scaffold placeholder's nominal 9:45 - the band window and the
-    // painted pixels must be the same wall minutes
-    const banded = [
+  test("heights (not minutes) define the walk: floors rescale the offset", () {
+    // a 90-min row paid 48px: halfway in minutes is halfway in pixels
+    const floored = [
+      NowBlock(beginMin: 480, durationMin: 90, border: true, content: true)
+    ];
+    expect(nowLineY(blocks: floored, heights: const [48.0], minutesOfDay: 525),
+        closeTo(24, 1e-9));
+  });
+
+  test("gap-band blocks walk the wall window their pixels cover", () {
+    const withGap = [
       NowBlock(beginMin: 480, durationMin: 60, border: true, content: true),
       NowBlock(beginMin: 540, durationMin: 150, border: true),
       NowBlock(beginMin: 690, durationMin: 90, border: true, content: true),
     ];
-    // 9:05 = 5 px into the band - the band owns its minutes, no seam snap
-    expect(nowLineY(blocks: banded, minutesOfDay: 545, pxPerMin: 1),
-        closeTo(60 + 1 + 5, 1e-9));
-    // 11:35, the LECTURE's first minutes: 5 px into the lecture block. With
-    // the placeholder's nominal 9:45 as band start the window ran to 12:15
-    // and the line sat near the band bottom here, only jumping across the
-    // seam once the minute left the bogus window
-    expect(nowLineY(blocks: banded, minutesOfDay: 695, pxPerMin: 1),
-        closeTo(60 + 1 + 150 + 1 + 5, 1e-9));
-  });
-
-  test("pxPerMin scales content AND the gap seam, never the border", () {
-    // 0.9 px/min: 30 min → 27 px inside block 1
-    expect(nowLineY(blocks: morning, minutesOfDay: 8 * 60 + 30, pxPerMin: 0.9),
-        closeTo(27, 1e-9));
-    // gap seam: 90*0.9 content + the fixed 1 px border
-    expect(nowLineY(blocks: morning, minutesOfDay: 9 * 60 + 35, pxPerMin: 0.9),
-        closeTo(82, 1e-9));
-  });
-
-  test("empty column yields no line and the full 0.9 factor", () {
-    expect(nowLineY(blocks: const [], minutesOfDay: 600, pxPerMin: 1), isNull);
+    // gap row: 150 wall minutes paid 36px -> 10:00, i.e. 60 of the row's
+    // 150, sits at 54 + seam + 36/150*60
     expect(
-        dayColumnFactor(viewportPx: 500, blocks: const []), closeTo(0.9, 1e-9));
+        nowLineY(
+            blocks: withGap,
+            heights: const [54.0, 36.0, 81.0],
+            minutesOfDay: 10 * 60),
+        closeTo(54 + 1 + 36 / 150 * 60, 1e-9));
   });
 
-  test("factor stays 0.9 while the natural column fits", () {
-    // 100 min*0.9 + 1 border = 91 ≤ 100
-    const small = [NowBlock(beginMin: 480, durationMin: 100, border: true)];
-    expect(dayColumnFactor(viewportPx: 100, blocks: small), closeTo(0.9, 1e-9));
-    // exactly on the nose (total == viewport) still keeps the old look
-    expect(dayColumnFactor(viewportPx: 91, blocks: small), closeTo(0.9, 1e-9));
-  });
-
-  test("factor shrinks to the exact fit when the day overflows", () {
-    // the generic schedule: 630 min, six <17h borders, ~545 px viewport
-    const day = [
-      NowBlock(beginMin: 480, durationMin: 90, border: true),
-      NowBlock(beginMin: 585, durationMin: 105, border: true),
-      NowBlock(beginMin: 690, durationMin: 90, border: true),
-      NowBlock(beginMin: 780, durationMin: 60, border: true),
-      NowBlock(beginMin: 840, durationMin: 90, border: true),
-      NowBlock(beginMin: 945, durationMin: 105, border: true),
-      NowBlock(beginMin: 1050, durationMin: 90), // 17:30 row: no border
-    ];
-    final f = dayColumnFactor(viewportPx: 545, blocks: day);
-    expect(f, lessThan(0.9));
-    // the fitted factor makes the column exactly fill the viewport
-    expect(f * 630 + 6, closeTo(545, 1e-9));
-  });
-
-  test("factor clamps at 0.3 and never exceeds 0.9", () {
-    const absurd = [NowBlock(beginMin: 0, durationMin: 10000)];
+  test("empty column has no line, effort zero and ideal week scale", () {
+    expect(nowLineY(blocks: const [], heights: const [], minutesOfDay: 600),
+        isNull);
+    expect(dayEffort(const []), 0);
     expect(
-        dayColumnFactor(viewportPx: 100, blocks: absurd), closeTo(0.3, 1e-9));
-    const tiny = [NowBlock(beginMin: 480, durationMin: 10)];
-    // viewport dwarfs the column: 0.9 is the cap, not (vp-borders)/dur
-    expect(
-        dayColumnFactor(viewportPx: 100000, blocks: tiny), closeTo(0.9, 1e-9));
+        weekPxPerMin(viewportPx: 742, days: const []), timetableIdealPxPerMin);
+  });
+
+  group("dayColumnHeights", () {
+    test("long rows are exactly proportional, short rows hit the floor", () {
+      const blocks = [
+        NowBlock(beginMin: 480, durationMin: 90, content: true),
+        NowBlock(beginMin: 600, durationMin: 20, content: true),
+      ];
+      final h =
+          dayColumnHeights(pxPerMin: 0.9, blocks: blocks, viewportPx: 742);
+      expect(h[0], closeTo(81, 1e-9));
+      expect(h[1], timetableContentFloorPx);
+    });
+
+    test("free rows fold at the cap and stay honest below it", () {
+      const blocks = [
+        NowBlock(beginMin: 480, durationMin: 15), // 13.5 px: honest
+        NowBlock(beginMin: 495, durationMin: 120), // 108 -> cap
+        NowBlock(beginMin: 615, durationMin: 30), // 27: below cap
+      ];
+      final h =
+          dayColumnHeights(pxPerMin: 0.9, blocks: blocks, viewportPx: 742);
+      expect(h[0], closeTo(13.5, 1e-9));
+      expect(h[1], closeTo(40 * 0.9, 1e-9));
+      expect(h[2], closeTo(27, 1e-9));
+    });
+
+    test("a jammed day shrinks uniformly, never clips", () {
+      // 8 content rows at floor = 384 + 7 seams > a 200px viewport
+      final blocks = [
+        for (var i = 0; i < 8; i++)
+          NowBlock(
+              beginMin: 480 + 30 * i,
+              durationMin: 30,
+              border: true,
+              content: true)
+      ];
+      final h =
+          dayColumnHeights(pxPerMin: 0.9, blocks: blocks, viewportPx: 200);
+      final total = h.fold<double>(0, (s, v) => s + v) + 8;
+      expect(total, closeTo(200, 1e-6));
+      expect(h.every((v) => v > 0), isTrue);
+      // uniform: all rows equal
+      expect(h.toSet().length, 1);
+    });
+
+    test("empty blocks yield no heights", () {
+      expect(dayColumnHeights(pxPerMin: 0.9, blocks: const [], viewportPx: 742),
+          isEmpty);
+    });
+  });
+
+  group("weekPxPerMin", () {
+    test("the busiest day decides, light days follow the same scale", () {
+      final busy = [
+        NowBlock(beginMin: 480, durationMin: 90, content: true),
+        NowBlock(beginMin: 570, durationMin: 510, content: true),
+      ];
+      final light = [
+        NowBlock(beginMin: 480, durationMin: 90, content: true),
+      ];
+      final px = weekPxPerMin(viewportPx: 500, days: [light, busy]);
+      expect(px, closeTo(500 / 600, 1e-9));
+      // THE regression: equal durations, equal pixels on every day -
+      // the 90-min lecture is identical on the busy and the light page
+      final hBusy =
+          dayColumnHeights(pxPerMin: px, blocks: busy, viewportPx: 500);
+      final hLight =
+          dayColumnHeights(pxPerMin: px, blocks: light, viewportPx: 500);
+      expect(hBusy.first, closeTo(hLight.single, 1e-9));
+      expect(hBusy.first, closeTo(90 * px, 1e-9));
+    });
+
+    test("capped gaps count as capped effort", () {
+      final withVoid = [
+        NowBlock(beginMin: 480, durationMin: 90, content: true),
+        NowBlock(beginMin: 570, durationMin: 240), // folds at 40
+      ];
+      expect(dayEffort(withVoid), 90 + 40);
+      // a 3h void alone must NOT squash the week below design scale
+      expect(weekPxPerMin(viewportPx: 742, days: [withVoid]),
+          timetableIdealPxPerMin);
+    });
+
+    test("a week fitter than the floor still clamps to 0.3", () {
+      final mega = [
+        NowBlock(beginMin: 0, durationMin: 1440, content: true),
+      ];
+      expect(weekPxPerMin(viewportPx: 200, days: [mega]), timetableMinPxPerMin);
+    });
   });
 }
