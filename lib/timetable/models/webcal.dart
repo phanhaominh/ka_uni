@@ -19,6 +19,11 @@ class WebcalKeys {
   static const fingerprint = "DATA_webcalFingerprint";
   static const changes = "DATA_webcalChanges";
 
+  /// One-line WHY of the last feed failure (release builds strip every
+  /// print; the live dead-token incident was undiagnosable from outside).
+  /// The agenda stale footer appends it - visible to user AND support.
+  static const diag = "DATA_webcalDiag";
+
   /// fingerprint of the feed URL the cached ICS/fingerprint came from; a
   /// different source (re-provisioned token URL, test-seam build) means the
   /// stored baseline describes ANOTHER calendar - diffing across sources

@@ -279,6 +279,10 @@ class CampusManager extends KITLoginManager {
   /// account on a shared device until every refetch happens to succeed.
   void wipeAccountMemory() {
     _teardownEpoch++;
+    unawaited(SharedPreferences.getInstance().then((p) => p.setString(
+        WebcalKeys.diag,
+        "${DateTime.now().toIso8601String().substring(5, 16)} WIPE "
+        "(epoch=$_teardownEpoch)")));
     scheduleFetchingTimer?.cancel();
     scheduleFetchingTimer = null;
     moduleRows = [];
@@ -287,6 +291,7 @@ class CampusManager extends KITLoginManager {
     timetable = TimetableWeekly();
     timetableChanged = false;
     timetableSurfaceBroken = false;
+    offlineSuspected = false;
     // the merged-feed keys gate card admission and exam urgency for the
     // NEXT account too: they belong to this student's subscriptions
     enrolledLectureTitles = {};
@@ -325,6 +330,7 @@ class CampusManager extends KITLoginManager {
   /// NEW account's replacements when they eventually settle.
   void dropInFlightFetches() {
     _scheduleInFlight = null;
+    _webcalInFlight = null;
     _moduleInFlight.clear();
   }
 
@@ -1948,6 +1954,13 @@ class CampusManager extends KITLoginManager {
   bool timetableSurfaceBroken = false;
   bool examsSurfaceBroken = false;
 
+  /// The last fetch attempt died on a dead connection, not on KIT markup:
+  /// the banner says "check your connection" instead of falsely accusing a
+  /// site redesign (live offline spell, 10.11: socket errors walked into the
+  /// surface-broken funnel and pinned "Could not update the timetable (KIT
+  /// site changed?)"). Cleared by the first fetch that reaches KIT again.
+  bool offlineSuspected = false;
+
   // The cascampus `possibleexams` view lists the exam offers of the
   // student's ENTIRE degree-programme catalogue: a first-semester student
   // gets "Act now" + deadline notifications for exams of lectures they
@@ -2232,39 +2245,110 @@ class CampusManager extends KITLoginManager {
   /// controlled feed. Empty in every normal build - zero production effect.
   static const testWebcalUrl = String.fromEnvironment("TEST_WEBCAL_URL");
 
-  Future<bool> fetchWebcalTimetable() async {
+  /// Last feed failure reason for the release build (no prints there);
+  /// the agenda stale footer shows it verbatim.
+  Future<void> _webcalDiag(String why) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(WebcalKeys.diag,
+        "${DateTime.now().toIso8601String().substring(5, 16)} $why");
+  }
+
+  /// Gate for a feed response: usable 200 + VCALENDAR marker + parseable.
+  /// Kept separate so the dead-token retry below and the tests share ONE
+  /// definition of "this response is a live calendar".
+  static WebcalFeed? feedFromResponse(http.Response r) {
+    if (r.statusCode != 200 || !r.body.contains("BEGIN:VCALENDAR")) {
+      return null;
+    }
+    // sanitize BEFORE parse: the parse result echoes its input as
+    // feed.raw, and that raw is what lands in the ICS cache - so one
+    // cut here keeps smuggled sentinel lines out of both the parsed
+    // model and every later splice on the persisted body
+    return WebcalFeed.parse(sanitizeSentinels(r.body));
+  }
+
+  Future<bool>? _webcalInFlight;
+
+  /// single-flight: boot chain + agenda pull + exams relay all used to run
+  /// overlapping webcal fetches; on a dead token each raced through the
+  /// re-provision, and the (old, URL-identity) fence rejected ALL their
+  /// healthy results. Same account, same fetch - share one future.
+  Future<bool> fetchWebcalTimetable() {
+    final inflight = _webcalInFlight;
+    if (inflight != null) return inflight;
+    final future = _fetchWebcalTimetableInner();
+    _webcalInFlight = future;
+    return future.whenComplete(() {
+      if (identical(_webcalInFlight, future)) _webcalInFlight = null;
+    });
+  }
+
+  Future<bool> _fetchWebcalTimetableInner() async {
     // Contain EVERY failure (incl. TimeoutException from _ensureWebcalUrl
     // / netGet, and anything the two prefs loads throw): when this threw,
     // fetchTimetable's HTML fallback never ran and forceRefetchEverything
     // aborted mid-pipeline *after* clearEverything() had already wiped
     // the caches - half-reset app, no error shown.
     try {
+      // stage breadcrumbs: the live device showed NO diag after failed pulls,
+      // so every silent-exit path is a suspect - marks make the stuck stage
+      // readable from the agenda footer alone
+      await _webcalDiag("start");
       await ensurePersonalIcsLoaded();
       await carryExamSynthFromCache();
-      final url =
+      await _webcalDiag("synth ok");
+      var url =
           testWebcalUrl.isNotEmpty ? testWebcalUrl : await _ensureWebcalUrl();
       if (url == null) {
+        await _webcalDiag("provision: no token URL on webcal.asp");
         return false;
       }
 
-      final response = await netGet(Uri.parse(url));
-      if (response.statusCode != 200 ||
-          !response.body.contains("BEGIN:VCALENDAR")) {
+      await _webcalDiag("GET stored url");
+      var response = await netGet(Uri.parse(url));
+      var feed = feedFromResponse(response);
+      if (feed == null && testWebcalUrl.isEmpty) {
+        // KIT retires webcal tokens while the CAS session stays healthy,
+        // and _ensureWebcalUrl only provisions when the stored key is
+        // EMPTY - a dead token therefore NEVER healed (live device: feed
+        // silently stale 188 h, footer-only warning, agenda rows were
+        // pure RRULE expansion off the Nov-2 cache). Drop the dead URL,
+        // re-provision from webcal.asp once, retry the GET. The
+        // source-switch guard below reseeds the fingerprint baseline for
+        // the new token's calendar, so a rotation must not flood CHANGED.
+        if (kDebugMode) {
+          print("WebCal URL dead (${response.statusCode}) - re-provisioning");
+        }
+        await _webcalDiag("dead ${response.statusCode} -> reprov");
+        final purge = await SharedPreferences.getInstance();
+        if ((purge.getString(_webcalUrlKey) ?? "") == url) {
+          await purge.remove(_webcalUrlKey);
+        }
+        // webcal.asp needs the tguid to hand out (or re-enable) a token;
+        // on a cold boot the first fetch can run before any HTML scrape
+        // booted it - provision without it and the retry is a guaranteed
+        // miss that only heals on the SECOND foreground fetch
+        if (tguid == null) await bootTguid();
+        url = await _ensureWebcalUrl();
+        if (url == null) {
+          await _webcalDiag("reprovision: no token link "
+              "(stale-fetch was ${response.statusCode}/${response.body.length})");
+          if (kDebugMode) {
+            print("WebCal re-provisioning failed: ${response.statusCode} "
+                "len ${response.body.length}");
+          }
+          return false;
+        }
+        await _webcalDiag("GET new url");
+        response = await netGet(Uri.parse(url));
+        feed = feedFromResponse(response);
+      }
+      if (feed == null) {
+        await _webcalDiag(
+            "feed ${response.statusCode}/${response.body.length}");
         if (kDebugMode) {
           print(
               "WebCal fetch failed: ${response.statusCode} len ${response.body.length}");
-        }
-        return false;
-      }
-
-      // sanitize BEFORE parse: the parse result echoes its input as
-      // feed.raw, and that raw is what lands in the ICS cache — so one
-      // cut here keeps smuggled sentinel lines out of both the parsed
-      // model and every later splice on the persisted body
-      final feed = WebcalFeed.parse(sanitizeSentinels(response.body));
-      if (feed == null) {
-        if (kDebugMode) {
-          print("WebCal parse produced no occurrences!");
         }
         return false;
       }
@@ -2277,11 +2361,21 @@ class CampusManager extends KITLoginManager {
       // same double fence as the background poll (C81) — teardown epoch
       // plus a live logged-in-URL probe
       final live = SharedPreferencesAsync();
-      final urlLive = await live.getString(_webcalUrlKey);
-      if (epoch != _teardownEpoch ||
-          (urlLive ?? "").isEmpty ||
-          (testWebcalUrl.isEmpty && urlLive != url)) {
-        return false; // logged out (or re-provisioned) mid-fetch
+      // FENCE ON ACCOUNT, NOT ON A prefs PROBE: logout() ALWAYS runs
+      // wipeAccountMemory (epoch++) before its async key sweep, so the
+      // epoch is the complete, synchronous account signal. Two live-device
+      // incidents proved any prefs-based clause un-satisfiable in practice:
+      // (a) `urlLive != url` rejected every self-heal when parallel chains
+      // swapped the stored URL mid-flight; (b) the async-API read of
+      // DATA_webcalUrl answered null even right after a successful
+      // provisioning write (fence diag "key gone ... got=null", 10:58) -
+      // legacy writes and SharedPreferencesAsync disagree for this key on
+      // this device, and a fence on their handshake is a permanent veto.
+      // The poll isolate keeps its own key check (different isolate, its
+      // snapshot really is stale); here, epoch or nothing.
+      if (epoch != _teardownEpoch) {
+        await _webcalDiag("fence: epoch $epoch/$_teardownEpoch");
+        return false; // logged out mid-fetch
       }
       // source switch (test seam on/off, re-provisioned webcal token URL):
       // reseed the baseline instead of diffing two different calendars
@@ -2348,6 +2442,8 @@ class CampusManager extends KITLoginManager {
       // timetableChanged - a foreground fetch after a background-detected
       // change used to silently un-light the home badge the push announced.
       timetableSurfaceBroken = false;
+      offlineSuspected = false;
+      await prefs.remove(WebcalKeys.diag);
       // changesLiveRaw already carries this fetch's merged write above (in
       // which case timetableChanged is true anyway) - the live value read
       // at the fence is what a background poll may have left behind
@@ -2364,6 +2460,11 @@ class CampusManager extends KITLoginManager {
       }
       return true;
     } catch (e) {
+      await _webcalDiag("threw: ${e.runtimeType}");
+      if (KITLoginManager.isNetworkError(e)) {
+        offlineSuspected = true;
+        notificationCallback();
+      }
       if (kDebugMode) print("WebCal fetch threw, falling back to HTML: $e");
       return false;
     }
@@ -2390,7 +2491,18 @@ class CampusManager extends KITLoginManager {
     }
     final url =
         "https://cascampus.studium.kit.edu/campus/student/timetable.asp?tguid=${tguid ?? ""}";
-    final response = await guardedCasGet(url);
+    final http.Response response;
+    try {
+      response = await guardedCasGet(url);
+    } on Object catch (e) {
+      if (!KITLoginManager.isNetworkError(e)) rethrow;
+      // socket death is not a markup change: keep the surface verdict the
+      // last CONNECTED fetch proved, tell the banner "connection", and skip
+      // the re-bootstrap retry (it would only storm the dead network)
+      offlineSuspected = true;
+      notificationCallback();
+      return;
+    }
 
     if (epoch != _teardownEpoch) {
       // logout while the GET was in flight: the page belongs to the torn-
@@ -2408,6 +2520,7 @@ class CampusManager extends KITLoginManager {
       return fetchTimetable(retryIfFailed: false);
     }
     timetableSurfaceBroken = !ok;
+    if (ok) offlineSuspected = false;
     if (!ok) {
       notificationCallback();
     }
@@ -2433,7 +2546,14 @@ class CampusManager extends KITLoginManager {
     isFetchingExams = true;
     try {
       return await _fetchExamsInner(retryIfFailed: retryIfFailed);
-    } on Object {
+    } on Object catch (e) {
+      if (KITLoginManager.isNetworkError(e)) {
+        // offline: do NOT mark the exams surface broken and do not burn a
+        // re-bootstrap - a no-signal train ride is not a KIT redesign
+        offlineSuspected = true;
+        notificationCallback();
+        return false;
+      }
       // timeouts / socket errors must land in the same failure funnel as a
       // malformed response, or the memoized future rejects every caller
       // (exams page: endless spinner, refresh toast never fires)
@@ -2507,6 +2627,7 @@ class CampusManager extends KITLoginManager {
           return false;
         }
         examsSurfaceBroken = false;
+        offlineSuspected = false;
         exams = parsed;
         examsLoaded = true;
         examsFetchedAt = DateTime.now();

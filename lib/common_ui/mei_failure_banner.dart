@@ -21,6 +21,13 @@ class MeiFailureBanner extends StatelessWidget {
     if (cm.botChallengeAlgorithmChanged) {
       text = L10n.t("notifs.bannerBotProtection");
       color = isDark ? Colors.red.shade400 : Colors.red.shade700;
+    } else if (cm.offlineSuspected) {
+      // before the broken-surface branches: during an offline spell those
+      // flags may still hold yesterday's connected verdict - the honest,
+      // actionable line is "no connection", and it must not be dressed up
+      // as a KIT redesign the user can do nothing about
+      text = L10n.t("notifs.bannerOffline");
+      color = isDark ? Colors.blueGrey.shade300 : Colors.blueGrey.shade700;
     } else if (cm.examsSurfaceBroken && cm.timetableSurfaceBroken) {
       text = L10n.t("notifs.bannerBoth");
       color = isDark ? Colors.red.shade400 : Colors.red.shade600;

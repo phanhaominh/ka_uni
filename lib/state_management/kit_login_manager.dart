@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 
@@ -26,6 +27,17 @@ class KITLoginManager {
   // chain (and every spinner waiting on it) for minutes. Every request goes
   // through netGet/netPost below so it always terminates.
   static const netTimeout = Duration(seconds: 30);
+
+  /// A dead socket is NOT a redesigned website. Fetch funnels classify on
+  /// this: connection failures must never light the "KIT site changed?"
+  /// surface-broken banner (a live offline spell pinned it for the whole
+  /// process before), and must not burn the re-bootstrap retry either.
+  static bool isNetworkError(Object e) =>
+      e is io.SocketException ||
+      e is io.HandshakeException ||
+      e is io.HttpException ||
+      e is http.ClientException ||
+      e is TimeoutException;
 
   Future<http.Response> netGet(Uri uri,
       {Map<String, String>? headers, Duration? timeout}) {

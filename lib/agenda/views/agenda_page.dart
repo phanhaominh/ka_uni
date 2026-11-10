@@ -101,6 +101,10 @@ class _AgendaPageState extends State<AgendaPage> {
   static const _iliasCacheKey = "DATA_iliasCardCache";
 
   _AgendaLoad _load = _AgendaLoad();
+
+  /// last webcal failure reason (release build has no prints) - appended
+  /// to the stale footer so the WHY is visible without a logcat
+  String? _feedDiag;
   bool _loading = true;
   bool _iliasLoading = false;
   // false until a cached ICS was found; drives the day-section spinner
@@ -291,6 +295,7 @@ class _AgendaPageState extends State<AgendaPage> {
               : _load.announcements,
           iliasError: _load.iliasError,
           fetchedAt: DateTime.tryParse(prefs.getString(_fetchedAtKey) ?? ""));
+      _feedDiag = prefs.getString("DATA_webcalDiag");
       _loading = false;
     });
     // first data-driven rebuild: this, not the data-free first frame, is
@@ -418,6 +423,7 @@ class _AgendaPageState extends State<AgendaPage> {
     setState(() {
       _feedCached = _feedCached ||
           (prefs2.getString(_icsCacheKey) ?? "").contains("BEGIN:VCALENDAR");
+      _feedDiag = prefs2.getString("DATA_webcalDiag");
       _load = _AgendaLoad(
           today: NextUp.onDay(feed2, now2),
           tomorrow: NextUp.onDay(
@@ -427,7 +433,11 @@ class _AgendaPageState extends State<AgendaPage> {
           unread: _load.unread,
           announcements: _load.announcements,
           iliasError: _load.iliasError,
-          fetchedAt: _load.fetchedAt);
+          // re-read, do NOT carry: after a healing _refetch the stamp and
+          // the diag flipped together in prefs - carrying the old stamp
+          // kept the stale footer lit (with its now-fixed diag) forever
+          fetchedAt: DateTime.tryParse(prefs2.getString(_fetchedAtKey) ?? "") ??
+              _load.fetchedAt);
     });
     // synthetic events may have just moved the today card
     _scheduleTodayScroll();
@@ -931,7 +941,8 @@ class _AgendaPageState extends State<AgendaPage> {
     final age = now.difference(at);
     final stale = age > const Duration(hours: 6);
     final label = stale
-        ? L10n.t("agenda.staleData", ["${age.inHours} h"])
+        ? L10n.t("agenda.staleData", ["${age.inHours} h"]) +
+            (_feedDiag == null ? "" : " (${_feedDiag!})")
         : L10n.t("agenda.asOf", [_hm(at)]);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),

@@ -16,6 +16,8 @@ const Map<String, String> de_notifs = {
       "Prüfungsliste konnte nicht gelesen werden (KIT-Seite geändert?).",
   "notifs.bannerTimetable":
       "Stundenplan konnte nicht aktualisiert werden (KIT-Seite geändert?).",
+  "notifs.bannerOffline":
+      "KIT gerade nicht erreichbar — Verbindung prüfen, die Daten können veraltet sein.",
   // ---- ilias.* (appended for IliasWatcher; kept in this table per the
   // l10n merge contract — the maps are flattened, prefix is namespacing) ----
   // Push title when the news feed names no course (scraper leaves it empty).
@@ -37,6 +39,8 @@ const Map<String, String> en_notifs = {
   "notifs.bannerExams": "Could not read the exam list (KIT site changed?).",
   "notifs.bannerTimetable":
       "Could not update the timetable (KIT site changed?).",
+  "notifs.bannerOffline":
+      "Can't reach KIT right now — check the connection, the data may be stale.",
   // ---- ilias.* — see de_notifs note ----
   "ilias.notifyFallbackTitle": "ILIAS",
 };
