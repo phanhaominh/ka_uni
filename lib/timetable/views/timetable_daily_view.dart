@@ -45,6 +45,15 @@ int _spanMin(TimetableAppointment a) {
 /// to the next content row's begin, so chip text, row height and the
 /// now-line walk all speak about the REAL gap - the scaffold
 /// placeholder's generic span (always 1:30/1:45) used to misreport it.
+/// TWO rules keep the phantom bands out of the column: only the LAST
+/// empty row of a consecutive run owns the gap (the scaffold hands out
+/// several placeholder blocks per gap, and if every one of them counted
+/// the same minutes the gap band would be 2-3x its real size and the
+/// fit-factor would squash every lecture), and a run between two
+/// ADJACENT classes (gap <= 0, e.g. the 90-min scaffold block sitting
+/// between a class that ends and the next that begins at the same
+/// minute) claims ZERO - [TimetableDailyView.build] drops such rows,
+/// which used to open an invisible 90-minute void between neighbours.
 int _rowMin(List<TimetableAppointment> rows, int i) {
   final a = rows[i];
   if (_isContent(a)) return _spanMin(a);
@@ -52,9 +61,11 @@ int _rowMin(List<TimetableAppointment> rows, int i) {
   while (prev >= 0 && !_isContent(rows[prev])) prev--;
   while (next < rows.length && !_isContent(rows[next])) next++;
   if (prev < 0 || next >= rows.length) return _spanMin(a);
+  // not the last row of the empty run: the run's owner below claims it
+  if (next != i + 1) return 0;
   final gap =
       _beginMin(rows[next]) - (_beginMin(rows[prev]) + _spanMin(rows[prev]));
-  return gap > 0 ? gap : _spanMin(a);
+  return gap > 0 ? gap : 0;
 }
 
 /// A hairline is drawn after block [i] only where it separates something:
@@ -64,8 +75,7 @@ int _rowMin(List<TimetableAppointment> rows, int i) {
 /// walk, so painted and measured geometry can never disagree.
 List<bool> dayColumnSeams(List<TimetableAppointment> rows) => [
       for (var i = 0; i < rows.length; i++)
-        i < rows.length - 1 &&
-            (_isContent(rows[i]) || _isContent(rows[i + 1]))
+        i < rows.length - 1 && (_isContent(rows[i]) || _isContent(rows[i + 1]))
     ];
 
 class TimetableDailyView extends StatelessWidget {
@@ -139,8 +149,7 @@ class TimetableDailyView extends StatelessWidget {
     final rows = appointmentsByBlock
         .map((block) => block
             .whereType<TimetableAppointment>()
-            .where((appointment) =>
-                !appointment.isEmpty || block.length <= 1)
+            .where((appointment) => !appointment.isEmpty || block.length <= 1)
             .first)
         .toList(growable: false)
       // time-OF-DAY, never the full stamp: template rows carry mixed dates
@@ -156,17 +165,22 @@ class TimetableDailyView extends StatelessWidget {
     // Leading/trailing scaffold voids outside the content range used to
     // eat up to half the page at full scale; only the void BETWEEN real
     // rows carries meaning (and a chip), so trim outside the range.
-    final day = rows.sublist(
+    final trimmed = rows.sublist(
         rows.indexWhere(_isContent), rows.lastIndexWhere(_isContent) + 1);
+    // Scaffold placeholder rows with no minutes of their own (see _rowMin)
+    // claim no pixels and no chip - keep them out so the column's height
+    // budget is wall-clock truth only.
+    final day = [
+      for (var i = 0; i < trimmed.length; i++)
+        if (_isContent(trimmed[i]) || _rowMin(trimmed, i) > 0) trimmed[i]
+    ];
 
     final mins = [for (var i = 0; i < day.length; i++) _rowMin(day, i)];
     final seams = dayColumnSeams(day);
     final blocks = [
       for (var i = 0; i < day.length; i++)
         NowBlock(
-            beginMin: _beginMin(day[i]),
-            durationMin: mins[i],
-            border: seams[i])
+            beginMin: _beginMin(day[i]), durationMin: mins[i], border: seams[i])
     ];
 
     return LayoutBuilder(builder: (context, constraints) {
@@ -177,38 +191,52 @@ class TimetableDailyView extends StatelessWidget {
       final nowMinutes = now.hour * 60 + now.minute;
       final factor =
           dayColumnFactor(viewportPx: constraints.maxHeight, blocks: blocks);
-      return Stack(
-        children: [
-          Column(
+      // Exact column height (rows + seam hairlines). A light day (two
+      // morning lectures on a Friday) must not dangle at the top of the
+      // tall carousel card with a dead void under it - the whole column,
+      // now-line included, centres as ONE unit; a full day measures the
+      // viewport anyway and stays exactly as before.
+      final columnH = blocks.fold<double>(
+          0, (s, b) => s + b.durationMin * factor + (b.border ? 1 : 0));
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          width: constraints.maxWidth,
+          height: columnH,
+          child: Stack(
             children: [
-              for (var i = 0; i < day.length; i++)
-                _rowWithSeam(context, day, mins, i, factor, seams[i])
-            ],
-          ),
-          if (showNowLine)
-            Positioned.fill(
-              // CustomPaint without hitTestSelf never absorbs taps; the
-              // label is for screen readers, the pixels speak for themselves
-              child: Semantics(
-                label: L10n.t("timetable.nowLineLabel", [
-                  _hm(nowMinutes)
-                ]),
-                child: RepaintBoundary(
-                  child: CustomPaint(
-                    painter: _NowLinePainter(
-                      blocks: blocks,
-                      pxPerMin: factor,
-                      color: theme.colorScheme.primary,
-                      textStyle: theme.textTheme.bodyLarge
-                              ?.copyWith(color: theme.colorScheme.primary) ??
-                          TextStyle(
-                              color: theme.colorScheme.primary, fontSize: 16),
+              Column(
+                children: [
+                  for (var i = 0; i < day.length; i++)
+                    _rowWithSeam(context, day, mins, i, factor, seams[i],
+                        constraints.maxWidth)
+                ],
+              ),
+              if (showNowLine)
+                Positioned.fill(
+                  // CustomPaint without hitTestSelf never absorbs taps; the
+                  // label is for screen readers, the pixels speak for themselves
+                  child: Semantics(
+                    label: L10n.t("timetable.nowLineLabel", [_hm(nowMinutes)]),
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        painter: _NowLinePainter(
+                          blocks: blocks,
+                          pxPerMin: factor,
+                          color: theme.colorScheme.primary,
+                          textStyle: theme.textTheme.bodyLarge?.copyWith(
+                                  color: theme.colorScheme.primary) ??
+                              TextStyle(
+                                  color: theme.colorScheme.primary,
+                                  fontSize: 16),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-        ],
+            ],
+          ),
+        ),
       );
     });
   }
@@ -218,8 +246,8 @@ class TimetableDailyView extends StatelessWidget {
   /// drawn iff [seam] - the same flag the blocks list handed to
   /// dayColumnFactor/nowLineY, so the line only sits where a measured row is.
   Widget _rowWithSeam(BuildContext context, List<TimetableAppointment> rows,
-      List<int> mins, int i, double factor, bool seam) {
-    final row = _row(context, rows, mins, i, factor);
+      List<int> mins, int i, double factor, bool seam, double fullW) {
+    final row = _row(context, rows, mins, i, factor, fullW);
     if (!seam) return row;
     return Column(
       children: [
@@ -234,7 +262,7 @@ class TimetableDailyView extends StatelessWidget {
   }
 
   Widget _row(BuildContext context, List<TimetableAppointment> rows,
-      List<int> mins, int i, double factor) {
+      List<int> mins, int i, double factor, double fullW) {
     final theme = Theme.of(context);
     final appointment = rows[i];
 
@@ -269,10 +297,9 @@ class TimetableDailyView extends StatelessWidget {
 
     final isTut = appointment.type == TimetableAppointmentType.tutorial;
     // lunch shows the localized word, not the raw feed/model title
-    final titleText =
-        appointment.type == TimetableAppointmentType.lunchBreak
-            ? L10n.t("timetable.mittagspause")
-            : appointment.displayTitle;
+    final titleText = appointment.type == TimetableAppointmentType.lunchBreak
+        ? L10n.t("timetable.mittagspause")
+        : appointment.displayTitle;
     // weekday suffix kills the carousel-wide duplicate Hero tags: lunch
     // rows share title AND the empty id across all five pages
     final heroSuffix = "_${tt.weekday.index}";
@@ -280,8 +307,42 @@ class TimetableDailyView extends StatelessWidget {
     final hasPlace = appointment.place.title.isNotEmpty;
     final deltaText = roomDelta == null
         ? null
-        : L10n.t("timetable.changeRoomDelta",
-            [roomDelta.oldRoom!, roomDelta.room]);
+        : L10n.t(
+            "timetable.changeRoomDelta", [roomDelta.oldRoom!, roomDelta.room]);
+
+    // duration-pinned height doubles as the geometry the now-line walks,
+    // so a 60-min block must give up text lines instead of pushing its
+    // words over the neighbour's first row (what an unbounded text
+    // column inside a fixed SizedBox did: AUDIT-test bled into KLAUSUR)
+    final boxH = mins[i] * factor;
+    final textScale = MediaQuery.textScalerOf(context);
+    // the HH:MM rides bodyLarge and claims a line of its own at the top
+    // of the column, so the title/place budget starts below it; the row
+    // content is TOP-anchored (calendar convention) — centring made a
+    // sparse day's short blocks float their words in mid-box and crammed
+    // the place line of full ones onto the seam hairline
+    const topPad = spaceSm;
+    final badgeFont = theme.textTheme.bodyLarge?.fontSize ?? 16;
+    final timeLineH = textScale.scale(badgeFont) * 1.45;
+    final titleLineH = textScale.scale(14) * 1.45;
+    final placeLineH = textScale.scale(12) * 1.45;
+    final availH = boxH - timeLineH - topPad;
+    // budgets are pure line math: a line renders iff its scaled height
+    // is actually left over (was: a magic +24 slack that hid the place
+    // line on boxes that could have shown it and still let the seam
+    // graze the glyphs). A row WITHOUT any place/delta text must not
+    // reserve a place line for nothing - personal-ICS rows showed a
+    // one-line ellipsised title with the claimed room line never painted
+    // and a whole line of dead space. The place line reserves what is
+    // LEFT after the title: two lines for a long room + delta string
+    // (real feeds wrap), one for the normal room, none at all when even
+    // one line would not fit.
+    final wantPlace = hasPlace || deltaText != null;
+    final titleMaxLines =
+        availH >= 2 * titleLineH + (wantPlace ? placeLineH : 0) ? 2 : 1;
+    final placeRoom = availH - titleMaxLines * titleLineH;
+    final placeMax = placeRoom >= 2 * placeLineH ? 2 : 1;
+    final showPlace = wantPlace && placeRoom >= placeLineH;
     final placeText = Text.rich(
       TextSpan(
         children: [
@@ -295,31 +356,13 @@ class TimetableDailyView extends StatelessWidget {
                 style: TextStyle(color: theme.colorScheme.tertiary)),
         ],
       ),
-      maxLines: 2,
+      maxLines: placeMax,
       overflow: TextOverflow.ellipsis,
     );
-
-    // duration-pinned height doubles as the geometry the now-line walks,
-    // so a 60-min block must give up text lines instead of pushing its
-    // words over the neighbour's first row (what an unbounded text
-    // column inside a fixed SizedBox did: AUDIT-test bled into KLAUSUR)
-    final boxH = mins[i] * factor;
-    final textScale = MediaQuery.textScalerOf(context);
-    // the HH:MM rides bodyLarge and claims a line of its own at the top
-    // of the column, so the title/place budget starts below it
-    final badgeFont = theme.textTheme.bodyLarge?.fontSize ?? 16;
-    final timeLineH = textScale.scale(badgeFont) * 1.45;
-    final titleLineH = textScale.scale(14) * 1.45;
-    final placeLineH = textScale.scale(12) * 1.45;
-    final availH = boxH - timeLineH;
-    final titleMaxLines = availH >= 2 * titleLineH + placeLineH + 24 ? 2 : 1;
-    final showPlace =
-        availH >= titleMaxLines * titleLineH + placeLineH + 24;
     // lunch is day structure, not a lecture: same grid seat, muted ink
-    final titleColor =
-        appointment.type == TimetableAppointmentType.lunchBreak
-            ? theme.colorScheme.outline
-            : null;
+    final titleColor = appointment.type == TimetableAppointmentType.lunchBreak
+        ? theme.colorScheme.outline
+        : null;
     return ClipRect(
       child: SizedBox(
         height: boxH,
@@ -336,77 +379,88 @@ class TimetableDailyView extends StatelessWidget {
                 }
               : null,
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: defaultPagePadding),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Row(
+            padding: const EdgeInsets.fromLTRB(
+                defaultPagePadding, topPad, defaultPagePadding, 0),
+            // short blocks (a 30-min personal feed entry measures ~27px
+            // at full scale) cannot hold even one time+title column in
+            // their duration-pinned height: scale the text down instead
+            // of letting the Column overflow into RenderFlex stripes.
+            // Normal boxes keep scale 1.0 untouched.
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: fullW - 2 * defaultPagePadding,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                        child: Text(
-                      _hm(appointment.begin.hour * 60 +
-                          appointment.begin.minute),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyLarge
-                          ?.copyWith(color: theme.colorScheme.primary),
-                    )),
-                    if (showNowLine)
-                      // the running chip repaints on its own minute tick -
-                      // the page build never waits for the clock
-                      ValueListenableBuilder<int>(
-                        valueListenable: NowClock.minutesOfDay,
-                        builder: (context, minute, _) =>
-                            _runningChip(minute, appointment, theme),
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                            child: Text(
+                          _hm(appointment.begin.hour * 60 +
+                              appointment.begin.minute),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyLarge
+                              ?.copyWith(color: theme.colorScheme.primary),
+                        )),
+                        if (showNowLine)
+                          // the running chip repaints on its own minute tick -
+                          // the page build never waits for the clock
+                          ValueListenableBuilder<int>(
+                            valueListenable: NowClock.minutesOfDay,
+                            builder: (context, minute, _) =>
+                                _runningChip(minute, appointment, theme),
+                          ),
+                      ],
+                    ),
+                    appointment.id.isNotEmpty
+                        ? Hero(
+                            tag:
+                                "appointmentTitle_${appointment.title}_${appointment.id}$heroSuffix",
+                            child: Text(
+                              isTut
+                                  ? L10n.t("timetable.tutorialPrefix",
+                                      [appointment.displayTitle])
+                                  : titleText,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: titleColor),
+                              maxLines: titleMaxLines,
+                              overflow: TextOverflow.ellipsis,
+                            ))
+                        : Text(
+                            titleText,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.bold, color: titleColor),
+                            maxLines: titleMaxLines,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                    if ((hasPlace || deltaText != null) && showPlace)
+                      appointment.id.isNotEmpty
+                          ? Hero(
+                              tag:
+                                  "appointmentPlace_${appointment.title}_${appointment.id}$heroSuffix",
+                              child: _placeSlot(
+                                  theme, placeText, appointment.roomVaries))
+                          : _placeSlot(theme, placeText, appointment.roomVaries)
+                    else
+                      const SizedBox(height: 0),
+                    isTut &&
+                            boxH >= 140 &&
+                            appointment is Tutorial &&
+                            (appointment.notes ?? "").isNotEmpty
+                        ? Text(
+                            appointment.notes!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        : const SizedBox.shrink(),
                   ],
                 ),
-                appointment.id.isNotEmpty
-                    ? Hero(
-                        tag:
-                            "appointmentTitle_${appointment.title}_${appointment.id}$heroSuffix",
-                        child: Text(
-                          isTut
-                              ? L10n.t("timetable.tutorialPrefix",
-                                  [appointment.displayTitle])
-                              : titleText,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: titleColor),
-                          maxLines: titleMaxLines,
-                          overflow: TextOverflow.ellipsis,
-                        ))
-                    : Text(
-                        titleText,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold, color: titleColor),
-                        maxLines: titleMaxLines,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                if ((hasPlace || deltaText != null) && showPlace)
-                  appointment.id.isNotEmpty
-                      ? Hero(
-                          tag:
-                              "appointmentPlace_${appointment.title}_${appointment.id}$heroSuffix",
-                          child: _placeSlot(theme, placeText,
-                              appointment.roomVaries))
-                      : _placeSlot(
-                          theme, placeText, appointment.roomVaries)
-                else
-                  const SizedBox(height: 0),
-                isTut &&
-                        boxH >= 140 &&
-                        appointment is Tutorial &&
-                        (appointment.notes ?? "").isNotEmpty
-                    ? Text(
-                        appointment.notes!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      )
-                    : const SizedBox.shrink(),
-              ],
+              ),
             ),
           ),
         ),
@@ -414,8 +468,7 @@ class TimetableDailyView extends StatelessWidget {
     );
   }
 
-  Widget _placeSlot(
-      ThemeData theme, Widget placeText, bool roomVaries) {
+  Widget _placeSlot(ThemeData theme, Widget placeText, bool roomVaries) {
     if (!roomVaries) return placeText;
     return Row(
       children: [
@@ -442,8 +495,7 @@ class TimetableDailyView extends StatelessWidget {
   /// compare hour+minute minutes-of-day.
   Widget _runningChip(
       int minute, TimetableAppointment appointment, ThemeData theme) {
-    final beginMin =
-        appointment.begin.hour * 60 + appointment.begin.minute;
+    final beginMin = appointment.begin.hour * 60 + appointment.begin.minute;
     final endMin = appointment.end.hour * 60 + appointment.end.minute;
     if (beginMin > minute || minute >= endMin) return const SizedBox.shrink();
     return BlockContainer(
@@ -497,11 +549,10 @@ class TimetableDailyView extends StatelessWidget {
       child: SizedBox(
         height: min * factor,
         child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: defaultPagePadding),
+          padding: const EdgeInsets.fromLTRB(
+              defaultPagePadding, spaceSm, defaultPagePadding, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
                 change.title,
@@ -556,7 +607,6 @@ class TimetableDailyView extends StatelessWidget {
           ],
         ));
   }
-
 }
 
 class _NowLinePainter extends CustomPainter {
@@ -583,13 +633,15 @@ class _NowLinePainter extends CustomPainter {
     // read the live value here - the minute arrives via the repaint
     // listenable WITHOUT any widget rebuilding
     final minute = NowClock.minutesOfDay.value;
-    final y = nowLineY(
-        blocks: blocks, minutesOfDay: minute, pxPerMin: pxPerMin);
+    final y =
+        nowLineY(blocks: blocks, minutesOfDay: minute, pxPerMin: pxPerMin);
     if (y == null) return;
 
     // the stroke stops short of the rounded card frame instead of
     // bleeding into the corners; the chip labels the line at the gutter
-    canvas.drawLine(Offset(6, y), Offset(size.width - 6, y),
+    canvas.drawLine(
+        Offset(6, y),
+        Offset(size.width - 6, y),
         Paint()
           ..color = color
           ..strokeWidth = 1.5);

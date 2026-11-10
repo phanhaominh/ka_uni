@@ -16,8 +16,8 @@ import 'package:kit_mobile/tutorials/data/tutorial_manager.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-TimetableAppointment ap(String title, int id, String room, DateTime b,
-    DateTime e) {
+TimetableAppointment ap(
+    String title, int id, String room, DateTime b, DateTime e) {
   return TimetableAppointment(begin: b, end: e)
     ..title = title
     ..id = '$id'
@@ -28,8 +28,11 @@ final fake = DateTime(2026, 11, 2, 10, 5);
 
 TimetableDaily monday() => TimetableDaily(weekday: Weekday.monday)
   ..appointments = [
-    ap('Engineering Mechanics I (Lecture)(V), Langhoff et al., MACH', 1,
-        '10.91 Franz-Grashof-Hörsaal', DateTime(2026, 11, 2, 9, 45),
+    ap(
+        'Engineering Mechanics I (Lecture)(V), Langhoff et al., MACH',
+        1,
+        '10.91 Franz-Grashof-Hörsaal',
+        DateTime(2026, 11, 2, 9, 45),
         DateTime(2026, 11, 2, 11, 15)),
     ap('Thermodynamics A (Tutorial)', 2, '54.11 Testraum',
         DateTime(2026, 11, 2, 12, 0), DateTime(2026, 11, 2, 13, 0)),
@@ -41,8 +44,7 @@ TimetableDaily monday() => TimetableDaily(weekday: Weekday.monday)
         DateTime(2026, 11, 2, 15, 45), DateTime(2026, 11, 2, 17, 15)),
   ];
 
-Future<void> pumpView(WidgetTester tester,
-    {required bool showNowLine}) async {
+Future<void> pumpView(WidgetTester tester, {required bool showNowLine}) async {
   await tester.pumpWidget(MaterialApp(
     home: MultiProvider(
       providers: [
@@ -53,8 +55,7 @@ Future<void> pumpView(WidgetTester tester,
       child: Scaffold(
         body: SizedBox(
             height: 700,
-            child: TimetableDailyView(
-                tt: monday(), showNowLine: showNowLine)),
+            child: TimetableDailyView(tt: monday(), showNowLine: showNowLine)),
       ),
     ),
   ));
@@ -106,9 +107,8 @@ void main() {
     // imported 10:00 appointment lands at the END of the list - the grid
     // used to paint it below the 15:45 lecture
     final d = monday()
-      ..appointments.add(
-          ap('Zwischentermin Klinik', 9, '54.11', DateTime(2026, 11, 2, 10, 0),
-              DateTime(2026, 11, 2, 11, 0)));
+      ..appointments.add(ap('Zwischentermin Klinik', 9, '54.11',
+          DateTime(2026, 11, 2, 10, 0), DateTime(2026, 11, 2, 11, 0)));
     await tester.pumpWidget(MaterialApp(
       home: MultiProvider(
         providers: [
@@ -132,7 +132,8 @@ void main() {
         reason: '10:00 above the 15:45 lecture it used to trail');
   });
 
-  testWidgets('future carousel page sorts by time-of-day across mixed '
+  testWidgets(
+      'future carousel page sorts by time-of-day across mixed '
       'date stamps', (tester) async {
     // the reported Thu-5.11 breakage: model rows carry mixed DATES -
     // feed lectures stamped with their real occurrence date, the lunch row
@@ -162,8 +163,7 @@ void main() {
         child: Scaffold(
             body: SizedBox(
                 height: 1000,
-                child:
-                    TimetableDailyView(tt: thursday, showNowLine: false))),
+                child: TimetableDailyView(tt: thursday, showNowLine: false))),
       ),
     ));
     await tester.pump();
@@ -186,16 +186,16 @@ void main() {
           ..title = '—';
     final d = TimetableDaily(weekday: Weekday.tuesday)
       ..appointments = [
-        ap('Engineering Mechanics I', 1, '10.91',
-            DateTime(2026, 11, 3, 9, 45), DateTime(2026, 11, 3, 11, 15)),
+        ap('Engineering Mechanics I', 1, '10.91', DateTime(2026, 11, 3, 9, 45),
+            DateTime(2026, 11, 3, 11, 15)),
         emptySlot(11, 30, 13, 0),
         TimetableAppointment(
             type: TimetableAppointmentType.lunchBreak,
             begin: DateTime(2026, 11, 3, 13, 0),
             end: DateTime(2026, 11, 3, 14, 0)),
         emptySlot(14, 0, 15, 30),
-        ap('Advanced Mathematics I', 2, '31.6',
-            DateTime(2026, 11, 3, 15, 0), DateTime(2026, 11, 3, 16, 30)),
+        ap('Advanced Mathematics I', 2, '31.6', DateTime(2026, 11, 3, 15, 0),
+            DateTime(2026, 11, 3, 16, 30)),
         // trailing scaffold after the last lecture: pure void, must vanish
         emptySlot(18, 0, 19, 30),
       ];
@@ -221,5 +221,59 @@ void main() {
     expect(find.textContaining('1:00'), findsOneWidget);
     expect(find.textContaining('1:30'), findsNothing,
         reason: 'trailing void trimmed: no third scaffold chip');
+  });
+
+  testWidgets('adjacent classes leave no phantom band; a gap run counts ONCE',
+      (tester) async {
+    TimetableAppointment emptySlot(int h1, int m1, int h2, int m2) =>
+        TimetableAppointment(
+            begin: DateTime(2026, 11, 2, h1, m1),
+            end: DateTime(2026, 11, 2, h2, m2))
+          ..title = '—';
+    final d = TimetableDaily(weekday: Weekday.monday)
+      ..appointments = [
+        ap('Algorithms', 1, '50.20', DateTime(2026, 11, 2, 8, 0),
+            DateTime(2026, 11, 2, 9, 0)),
+        // scaffold placeholder sitting between two classes that touch at
+        // 09:00: it used to fall back to its 90-min default span and open
+        // an invisible void between the neighbours
+        emptySlot(9, 0, 10, 30),
+        ap('Thermodynamics A', 2, '54.11', DateTime(2026, 11, 2, 9, 0),
+            DateTime(2026, 11, 2, 10, 30)),
+        // one real 3:00 gap spread over TWO scaffold placeholders: only
+        // the last row of the run may claim it (was: every placeholder
+        // counted the same 180 minutes, tripling the band and squashing
+        // the fit-factor for the whole day)
+        emptySlot(10, 30, 12, 0),
+        emptySlot(12, 0, 13, 30),
+        ap('Mechanics B', 3, '10.91', DateTime(2026, 11, 2, 13, 30),
+            DateTime(2026, 11, 2, 15, 0)),
+      ];
+    await tester.pumpWidget(MaterialApp(
+      home: MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => KITProvider()),
+          ChangeNotifierProvider(create: (c) => SettingsProvider(context: c)),
+          ChangeNotifierProvider(create: (_) => TutorialManager()),
+        ],
+        child: Scaffold(
+            body: SizedBox(
+                height: 700,
+                child: TimetableDailyView(tt: d, showNowLine: false))),
+      ),
+    ));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining(' · 3:00'), findsOneWidget,
+        reason: 'zero-gap placeholder dropped AND the run emits exactly '
+            'one chip, not one per placeholder (localized word differs by '
+            'locale, the time suffix does not)');
+    // the touch pair must be flush: Thermodynamics' top edge sits exactly
+    // on Algorithms' bottom edge (one 1px seam between the boxes)
+    final a = tester.getRect(find.text('08:00'));
+    final b = tester.getRect(find.text('09:00'));
+    expect(b.top - a.bottom, lessThan(90),
+        reason: 'no invisible 90-min band between adjacent classes');
   });
 }
