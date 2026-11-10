@@ -37,6 +37,11 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   // F3: ranking costs 16-22 ms for multi-token rooms over the 824 live
   // places, so keystrokes arm this timer instead of ranking inline
   Timer? _debounce;
+  // F12: while the page runs on the snapshot, it stays subscribed to
+  // KITProvider to adopt the live directory when its fetch lands
+  // (unregistered after the first adoption)
+  KITProvider? _liveVm;
+  KITTopographyManager? _topoManager;
   // F10: false until the first load finished; gates the no-results view
   bool _loaded = false;
   List<KITPlace> _places = const [];
@@ -69,20 +74,37 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
   @override
   void dispose() {
+    _detachLiveListener();
     _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   Future<void> _loadPlaces() async {
-    final manager = context.read<KITProvider>().topographyManager;
+    final vm = context.read<KITProvider>();
+    final manager = vm.topographyManager;
+    _topoManager = manager;
     var places = manager.places;
     if (places.isEmpty) {
       // cold start: the live fetch is still in flight or the device is
       // offline - stale-OK results beat an empty page, data_de.js changes
       // rarely (KIT restructures the campus directory about as often as
       // buildings get demolished)
-      places = (await KITTopographyManager.loadSnapshot()) ?? const [];
+      final snapshot =
+          (await KITTopographyManager.loadSnapshot()) ?? const <KITPlace>[];
+      if (!mounted) return;
+      if (manager.places.isNotEmpty) {
+        // the live fetch landed while the prefs read was pending
+        places = manager.places;
+      } else {
+        places = snapshot;
+        // F12: the snapshot is the FALLBACK, not the truth - KITProvider
+        // fires notifyListeners() once its fetchPlaces completes (C18);
+        // without adopting it here the page ranked the stale directory
+        // forever, silently dropping every renamed/removed building
+        _liveVm = vm;
+        vm.addListener(_onLivePlacesLanded);
+      }
     }
     if (!mounted) return;
     setState(() {
@@ -93,6 +115,29 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       _loaded = true;
       _search();
     });
+  }
+
+  /// One-shot: fired by any KITProvider notification while the page still
+  /// runs on the snapshot. Unrelated notifications (every other campus
+  /// refresh) leave the list empty-check unsatisfied; the first one whose
+  /// fetch actually delivered swaps the directory in and unsubscribes.
+  void _onLivePlacesLanded() {
+    final manager = _topoManager;
+    if (manager == null || manager.places.isEmpty) return;
+    _detachLiveListener();
+    if (!mounted) return;
+    setState(() {
+      _places = manager.places;
+      _refPlace = widget.fromRoom == null
+          ? null
+          : resolveRoomPlace(_places, widget.fromRoom!);
+      _search();
+    });
+  }
+
+  void _detachLiveListener() {
+    _liveVm?.removeListener(_onLivePlacesLanded);
+    _liveVm = null;
   }
 
   /// Recompute results from the current field text; relevance only, never
@@ -219,8 +264,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           child: Text(label,
-              style: TextStyle(
-                  fontSize: 13, color: scheme.onSecondaryContainer)),
+              style:
+                  TextStyle(fontSize: 13, color: scheme.onSecondaryContainer)),
         ),
       ),
     );
@@ -282,8 +327,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
     return InkWell(
       // expand-in-place; the alternative (a second detail page) was
       // explicitly dropped
-      onTap: () =>
-          setState(() => _expandedKey = expanded ? null : _keyOf(p)),
+      onTap: () => setState(() => _expandedKey = expanded ? null : _keyOf(p)),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
         child: Column(
@@ -304,8 +348,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               // the collapsed row already shows category + distance; the
               // details add the full alias list and the institution link
               if (p.aliasList.isNotEmpty)
-                Text(
-                    "${L10n.t("places.aliases")}: ${p.aliasList.join(", ")}",
+                Text("${L10n.t("places.aliases")}: ${p.aliasList.join(", ")}",
                     style: TextStyle(fontSize: 12, color: scheme.outline)),
               if (website != null) _websiteRow(website, scheme),
             ],
@@ -338,8 +381,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(uri.host,
-            style: TextStyle(fontSize: 12, color: scheme.outline)),
+        Text(uri.host, style: TextStyle(fontSize: 12, color: scheme.outline)),
         CupertinoButton(
           padding: const EdgeInsets.only(top: 2),
           // 48 dp hit area: the label row alone measured ~30 dp tall

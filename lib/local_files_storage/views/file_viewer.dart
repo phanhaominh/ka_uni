@@ -119,13 +119,22 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
             // backgroundColor: Colors.white,
             nightMode: false,
             // nightModeBackgroundColor: Colors.amber,
-            onRender: (pages) {
+            // flutter_pdfview delivers these over the platform channel
+            // AFTER the route popped (back during render): an unguarded
+            // setState there throws "setState after dispose" from the
+            // channel callback, outside any widget code
+            onRender: (pageCount) {
+              if (!mounted) return;
               setState(() {
-                pages = pages;
+                // the parameter used to be named `pages`, shadowing the
+                // field: `pages = pages` assigned the closure parameter to
+                // itself and the field never left 0
+                pages = pageCount;
                 isReady = true;
               });
             },
             onError: (error) {
+              if (!mounted) return;
               setState(() {
                 errorMessage = error.toString();
               });
@@ -134,6 +143,7 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
               }
             },
             onPageError: (page, error) {
+              if (!mounted) return;
               setState(() {
                 errorMessage = '$page: ${error.toString()}';
               });
@@ -153,6 +163,7 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
               if (kDebugMode) {
                 print('page change: ${page ?? 0 + 1}/$total');
               }
+              if (!mounted) return;
               setState(() {
                 currentPage = page;
               });
@@ -290,36 +301,41 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<String?> _promptForCustomName(String initialName) {
+  Future<String?> _promptForCustomName(String initialName) async {
     final controller = TextEditingController(text: initialName);
-
-    return showCupertinoDialog<String>(
-      context: context,
-      builder: (dialogContext) {
-        return CupertinoAlertDialog(
-          title: Text(L10n.t("files.nameFile")),
-          content: Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: CupertinoTextField(
-              controller: controller,
-              autofocus: true,
-              placeholder: L10n.t("files.fileNamePlaceholder"),
+    try {
+      // module_page._attachIliasLink's standard: this controller used to
+      // leak on every pin — it must die with the dialog
+      return await showCupertinoDialog<String>(
+        context: context,
+        builder: (dialogContext) {
+          return CupertinoAlertDialog(
+            title: Text(L10n.t("files.nameFile")),
+            content: Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: CupertinoTextField(
+                controller: controller,
+                autofocus: true,
+                placeholder: L10n.t("files.fileNamePlaceholder"),
+              ),
             ),
-          ),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(L10n.t("files.cancel")),
-            ),
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(controller.text.trim()),
-              child: Text(L10n.t("files.save")),
-            ),
-          ],
-        );
-      },
-    );
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(L10n.t("files.cancel")),
+              ),
+              CupertinoDialogAction(
+                isDefaultAction: true,
+                onPressed: () =>
+                    Navigator.of(dialogContext).pop(controller.text.trim()),
+                child: Text(L10n.t("files.save")),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+    }
   }
 }

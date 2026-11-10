@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
@@ -38,8 +39,6 @@ class KITHomePage extends StatefulWidget {
 }
 
 class _KITHomePageState extends State<KITHomePage> {
-  final _relevantModulesTitleKey = GlobalKey();
-
   @override
   Widget build(BuildContext context) {
     final vm = Provider.of<KITProvider>(context);
@@ -103,15 +102,14 @@ class _KITHomePageState extends State<KITHomePage> {
               child: Tooltip(
                 message: L10n.t("agenda.title"),
                 child: Semantics(
-                button: true,
-                label: L10n.t("agenda.title"),
-                child: Badge(
-                  isLabelVisible:
-                      vm.campusManager.timetableChanged,
-                  backgroundColor: Colors.orange,
-                  child: const Icon(CupertinoIcons.calendar, size: 22),
+                  button: true,
+                  label: L10n.t("agenda.title"),
+                  child: Badge(
+                    isLabelVisible: vm.campusManager.timetableChanged,
+                    backgroundColor: Colors.orange,
+                    child: const Icon(CupertinoIcons.calendar, size: 22),
+                  ),
                 ),
-              ),
               ),
             ),
             CupertinoButton(
@@ -122,18 +120,16 @@ class _KITHomePageState extends State<KITHomePage> {
               child: Tooltip(
                 message: L10n.t("exams.title"),
                 child: Semantics(
-                button: true,
-                label: L10n.t("exams.title"),
-                child: Badge(
-                  isLabelVisible: vm.campusManager.exams.any((e) =>
-                      e.needsAction(DateTime.now()) &&
-                      vm.campusManager.isTakingThisSemester(e) != false),
-                  backgroundColor: Colors.red,
-                  child: const Icon(
-                      CupertinoIcons.checkmark_seal,
-                      size: 22),
+                  button: true,
+                  label: L10n.t("exams.title"),
+                  child: Badge(
+                    isLabelVisible: vm.campusManager.exams.any((e) =>
+                        e.needsAction(DateTime.now()) &&
+                        vm.campusManager.isTakingThisSemester(e) != false),
+                    backgroundColor: Colors.red,
+                    child: const Icon(CupertinoIcons.checkmark_seal, size: 22),
+                  ),
                 ),
-              ),
               ),
             ),
             CupertinoButton(
@@ -161,8 +157,7 @@ class _KITHomePageState extends State<KITHomePage> {
               // a failed pull-down must toast like the button and the
               // empty-state retry do, not spin its error away silently
               onRefresh: () => vm.forceRefetchEverything().catchError((e) {
-                toastsProvider
-                    .showTextToast(L10n.t("common.refreshFailed"));
+                toastsProvider.showTextToast(L10n.t("common.refreshFailed"));
               }),
               // park the disc in the header gap below the app bar; at the
               // default 40 it settled right on the profile card's name row
@@ -171,99 +166,119 @@ class _KITHomePageState extends State<KITHomePage> {
               child: SingleChildScrollView(
                 // pull-down works even when the page fits the screen
                 physics: const AlwaysScrollableScrollPhysics(),
-              child: Column(children: [
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: <Widget>[
-                    MeiFailureBanner(vm: vm),
-                    const NextUpHomeCard(),
-                    AnimatedSwitcher(
-                      duration: Duration(milliseconds: 200),
-                      child: settingsVM.showingProfile.value
-                          ? ProfileView(
-                              relevantModulesTitleKey: _relevantModulesTitleKey,
-                            )
-                          : SizedBox(),
-                    ),
-                    TimetableWeeklyView(),
-                    const SizedBox(height: spaceMd),
-                    CupertinoButton(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: pageGutter, vertical: spaceSm),
-                        onPressed: () => pushPageOnce(Navigator.of(context),
-                            routeName: "/timetableEdit",
-                            page: (_) => TimetableEditPage()),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(CupertinoIcons.pencil_circle),
-                            const SizedBox(width: spaceSm),
-                            Text(L10n.t("settings.editTimetable")),
-                          ],
-                        )),
-                    const SizedBox(height: spaceLg),
-                    Row(
-                      children: [
-                        PaddedTitle(
-                            key: _relevantModulesTitleKey,
-                            title: L10n.t("settings.currentModulesIn", [
-                              KITProvider.currentSemesterString
-                            ])),
-                        (vm.campusManager.isFetchingSchedule ||
-                                vm.campusManager.isFetchingModules)
-                            ? KITProgressIndicator()
-                            : SizedBox(
-                                width: 0,
-                                height: 0,
-                              ),
-                        Spacer(),
-                        CupertinoButton(
-                          onPressed: () {
-                            toastsProvider
-                                .showTextToast(L10n.t("settings.reloadingModules"));
-                            // fire-and-forget without a catch would swallow
-                            // the failure silently behind the "reloading"
-                            // toast that already vanished
-                            unawaited(vm.forceRefetchEverything().catchError((e) {
-                              toastsProvider
-                                  .showTextToast(L10n.t("common.refreshFailed"));
-                            }));
-                          },
-                          padding: EdgeInsets.all(10),
-                          child: Tooltip(
-                            message: L10n.t("settings.reloadingModules"),
-                            child: Icon(CupertinoIcons.refresh),
-                          ),
-                        )
-                      ],
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: cardGutter),
-                      child: RelevantModulesView(),
-                    ),
-                    const SizedBox(height: spaceXl),
-                    PaddedTitle(
-                      title: L10n.t("settings.pinnedFiles"),
-                      trailing: CupertinoButton(
-                          child: Text(L10n.t("settings.viewAll")),
+                child: Column(children: [
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: <Widget>[
+                      MeiFailureBanner(vm: vm),
+                      const NextUpHomeCard(),
+                      AnimatedSwitcher(
+                        duration: Duration(milliseconds: 200),
+                        child: settingsVM.showingProfile.value
+                            // fake-zero guard: before profileReady the card
+                            // would render Student.empty, i.e. literally
+                            // "Note (⌀): 0,0" / "Leistungspunkte: 0,0",
+                            // indistinguishable from real German-formatted
+                            // values on a slow cold start
+                            ? (!vm.profileReady
+                                ? BlockContainer(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: spaceMd),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          KITProgressIndicator(
+                                              semanticsLabel: L10n.t(
+                                                  "home.profileLoading")),
+                                          const SizedBox(width: spaceSm),
+                                          Text(L10n.t("home.profileLoading")),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                : const ProfileView())
+                            : const SizedBox(),
+                      ),
+                      TimetableWeeklyView(),
+                      const SizedBox(height: spaceMd),
+                      CupertinoButton(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: pageGutter, vertical: spaceSm),
                           onPressed: () => pushPageOnce(Navigator.of(context),
-                              routeName: "/filesCache",
-                              page: (_) => FilesCachePage())),
-                    ),
-                    PinnedFilesListView(),
-                    const SizedBox(height: spaceXl),
-                    PaddedTitle(title: L10n.t("settings.myModules")),
-                    HierarchicTableView(
-                      rows: vm.campusManager.moduleRows,
-                    ),
-                    // the floating dock overlays the page: without this the
-                    // last module rows sit permanently under the pill
-                    const SizedBox(height: 140),
-                  ],
-                )
-              ]),
-            ),
+                              routeName: "/timetableEdit",
+                              page: (_) => TimetableEditPage()),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(CupertinoIcons.pencil_circle),
+                              const SizedBox(width: spaceSm),
+                              Text(L10n.t("settings.editTimetable")),
+                            ],
+                          )),
+                      const SizedBox(height: spaceLg),
+                      Row(
+                        children: [
+                          PaddedTitle(
+                              title: L10n.t("settings.currentModulesIn",
+                                  [KITProvider.currentSemesterString])),
+                          (vm.campusManager.isFetchingSchedule ||
+                                  vm.campusManager.isFetchingModules)
+                              ? KITProgressIndicator()
+                              : SizedBox(
+                                  width: 0,
+                                  height: 0,
+                                ),
+                          Spacer(),
+                          CupertinoButton(
+                            onPressed: () {
+                              toastsProvider.showTextToast(
+                                  L10n.t("settings.reloadingModules"));
+                              // fire-and-forget without a catch would swallow
+                              // the failure silently behind the "reloading"
+                              // toast that already vanished
+                              unawaited(
+                                  vm.forceRefetchEverything().catchError((e) {
+                                toastsProvider.showTextToast(
+                                    L10n.t("common.refreshFailed"));
+                              }));
+                            },
+                            padding: EdgeInsets.all(10),
+                            child: Tooltip(
+                              message: L10n.t("settings.reloadingModules"),
+                              child: Icon(CupertinoIcons.refresh),
+                            ),
+                          )
+                        ],
+                      ),
+                      Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: cardGutter),
+                        child: RelevantModulesView(),
+                      ),
+                      const SizedBox(height: spaceXl),
+                      PaddedTitle(
+                        title: L10n.t("settings.pinnedFiles"),
+                        trailing: CupertinoButton(
+                            child: Text(L10n.t("settings.viewAll")),
+                            onPressed: () => pushPageOnce(Navigator.of(context),
+                                routeName: "/filesCache",
+                                page: (_) => FilesCachePage())),
+                      ),
+                      PinnedFilesListView(),
+                      const SizedBox(height: spaceXl),
+                      PaddedTitle(title: L10n.t("settings.myModules")),
+                      HierarchicTableView(
+                        rows: vm.campusManager.moduleRows,
+                      ),
+                      // the floating dock overlays the page: without this the
+                      // last module rows sit permanently under the pill
+                      const SizedBox(height: 140),
+                    ],
+                  )
+                ]),
+              ),
             ),
           ],
         ));
@@ -291,6 +306,12 @@ class _NextUpHomeCardState extends State<NextUpHomeCard>
     with WidgetsBindingObserver {
   WebcalFeed? _feed;
   bool _clockArmed = false;
+
+  /// last webcal fetch stamp rendered by this card: the campus write path
+  /// stamps [WebcalKeys.fetchedAt] right after EVERY rewrite of the ICS
+  /// cache, so a changed stamp means [_readCache] must run again
+  String? _seenFetchedAt;
+  bool _probeInFlight = false;
 
   @override
   void initState() {
@@ -324,6 +345,9 @@ class _NextUpHomeCardState extends State<NextUpHomeCard>
       _clockArmed = false;
       NowClock.disarm();
     }
+    // the build-side watch makes every campus refresh re-enter HERE, so
+    // this is where the post-refresh cache re-read hooks in
+    unawaited(_resyncIfStale());
   }
 
   @override
@@ -331,17 +355,48 @@ class _NextUpHomeCardState extends State<NextUpHomeCard>
     if (state == AppLifecycleState.resumed) _readCache();
   }
 
+  /// cheap post-refresh re-read (mirrors the agenda, which reloads its
+  /// cache off the same stamp key): the provider notification re-enters
+  /// didChangeDependencies, this compares the fetch stamp against what the
+  /// hero actually rendered, and a mismatch re-reads the ICS. Deliberately
+  /// async + setState-if-changed: build must never block on prefs IO.
+  Future<void> _resyncIfStale() async {
+    if (_probeInFlight) return;
+    _probeInFlight = true;
+    try {
+      // SharedPreferencesAsync is the live cross-isolate fence; the legacy
+      // getInstance() snapshot would keep serving pre-refresh bytes
+      final stamp =
+          await SharedPreferencesAsync().getString(WebcalKeys.fetchedAt);
+      if (mounted && stamp != _seenFetchedAt) await _readCache();
+    } finally {
+      _probeInFlight = false;
+    }
+  }
+
   Future<void> _readCache() async {
-    final prefs = await SharedPreferences.getInstance();
-    final feed = WebcalFeed.parse(prefs.getString(WebcalKeys.icsCache) ?? "");
-    if (mounted) setState(() => _feed = feed);
+    // live async reads (see _resyncIfStale): background polls write the
+    // cache from another isolate while the app sits closed, and the resume
+    // re-read must see those writes too
+    final prefs = SharedPreferencesAsync();
+    // stamp BEFORE the ICS body: a refresh landing between the two reads
+    // leaves the older stamp recorded, so the next probe re-fires (over-
+    // invalidation) instead of marking fresh-looking stale bytes as seen
+    final stamp = await prefs.getString(WebcalKeys.fetchedAt);
+    final feed =
+        WebcalFeed.parse(await prefs.getString(WebcalKeys.icsCache) ?? "");
+    if (!mounted) return;
+    _seenFetchedAt = stamp;
+    setState(() => _feed = feed);
   }
 
   @override
   Widget build(BuildContext context) {
-    // listen for campus refreshes: pull-to-refresh rewrites the ICS cache,
-    // and the hero used to keep showing the pre-refresh lecture until the
-    // next app resume
+    // listen for campus refreshes: pull-to-refresh rewrites the ICS cache
+    // and notifies the provider; the watch alone could NOT fix the stale
+    // hero (_feed is cached state, not provider-derived) - it exists so
+    // each notification re-enters didChangeDependencies, where
+    // [_resyncIfStale] re-reads the cache when the fetch stamp moved
     context.watch<KITProvider>();
     return ValueListenableBuilder<int>(
       valueListenable: NowClock.minutesOfDay,
@@ -353,9 +408,19 @@ class _NextUpHomeCardState extends State<NextUpHomeCard>
         if (up == null) return const SizedBox.shrink();
         return NextUpCard(
           up: up,
-          onTap: () => pushPageOnce(Navigator.of(context),
-              routeName: AgendaPage.routeName,
-              page: (_) => const AgendaPage(scrollToToday: true)),
+          onTap: () {
+            final nav = Navigator.of(context);
+            // with the agenda already on the stack pushPageOnce silently
+            // no-oped and the hero card looked dead; nudge the open page
+            // to resync + scroll to today instead
+            if (ActivePages.isOpen(nav, AgendaPage.routeName)) {
+              AgendaResync.request(scrollToToday: true);
+              return;
+            }
+            pushPageOnce(nav,
+                routeName: AgendaPage.routeName,
+                page: (_) => const AgendaPage(scrollToToday: true));
+          },
         );
       },
     );

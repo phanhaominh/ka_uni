@@ -13,8 +13,7 @@ class SignMeUpMineCard extends StatelessWidget {
   final List<SignMeUpRegistration> rows;
   final DateTime now;
 
-  const SignMeUpMineCard(
-      {super.key, required this.rows, required this.now});
+  const SignMeUpMineCard({super.key, required this.rows, required this.now});
 
   static const int maxRows = 4;
 
@@ -74,8 +73,7 @@ class SignMeUpMineCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 3),
                 child: Text(
-                    L10n.t(
-                        "agenda.signmeupMineMore", [rows.length - maxRows]),
+                    L10n.t("agenda.signmeupMineMore", [rows.length - maxRows]),
                     style: TextStyle(
                         fontSize: 11, color: scheme.onSurfaceVariant)),
               ),
@@ -89,10 +87,9 @@ class SignMeUpMineCard extends StatelessWidget {
   /// SignMeUp SPA (`procedures/<id>` — the `SMUProcedureView` route of the
   /// deployed bundle). A registration without a real procedureId (the
   /// model's -1 sentinel) has no launchable URL.
-  static String? _procedureUrl(SignMeUpRegistration r) =>
-      r.procedureId >= 0
-          ? "https://plus.campus.kit.edu/signmeup/procedures/${r.procedureId}"
-          : null;
+  static String? _procedureUrl(SignMeUpRegistration r) => r.procedureId >= 0
+      ? "https://plus.campus.kit.edu/signmeup/procedures/${r.procedureId}"
+      : null;
 
   /// Mirror of agenda_page's private `_launchExternal` (importing it from
   /// a view would invert the dependency): only a well-formed http(s) URL
@@ -101,8 +98,7 @@ class SignMeUpMineCard extends StatelessWidget {
   void _launchExternal(String raw) {
     try {
       final uri = Uri.parse(raw);
-      if (uri.host.isEmpty ||
-          (uri.scheme != "http" && uri.scheme != "https")) {
+      if (uri.host.isEmpty || (uri.scheme != "http" && uri.scheme != "https")) {
         return;
       }
       launchUrl(uri, mode: LaunchMode.externalApplication)
@@ -120,8 +116,7 @@ class SignMeUpMineCard extends StatelessWidget {
         Text(r.name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w600)),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
         Wrap(
           spacing: 6,
           runSpacing: 2,

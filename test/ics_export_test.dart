@@ -31,8 +31,7 @@ void main() {
     expect(e.eventCount, 3);
 
     // the app's own parser must accept the file and see exactly those events
-    final feed =
-        WebcalFeed.parse(_text(e), now: DateTime(2026, 11, 5, 8, 0));
+    final feed = WebcalFeed.parse(_text(e), now: DateTime(2026, 11, 5, 8, 0));
     expect(feed, isNotNull);
     expect(feed!.occurrences.length, e.eventCount);
   });
@@ -64,8 +63,8 @@ void main() {
     final merged = fixture30.replaceFirst(
         "END:VCALENDAR",
         "$personalBegin${_ev("p1@own", "Eigene Vorlesung", "20261106T140000")}$personalEnd"
-        "$synthBegin${_ev("s1@smu", "Tutorium Synth", "20261106T160000")}$synthEnd"
-        "END:VCALENDAR");
+            "$synthBegin${_ev("s1@smu", "Tutorium Synth", "20261106T160000")}$synthEnd"
+            "END:VCALENDAR");
 
     final e = buildIcsExport(merged, now: DateTime(2026, 10, 31))!;
     expect(e.eventCount, 32); // 30 feed + 1 personal + 1 synth
@@ -95,25 +94,24 @@ void main() {
     expect(feed.occurrences.any((o) => o.title == "Tutorium Synth"), isTrue);
   });
 
-  test("webcal:// and folded non-http URLs are stripped from event bodies",
-      () {
+  test("webcal:// and folded non-http URLs are stripped from event bodies", () {
     final merged = fixture3.replaceFirst(
         "END:VCALENDAR",
         "BEGIN:VEVENT\r\n"
-        "UID:w1@own\r\n"
-        "SUMMARY:Personal Note\r\n"
-        "DTSTART:20261106T140000\r\n"
-        "DESCRIPTION:subscribe webcal://feed.example.org/private/tok123.ics\r\n"
-        "ATTACH;VALUE=URI:webcal://attach.example.org/x.ics\r\n"
-        "X-BENIGN:only text here\r\n"
-        "END:VEVENT\r\n"
-        "BEGIN:VEVENT\r\n"
-        "UID:w2@own\r\n"
-        "SUMMARY:Folded Trap\r\n"
-        "DTSTART:20261106T150000\r\n"
-        "DESCRIPTION:split across folds\r\n https://sneaky.example.org/a\r\n"
-        "END:VEVENT\r\n"
-        "END:VCALENDAR");
+            "UID:w1@own\r\n"
+            "SUMMARY:Personal Note\r\n"
+            "DTSTART:20261106T140000\r\n"
+            "DESCRIPTION:subscribe webcal://feed.example.org/private/tok123.ics\r\n"
+            "ATTACH;VALUE=URI:webcal://attach.example.org/x.ics\r\n"
+            "X-BENIGN:only text here\r\n"
+            "END:VEVENT\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:w2@own\r\n"
+            "SUMMARY:Folded Trap\r\n"
+            "DTSTART:20261106T150000\r\n"
+            "DESCRIPTION:split across folds\r\n https://sneaky.example.org/a\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR");
 
     final e = buildIcsExport(merged, now: DateTime(2026, 10, 31))!;
     expect(e.eventCount, 5); // 3 fixture + 2 injected, URL lines only
@@ -151,8 +149,7 @@ void main() {
     for (final line in _text(e).split("\r\n")) {
       expect(utf8.encode(line).length, lessThanOrEqualTo(75));
     }
-    final feed =
-        WebcalFeed.parse(_text(e), now: DateTime(2026, 11, 5, 8));
+    final feed = WebcalFeed.parse(_text(e), now: DateTime(2026, 11, 5, 8));
     expect(feed!.occurrences.single.title, summary);
   });
 

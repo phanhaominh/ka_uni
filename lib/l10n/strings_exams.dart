@@ -2,18 +2,15 @@
 /// L10n keys for the exam-registration area (lib/exams/).
 const Map<String, String> de_exams = {
   "exams.title": "Prüfungsanmeldung",
-  "exams.loadError":
-      "Prüfungsliste konnte nicht geladen werden.\n"
+  "exams.loadError": "Prüfungsliste konnte nicht geladen werden.\n"
       "(Session abgelaufen oder Seite geändert.)",
   "exams.retry": "Erneut versuchen",
-  "exams.empty":
-      "Keine Prüfungen gefunden.\n(Zieht beim nächsten Start neu.)",
+  "exams.empty": "Keine Prüfungen gefunden.\n(Zieht beim nächsten Start neu.)",
   "exams.sectionActNow": "Jetzt handeln",
   "exams.sectionOpensSoon": "Fenster öffnet bald",
   "exams.sectionRegistered": "Angemeldet",
   "exams.sectionOther": "Sonstige",
-  "exams.sectionCatalog":
-      "Nur im Prüfungsangebot · nicht belegt",
+  "exams.sectionCatalog": "Nur im Prüfungsangebot · nicht belegt",
   "exams.detailExamTerm": "Prüfung: {0} {1}{2}",
   "exams.detailWindow": "Anmeldung: {0} – {1}",
   "exams.detailDeadline": "Anmelden bis: {0}",
@@ -25,8 +22,7 @@ const Map<String, String> de_exams = {
 
 const Map<String, String> en_exams = {
   "exams.title": "Exam Registration",
-  "exams.loadError":
-      "Could not load the exam list.\n"
+  "exams.loadError": "Could not load the exam list.\n"
       "(Session expired or the page has changed.)",
   "exams.retry": "Try again",
   "exams.empty": "No exams found.\n(It re-syncs on next start.)",
@@ -34,8 +30,7 @@ const Map<String, String> en_exams = {
   "exams.sectionOpensSoon": "Registration opens soon",
   "exams.sectionRegistered": "Registered",
   "exams.sectionOther": "Other",
-  "exams.sectionCatalog":
-      "Offered, but not taken this semester",
+  "exams.sectionCatalog": "Offered, but not taken this semester",
   "exams.detailExamTerm": "Exam: {0} {1}{2}",
   "exams.detailWindow": "Registration: {0} – {1}",
   "exams.detailDeadline": "Register by: {0}",

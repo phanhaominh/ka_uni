@@ -3,9 +3,12 @@
 const Map<String, String> de_timetable = {
   "timetable.editTitle": "Stundenplan anpassen",
   "timetable.tutorials": "Tutorien",
-  "timetable.tutorialsDescription": "Verknüpfe Tutorien mit deinen Modulen und lege deren Zeitfenster fest. Die Zeiten entsprechen den regulären Campus-Blöcken.",
-  "timetable.noTutorials": "Noch keine Tutorien gespeichert. Nutze den Plus-Button, um das erste Tutorium zu erstellen.",
-  "timetable.addAppointmentsHint": "Füge Termine zum Stundenplan hinzu, indem du auf das Stern-Icon klickst.",
+  "timetable.tutorialsDescription":
+      "Verknüpfe Tutorien mit deinen Modulen und lege deren Zeitfenster fest. Die Zeiten entsprechen den regulären Campus-Blöcken.",
+  "timetable.noTutorials":
+      "Noch keine Tutorien gespeichert. Nutze den Plus-Button, um das erste Tutorium zu erstellen.",
+  "timetable.addAppointmentsHint":
+      "Füge Termine zum Stundenplan hinzu, indem du auf das Stern-Icon klickst.",
   "timetable.addTutorial": "Tutorium hinzufügen",
   "timetable.editTutorial": "Tutorium bearbeiten",
   "timetable.selectModule": "Modul auswählen",
@@ -14,10 +17,12 @@ const Map<String, String> de_timetable = {
   "timetable.cancel": "Abbrechen",
   "timetable.save": "Speichern",
   "timetable.deleteTutorial": "Tutorium löschen",
-  "timetable.deleteTutorialConfirm": "Möchtest du das Tutorium für \"{0}\" wirklich entfernen?",
+  "timetable.deleteTutorialConfirm":
+      "Möchtest du das Tutorium für \"{0}\" wirklich entfernen?",
   "timetable.delete": "Löschen",
   "timetable.noModulesTitle": "Keine Module verfügbar",
-  "timetable.noModulesBody": "Aktuell sind noch keine Module im Cache. Öffne ein Modul in der App, damit es für die Tutorien verwendet werden kann.",
+  "timetable.noModulesBody":
+      "Aktuell sind noch keine Module im Cache. Öffne ein Modul in der App, damit es für die Tutorien verwendet werden kann.",
   "timetable.monday": "Montag",
   "timetable.tuesday": "Dienstag",
   "timetable.wednesday": "Mittwoch",
@@ -72,9 +77,12 @@ const Map<String, String> de_timetable = {
 const Map<String, String> en_timetable = {
   "timetable.editTitle": "Adjust timetable",
   "timetable.tutorials": "Tutorials",
-  "timetable.tutorialsDescription": "Link tutorials to your modules and set their time slots. Times match the regular campus blocks.",
-  "timetable.noTutorials": "No tutorials saved yet. Use the plus button to create your first tutorial.",
-  "timetable.addAppointmentsHint": "Add appointments to your timetable by tapping the star icon.",
+  "timetable.tutorialsDescription":
+      "Link tutorials to your modules and set their time slots. Times match the regular campus blocks.",
+  "timetable.noTutorials":
+      "No tutorials saved yet. Use the plus button to create your first tutorial.",
+  "timetable.addAppointmentsHint":
+      "Add appointments to your timetable by tapping the star icon.",
   "timetable.addTutorial": "Add tutorial",
   "timetable.editTutorial": "Edit tutorial",
   "timetable.selectModule": "Select module",
@@ -86,7 +94,8 @@ const Map<String, String> en_timetable = {
   "timetable.deleteTutorialConfirm": "Really remove the tutorial for \"{0}\"?",
   "timetable.delete": "Delete",
   "timetable.noModulesTitle": "No modules available",
-  "timetable.noModulesBody": "No modules are cached yet. Open a module in the app so it can be used for tutorials.",
+  "timetable.noModulesBody":
+      "No modules are cached yet. Open a module in the app so it can be used for tutorials.",
   "timetable.monday": "Monday",
   "timetable.tuesday": "Tuesday",
   "timetable.wednesday": "Wednesday",

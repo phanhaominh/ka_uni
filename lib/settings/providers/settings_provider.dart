@@ -1,4 +1,3 @@
-
 import 'package:flutter/cupertino.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/settings/types/multiple_choice_setting.dart';
@@ -6,10 +5,9 @@ import 'package:kit_mobile/settings/types/multiple_choice_setting.dart';
 import '../types/bool_setting.dart';
 import '../types/setting.dart';
 
-const liquidAssEverywhereKey = "PREF_liquidAssEverywhere";
 const showingAvgMarkKey = "PREF_showingAvgMark";
 const showingProfileKey = "PREF_showingProfile";
-const defaultIliasPageKey  = "PREF_defaultIliasPage";
+const defaultIliasPageKey = "PREF_defaultIliasPage";
 // the language pref is read by L10n.reload() directly: one constant only,
 // a private duplicate could silently drift from the key that has the effect
 const languageKey = L10n.languagePrefKey;
@@ -28,29 +26,20 @@ class SettingsProvider extends ChangeNotifier {
     prepare();
   }
 
-  BoolSetting liquidAssEverywhere = BoolSetting(
-    valueKey: liquidAssEverywhereKey,
-    defaultValue: false,
-    notifyCallback: () => _instance?.notifyListeners()
-  );
-
   BoolSetting showingAvgMark = BoolSetting(
-    valueKey: showingAvgMarkKey,
-    defaultValue: true,
-    notifyCallback: () => _instance?.notifyListeners()
-  );
+      valueKey: showingAvgMarkKey,
+      defaultValue: true,
+      notifyCallback: () => _instance?.notifyListeners());
 
   BoolSetting showingProfile = BoolSetting(
-    valueKey: showingProfileKey,
-    defaultValue: true,
-    notifyCallback: () => _instance?.notifyListeners()
-  );
+      valueKey: showingProfileKey,
+      defaultValue: true,
+      notifyCallback: () => _instance?.notifyListeners());
 
   MultipleChoiceSetting<String> defaultIliasPage = MultipleChoiceSetting(
-    valueKey: defaultIliasPageKey,
-    choices: ["Dashboard", "Meine Kurse & Gruppen"],
-    notifyCallback: () => _instance?.notifyListeners()
-  );
+      valueKey: defaultIliasPageKey,
+      choices: ["Dashboard", "Meine Kurse & Gruppen"],
+      notifyCallback: () => _instance?.notifyListeners());
 
   /// App language; "system" follows the device locale.
   MultipleChoiceSetting<String> language = MultipleChoiceSetting(
@@ -73,23 +62,10 @@ class SettingsProvider extends ChangeNotifier {
     notifyCallback: () => _instance?.notifyListeners(),
   );
 
-  List<Setting> get settings => [
-    liquidAssEverywhere,
-    showingAvgMark,
-    showingProfile,
-    defaultIliasPage,
-    language,
-    theme
-  ];
-  
+  List<Setting> get settings =>
+      [showingAvgMark, showingProfile, defaultIliasPage, language, theme];
+
   Future<void> prepare() async {
     await Future.wait(settings.map((el) => el.prepare()));
   }
-
 }
-
-
-
-
-
-

@@ -94,8 +94,7 @@ String encodeIliasCard(IliasUnread? unread, List<IliasAnnouncement> anns) =>
     final unread = (u == null || u[0] == null)
         ? null
         : IliasUnread(
-            notifications: (u[0] as num).toInt(),
-            mails: (u[1] as num).toInt());
+            notifications: (u[0] as num).toInt(), mails: (u[1] as num).toInt());
     final anns = [
       for (final e
           in (map["announcements"] as List).cast<Map<String, dynamic>>())

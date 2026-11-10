@@ -3,8 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:kit_mobile/state_management/kit_login_manager.dart';
 
-http.Response _resp(List<int> bytes, {String? ct}) => http.Response.bytes(
-    bytes, 200, headers: ct == null ? {} : {'content-type': ct});
+http.Response _resp(List<int> bytes, {String? ct}) =>
+    http.Response.bytes(bytes, 200,
+        headers: ct == null ? {} : {'content-type': ct});
 
 void main() {
   test("charsetless umlaut body re-decodes as utf8", () {

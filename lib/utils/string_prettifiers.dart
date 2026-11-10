@@ -54,7 +54,8 @@ String prettifyTemporaryModuleTitle(String title) {
   }
 
   if (split.first.length <= 1) {
-    split.removeWhere((element) => prettifyTemporaryModuleTitleNumberRegex.hasMatch(element));
+    split.removeWhere(
+        (element) => prettifyTemporaryModuleTitleNumberRegex.hasMatch(element));
   }
 
   return split.join(" ");

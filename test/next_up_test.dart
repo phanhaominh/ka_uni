@@ -48,7 +48,8 @@ void main() {
             [_occ("far", morning.add(const Duration(minutes: 721)))], morning),
         isNull);
     expect(
-        NextUp.compute([_occ("done", morning.subtract(const Duration(hours: 3)))],
+        NextUp.compute(
+            [_occ("done", morning.subtract(const Duration(hours: 3)))],
             morning),
         isNull);
     expect(NextUp.compute(const [], morning), isNull);
@@ -63,8 +64,8 @@ void main() {
       _occ("Morgen", DateTime(2026, 11, 4, 9, 0)),
     ], raw: "");
     final today = NextUp.onDay(feed, DateTime(2026, 11, 3));
-    expect(today.map((o) => o.title),
-        ["Spaet", "Heute", "Parallel", "Parallel"]);
+    expect(
+        today.map((o) => o.title), ["Spaet", "Heute", "Parallel", "Parallel"]);
     expect(NextUp.onDay(null, morning), isEmpty);
   });
 

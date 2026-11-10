@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
@@ -12,6 +13,7 @@ import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:kit_mobile/toasts/models/toasts_provider.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../local_files_storage/files_manager.dart';
@@ -73,8 +75,7 @@ String? sendfileFileName(String url, {String title = ""}) {
 /// Full destination path for a sendfile URL, pinned inside `directory`
 /// (the semester cache dir under the app documents download directory).
 /// Null means "do not write anywhere" - callers fail closed.
-String? iliasSendfilePath(String directory, String url,
-    {String title = ""}) {
+String? iliasSendfilePath(String directory, String url, {String title = ""}) {
   final name = sendfileFileName(url, title: title);
   if (name == null) {
     return null;
@@ -102,8 +103,7 @@ class IliasPageView extends StatefulWidget {
   final KITModule module;
   final Future<String> PHPSESSID_Future;
 
-  const IliasPageView(this.module,
-      {super.key, required this.PHPSESSID_Future});
+  const IliasPageView(this.module, {super.key, required this.PHPSESSID_Future});
 
   @override
   State<StatefulWidget> createState() {
@@ -120,8 +120,8 @@ class _IliasPageViewWState extends State<IliasPageView> {
   /// timeout resolves to the EMPTY session, which is the existing
   /// auth-failed path - one terminal state, one retry affordance.
   static const _sessionTimeout = Duration(seconds: 20);
-  late final Future<String> _sessionFuture = widget.PHPSESSID_Future
-      .timeout(_sessionTimeout, onTimeout: () => "");
+  late final Future<String> _sessionFuture =
+      widget.PHPSESSID_Future.timeout(_sessionTimeout, onTimeout: () => "");
 
   bool isBusy = false;
 
@@ -168,8 +168,7 @@ class _IliasPageViewWState extends State<IliasPageView> {
             // nothing to mirror without a usable ref_id: preventing the
             // navigation there used to swallow the tap outright, so an
             // unparseable sendfile link must load in the webview itself
-            if (sendfileFileName(req.url, title: widget.module.title) ==
-                null) {
+            if (sendfileFileName(req.url, title: widget.module.title) == null) {
               return NavigationDecision.navigate;
             }
             _saveAsFile(req.url);
@@ -229,92 +228,141 @@ class _IliasPageViewWState extends State<IliasPageView> {
 
   Future<String?> _pathFor(String url) async {
     // follow-up callers resolve after an arbitrary await; their State may
-    // already be disposed - Provider.of on a defunct context would throw
-    if (!mounted) return null;
-    final iliasFileManager =
-        Provider.of<IliasFilesProvider>(context, listen: false);
-    final directory = await iliasFileManager.localFileStorageManager
-        .ensureAndGetCurrentSemesterDirectory();
-    return iliasSendfilePath(directory, url, title: widget.module.title);
+    // already be disposed - Provider.of on a defunct context would throw,
+    // and this future is joined by the fire-and-forget tap path, so a
+    // throw here would be an unobserved zone error
+    try {
+      if (!mounted) return null;
+      final iliasFileManager =
+          Provider.of<IliasFilesProvider>(context, listen: false);
+      final directory = await iliasFileManager.localFileStorageManager
+          .ensureAndGetCurrentSemesterDirectory();
+      return iliasSendfilePath(directory, url, title: widget.module.title);
+    } on Object catch (_) {
+      return null;
+    }
   }
 
   Future<String?> _doSaveAsFile(String url) async {
-    final vm = Provider.of<KITProvider>(context, listen: false);
-    final iliasFileManager =
-        Provider.of<IliasFilesProvider>(context, listen: false);
-    final toastsProvider = Provider.of<ToastsProvider>(context, listen: false);
+    // the ENTIRE body is guarded: the Provider lookups and the directory
+    // creation sit before any download try, and onNavigationRequest
+    // fire-and-forgets this future - an early throw used to die as an
+    // unobserved zone error, i.e. a tap that visibly did nothing
+    ToastsProvider? toastsProvider;
+    try {
+      final vm = Provider.of<KITProvider>(context, listen: false);
+      final iliasFileManager =
+          Provider.of<IliasFilesProvider>(context, listen: false);
+      toastsProvider = Provider.of<ToastsProvider>(context, listen: false);
 
-    final directory = await iliasFileManager.localFileStorageManager
-        .ensureAndGetCurrentSemesterDirectory();
+      final directory = await iliasFileManager.localFileStorageManager
+          .ensureAndGetCurrentSemesterDirectory();
 
-    // fail closed: without a destination pinned inside the documents
-    // download directory nothing is written or downloaded at all
-    final filepath =
-        iliasSendfilePath(directory, url, title: widget.module.title);
-    if (filepath == null) {
-      toastsProvider.showTextToast(L10n.t("ilias.downloadFailed"));
-      if (kDebugMode) {
-        print("ILIAS sendfile destination rejected for $url");
+      // fail closed: without a destination pinned inside the documents
+      // download directory nothing is written or downloaded at all
+      final filepath =
+          iliasSendfilePath(directory, url, title: widget.module.title);
+      if (filepath == null) {
+        toastsProvider.showTextToast(L10n.t("ilias.downloadFailed"));
+        if (kDebugMode) {
+          print("ILIAS sendfile destination rejected for $url");
+        }
+        return null;
       }
-      return null;
-    }
 
-    File file = File(filepath);
+      File file = File(filepath);
 
-    // an old corrupt cache entry (login-page HTML saved as .pdf before the
-    // magic-byte gate existed) must not be reused forever
-    var reusable = await file.exists();
-    if (reusable) {
-      final sink = await file.open();
-      try {
-        final head = Uint8List(4);
-        final read = await sink.readInto(head);
-        reusable = read == 4 &&
-            head[0] == 0x25 &&
-            head[1] == 0x50 &&
-            head[2] == 0x44 &&
-            head[3] == 0x46;
-      } finally {
-        await sink.close();
+      // an old corrupt cache entry (login-page HTML saved as .pdf before the
+      // magic-byte gate existed) must not be reused forever
+      var reusable = await file.exists();
+      if (reusable) {
+        final sink = await file.open();
+        try {
+          final head = Uint8List(4);
+          final read = await sink.readInto(head);
+          reusable = read == 4 &&
+              head[0] == 0x25 &&
+              head[1] == 0x50 &&
+              head[2] == 0x44 &&
+              head[3] == 0x46;
+        } finally {
+          await sink.close();
+        }
       }
-    }
 
-    if (!reusable) {
-      if (mounted) setState(() => isBusy = true);
-      toastsProvider.showTextToast(L10n.t("ilias.downloading"));
-      try {
+      if (!reusable) {
+        if (mounted) setState(() => isBusy = true);
+        toastsProvider.showTextToast(L10n.t("ilias.downloading"));
+        // the download gate may save a proved-session non-PDF body under
+        // the extension its headers prove; delivery follows the ACTUAL
+        // result, not the guessed ".pdf" name
         final iliasFile = await vm.iliasManager.downloadFile(url, file);
         if (mounted) setState(() => isBusy = false);
-        _launchFileView(iliasFile);
-      } on Object catch (e) {
-        if (mounted) setState(() => isBusy = false);
-        // a wedged busy overlay makes the whole tab unusable until restart
-        toastsProvider.showTextToast(L10n.t("ilias.downloadFailed"));
-        if (kDebugMode) print("ILIAS download failed: $e");
+        _deliverFile(iliasFile, toastsProvider);
+        return iliasFile.fileSystemPath;
       }
+
+      PinnedFile? iliasFile;
+
+      var existingFiles =
+          await vm.iliasFileManager.getFilesForCurrentSemester();
+      for (var element in existingFiles) {
+        if (element.urlString == url) {
+          iliasFile = element;
+          break;
+        }
+      }
+
+      _deliverFile(
+          iliasFile ??
+              PinnedFile(
+                  semesterString: KITProvider.currentSemesterString,
+                  urlString: url,
+                  moduleTitle: "",
+                  addedAt: DateTime.now().toUtc(),
+                  customName: "",
+                  fileSystemPath: filepath),
+          toastsProvider);
+
       return filepath;
+    } on Object catch (e) {
+      // a wedged busy overlay makes the whole tab unusable until restart
+      if (mounted) setState(() => isBusy = false);
+      toastsProvider?.showTextToast(L10n.t("ilias.downloadFailed"));
+      if (kDebugMode) print("ILIAS sendfile handling failed: $e");
+      return null;
     }
+  }
 
-    PinnedFile? iliasFile;
-
-    var existingFiles = await vm.iliasFileManager.getFilesForCurrentSemester();
-    for (var element in existingFiles) {
-      if (element.urlString == url) {
-        iliasFile = element;
-        break;
-      }
+  /// Route a saved download to the user. PDFs open in the in-app viewer.
+  /// Proved-session non-PDF bodies (zip/pptx/docx/…) have NO in-app viewer
+  /// - PDFScreen is flutter_pdfview-only, and the pinned Files list opens
+  /// every tap through PDFScreen too, so pinning one there would just move
+  /// the dead end. The bytes are saved in the semester cache dir (visible
+  /// in the Files cache browser) and handed to the system viewer chooser
+  /// via the app's existing open-externally util - the same share_plus
+  /// call as the file viewer's share button - with a toast naming the
+  /// saved file for the case where the chooser is dismissed.
+  void _deliverFile(PinnedFile iliasFile, ToastsProvider toastsProvider) {
+    if (!mounted) return; // always called after download/listing awaits
+    final path = iliasFile.fileSystemPath;
+    if (path.toLowerCase().endsWith(".pdf")) {
+      _launchFileView(iliasFile);
+      return;
     }
+    toastsProvider
+        .showTextToast(L10n.t("ilias.savedToFiles", [path.split("/").last]));
+    unawaited(_openExternally(path));
+  }
 
-    _launchFileView(iliasFile ??
-        PinnedFile(
-            semesterString: KITProvider.currentSemesterString,
-            urlString: url,
-            moduleTitle: "",
-            addedAt: DateTime.now().toUtc(),
-            customName: "",
-            fileSystemPath: filepath));
-
-    return filepath;
+  Future<void> _openExternally(String path) async {
+    try {
+      await SharePlus.instance.share(ShareParams(files: [XFile(path)]));
+    } on Object catch (e) {
+      // the file is already saved; an unavailable chooser must not escape
+      // this fire-and-forget future as an unobserved zone error
+      if (kDebugMode) print("ILIAS external open failed: $e");
+    }
   }
 
   void _launchFileView(PinnedFile iliasFile) {
@@ -350,10 +398,15 @@ class _IliasPageViewWState extends State<IliasPageView> {
           : "https://ilias.studium.kit.edu/ilias.php?baseClass=ilmembershipoverviewgui";
     }
     // re-auth/refresh must land back on the page the user is looking
-    // at; only a webview that never loaded anything falls back to the
-    // configured entry page
+    // at; only a webview that never loaded anything - or one sitting on
+    // the login wall - falls back to the configured entry page. Wall
+    // recovery must NOT reload `current`: mid-session it is the SSO wall
+    // URL, and its consumed SAMLRequest cannot be replayed - a wall
+    // reload just shows the wall again instead of restarting the handshake
     final current = await _controller.currentUrl();
-    if (current != null && current.isNotEmpty) {
+    if (current != null &&
+        current.isNotEmpty &&
+        !IliasManager.looksLikeLoginWall(current)) {
       _controller.loadRequest(Uri.parse(current));
     } else {
       _controller.loadRequest(Uri.parse(link));
@@ -365,8 +418,7 @@ class _IliasPageViewWState extends State<IliasPageView> {
   /// mid-session SSO-wall recovery share this path.
   Future<String> _refreshSession() async {
     final vm = Provider.of<KITProvider>(context, listen: false);
-    final toastsProvider =
-        Provider.of<ToastsProvider>(context, listen: false);
+    final toastsProvider = Provider.of<ToastsProvider>(context, listen: false);
     setState(() {
       _phpsessid = "";
       _retrying = true;
@@ -404,7 +456,8 @@ class _IliasPageViewWState extends State<IliasPageView> {
       // engine's cookie jar and reloads - without this the strip
       // spinner ends and the stale-cookie page just sits there
       await _launchPage(Provider.of<SettingsProvider>(context, listen: false)
-          .defaultIliasPage.value);
+          .defaultIliasPage
+          .value);
     }
     return newPHPSESSIONID;
   }
@@ -437,15 +490,20 @@ class _IliasPageViewWState extends State<IliasPageView> {
       _phpsessid = session;
       _retrying = false;
     });
-    await _launchPage(
-        Provider.of<SettingsProvider>(context, listen: false)
-            .defaultIliasPage.value);
+    await _launchPage(Provider.of<SettingsProvider>(context, listen: false)
+        .defaultIliasPage
+        .value);
   }
 
   /// Back = webview history first; the page only pops once the webview
   /// itself sits on its first entry.
   Future<void> _onBack() async {
     if (await _controller.canGoBack()) {
+      // the canGoBack() round-trip outlives the pop: if the route closed
+      // meanwhile the platform webview is destroyed and goBack() would
+      // throw into the PopScope callback - the mounted guard below the
+      // await covers exactly this gap
+      if (!mounted) return;
       _controller.goBack();
     } else if (mounted && Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
@@ -459,7 +517,6 @@ class _IliasPageViewWState extends State<IliasPageView> {
     return FutureBuilder(
         future: _sessionFuture,
         builder: (context, snapshot) {
-
           if (!snapshot.hasData || _phpsessid.isEmpty) {
             // loading vs auth-failed: an EMPTY resolution means the SSO
             // chain ended without a PHPSESSID - a spinner there is a
@@ -643,8 +700,8 @@ class _IliasControlBar extends StatelessWidget {
             // alone never said which service this browser belongs to
             Text(
               "ILIAS",
-              style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold, letterSpacing: 1.5),
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.bold, letterSpacing: 1.5),
             ),
             const Spacer(),
             _glassChip(CupertinoIcons.refresh, onRefresh,

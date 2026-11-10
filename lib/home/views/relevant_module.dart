@@ -26,91 +26,89 @@ class RelevantModuleView extends StatelessWidget {
       children: [
         BlockContainer(
             child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Padding(
+              // clear the favorite-star bubble in the top-right corner
+              padding: const EdgeInsets.only(right: 28),
+              child: Text(
+                sanitizeModuleTitle(module.title),
+                maxLines: 3,
+                // long titles end in "…" instead of raw clipped pixels
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+            Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Padding(
-                  // clear the favorite-star bubble in the top-right corner
-                  padding: const EdgeInsets.only(right: 28),
-                  child: Text(
-                    sanitizeModuleTitle(module.title),
-                    maxLines: 3,
-                    // long titles end in "…" instead of raw clipped pixels
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.bold),
+                Tooltip(
+                  // icon-only affordance: without a label TalkBack
+                  // announces "button" and nothing else
+                  message: L10n.t("module.infoButton"),
+                  child: Semantics(
+                    button: true,
+                    label: L10n.t("module.infoButton"),
+                    child: CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        child: Icon(CupertinoIcons.info_circle),
+                        onPressed: () async {
+                          final moduleToShow = _getModuleToShow(vm);
+                          Navigator.of(context).push(MaterialPageRoute(
+                              builder: (BuildContext context) =>
+                                  ModuleView(module: moduleToShow)));
+                        }),
                   ),
                 ),
 
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Tooltip(
-                      // icon-only affordance: without a label TalkBack
-                      // announces "button" and nothing else
-                      message: L10n.t("module.infoButton"),
-                      child: Semantics(
-                        button: true,
-                        label: L10n.t("module.infoButton"),
-                        child: CupertinoButton(
-                            padding: EdgeInsets.zero,
-                            child: Icon(CupertinoIcons.info_circle),
-                            onPressed: () async {
-                              final moduleToShow = _getModuleToShow(vm);
-                              Navigator.of(context).push(MaterialPageRoute(
-                                  builder: (BuildContext context) =>
-                                      ModuleView(module: moduleToShow)));
-                            }),
+                // feed-admitted modules may legitimately have no
+                // ILIAS course ("Advanced Mathematics I"): hide the
+                // button instead of opening a dashboard detour
+                // (module_page.dart gates identically; IliasPageView
+                // itself would only fall back to the dashboard)
+                (module.iliasLink == null || module.iliasLink!.isEmpty)
+                    ? Text("")
+                    : CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        child: Text("ILIAS"),
+                        onPressed: () async {
+                          // await vm.iliasManager.authorize();
+                          final moduleToShow = await _getModuleToShow(vm);
+                          // module lookup is a network round-trip; the card
+                          // can be gone (tab switch rebuild) by the time it
+                          // completes -> pushing on a dead context throws
+                          if (!context.mounted) return;
+                          Navigator.of(context).push(MaterialPageRoute(
+                              builder: (BuildContext context) => IliasPageView(
+                                  moduleToShow,
+                                  PHPSESSID_Future:
+                                      vm.iliasManager.getPHPSESSID())));
+                        },
                       ),
-                    ),
-
-                    // feed-admitted modules may legitimately have no
-                    // ILIAS course ("Advanced Mathematics I"): hide the
-                    // button instead of opening a dashboard detour
-                    // (module_page.dart gates identically; IliasPageView
-                    // itself would only fall back to the dashboard)
-                    (module.iliasLink == null || module.iliasLink!.isEmpty)
-                        ? Text("")
-                        : CupertinoButton(
-                      padding: EdgeInsets.zero,
-                      child: Text("ILIAS"),
-                      onPressed: () async {
-                        // await vm.iliasManager.authorize();
-                        final moduleToShow = await _getModuleToShow(vm);
-                        // module lookup is a network round-trip; the card
-                        // can be gone (tab switch rebuild) by the time it
-                        // completes -> pushing on a dead context throws
-                        if (!context.mounted) return;
-                        Navigator.of(context).push(MaterialPageRoute(builder: (BuildContext context) => IliasPageView(moduleToShow, PHPSESSID_Future: vm.iliasManager.getPHPSESSID())));
-                      },
-
-                    ),
-
-                  ],
-                )
-
-
               ],
             )
-        ),
-
+          ],
+        )),
         Opacity(
-          opacity: 1,
-          child: Row(
+            opacity: 1,
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                module.hasFavoriteChild ? Padding(
-                  padding: const EdgeInsets.all(spaceSm),
-                  child: BlockContainer(
-                    padding: EdgeInsets.zero,
-                    innerPadding: const EdgeInsets.all(spaceXs),
-                    opacity: 0.8,
-                    child: Icon(Icons.star, color: theme.colorScheme.primary, size: 15),
-                  ),
-                ) : const Text(""),
+                module.hasFavoriteChild
+                    ? Padding(
+                        padding: const EdgeInsets.all(spaceSm),
+                        child: BlockContainer(
+                          padding: EdgeInsets.zero,
+                          innerPadding: const EdgeInsets.all(spaceXs),
+                          opacity: 0.8,
+                          child: Icon(Icons.star,
+                              color: theme.colorScheme.primary, size: 15),
+                        ),
+                      )
+                    : const Text(""),
               ],
-            )
-        )
+            ))
       ],
     );
   }
@@ -139,7 +137,4 @@ class RelevantModuleView extends StatelessWidget {
 
     return moduleToShow;
   }
-
-
-
 }

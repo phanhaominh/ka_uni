@@ -90,7 +90,8 @@ void main() {
           uid: uid,
           endGuessed: guessed);
 
-  test("a guessed end kills the gap: no certified Fußweg across an "
+  test(
+      "a guessed end kills the gap: no certified Fußweg across an "
       "invented interval", () {
     final real1 = occ("a", 8, 0);
     final real2 = occ("b", 10, 0);

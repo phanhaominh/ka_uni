@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kit_mobile/agenda/views/agenda_page.dart';
 import 'package:kit_mobile/exams/views/exams_page.dart';
 import 'package:kit_mobile/common_ui/highlight_pulse.dart';
 import 'package:kit_mobile/navigation/notification_deep_links.dart';
+import 'package:kit_mobile/navigation/logic/push_page.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:kit_mobile/timetable/models/webcal.dart';
 import 'package:provider/provider.dart';
@@ -46,6 +49,17 @@ class RecordingObserver extends NavigatorObserver {
       removed.add(route.settings.name);
 }
 
+// the agenda's post-paint refetch tail arms the SignMeUp cold retry
+// (20 s fake sleep) and the ILIAS wait carries a 30 s timeout timer;
+// advance past BOTH without demanding frame quiescence (the tree keeps
+// legitimately scheduled frames while those chains settle) so teardown
+// finds no pending timers
+Future<void> drainRefetchTail(WidgetTester tester) async {
+  for (var i = 0; i < 40; i++) {
+    await tester.pump(const Duration(seconds: 1));
+  }
+}
+
 Widget harness(NotificationDeepLinkRouter router,
         {required NavigatorObserver observer, Widget? home}) =>
     ChangeNotifierProvider<KITProvider>(
@@ -63,8 +77,8 @@ void main() {
       expect(deepLinkForPayload('agenda'), NotificationDeepLink.agenda);
     });
     test("lecture reminder -> agenda scrolled to today", () {
-      expect(deepLinkForPayload('agenda:today'),
-          NotificationDeepLink.agendaToday);
+      expect(
+          deepLinkForPayload('agenda:today'), NotificationDeepLink.agendaToday);
     });
     test("CHANGED delta push -> agenda with band highlight", () {
       expect(deepLinkForPayload('agenda:changes'),
@@ -82,8 +96,16 @@ void main() {
       expect(deepLinkForPayload(null), isNull);
     });
     test("foreign or malformed payloads -> no destination", () {
-      for (final junk in ["", "agenda:", "agenda;today", "EXAMS", "settings",
-        " agenda", "agenda:today ", "agenda:exam"]) {
+      for (final junk in [
+        "",
+        "agenda:",
+        "agenda;today",
+        "EXAMS",
+        "settings",
+        " agenda",
+        "agenda:today ",
+        "agenda:exam"
+      ]) {
         expect(deepLinkForPayload(junk), isNull, reason: junk);
       }
     });
@@ -96,8 +118,7 @@ void main() {
       expect(q.isEmpty, isTrue);
     });
     test("set then consume returns the link and clears", () {
-      final q = NotificationDeepLinkQueue()
-        ..set(NotificationDeepLink.agenda);
+      final q = NotificationDeepLinkQueue()..set(NotificationDeepLink.agenda);
       expect(q.take(), NotificationDeepLink.agenda);
       expect(q.isEmpty, isTrue);
       expect(q.take(), isNull);
@@ -143,19 +164,28 @@ void main() {
       router.drain(); // (shell not ready: handleTap's drain attempt was inert)
       expect(router.hasPending, isTrue);
     });
-    test("shell without an attached Navigator keeps the link (never lost)",
-        () {
+    test("shell without an attached Navigator keeps the link (never lost)", () {
       router.handleTap('exams');
-      router.shellAppeared(); // no widget tree -> navigatorKey.currentState null
+      router
+          .shellAppeared(); // no widget tree -> navigatorKey.currentState null
       expect(router.hasPending, isTrue);
     });
-    test("shellGone (logout) blocks draining again", () {
+    test("shellGone (logout) drops the stale link, later taps survive", () {
+      // contract (replaces "never lost across logout"): a notification
+      // tapped under account A must not fire on its own the moment B
+      // logs in on the shared device - it would navigate B to a page
+      // full of B's data for a push that announced A's deltas. A tap
+      // that ARRIVES after the teardown belongs to the live session
+      // and is kept across the login gate.
       router.handleTap('exams');
       router.shellAppeared();
       router.shellGone();
-      router.drain();
-      expect(router.hasPending, isTrue);
+      expect(router.hasPending, isFalse); // stale link consumed
       expect(router.shellReady, isFalse);
+      router.drain();
+      expect(router.hasPending, isFalse);
+      router.handleTap('agenda');
+      expect(router.hasPending, isTrue);
     });
   });
 
@@ -248,6 +278,7 @@ void main() {
     await draw();
     expect(observer.removed, ["/exams", "/exams"]); // no new removal
     expect(observer.pushed.last, "/agenda");
+    await drainRefetchTail(tester); // agenda's refetch tail: SMU sleep
     expect(observer.pushed.length, 5);
     expect(find.byType(AgendaPage), findsOneWidget); // exactly one page
     expect(router.hasPending, isFalse);
@@ -274,8 +305,7 @@ void main() {
     expect(find.text("shell"), findsOneWidget);
   });
 
-  testWidgets("unknown payload with the shell up does nothing",
-      (tester) async {
+  testWidgets("unknown payload with the shell up does nothing", (tester) async {
     SharedPreferences.setMockInitialValues({});
     final router = NotificationDeepLinkRouter();
     final observer = RecordingObserver();
@@ -288,8 +318,9 @@ void main() {
 
   group("agenda arrival options", () {
     // shallow-pumps the real page: seeded changes pref, mocked prefs plugin,
-    // and the KITProvider the widget tree reads (offline-safe: the network
-    // hops die in the test HttpOverrides before touching timers)
+    // and the KITProvider the widget tree reads (network hops die in the
+    // test HttpOverrides; the refetch tail's timers go away via
+    // [drainRefetchTail])
     Future<void> pumpAgenda(WidgetTester tester,
         {required bool highlightChanges}) async {
       SharedPreferences.setMockInitialValues({
@@ -306,8 +337,8 @@ void main() {
       });
       await tester.pumpWidget(ChangeNotifierProvider<KITProvider>(
         create: (_) => KITProvider(),
-        child: MaterialApp(
-            home: AgendaPage(highlightChanges: highlightChanges)),
+        child:
+            MaterialApp(home: AgendaPage(highlightChanges: highlightChanges)),
       ));
       // pump until the mocked-prefs _refresh pass has landed (bounded,
       // fake-async advances instantly; avoids microtask-order flakiness)
@@ -316,6 +347,7 @@ void main() {
           i++) {
         await tester.pump();
       }
+      await drainRefetchTail(tester);
     }
 
     testWidgets("CHANGED band pulses when arrived via deep link",
@@ -346,8 +378,7 @@ void main() {
       addTearDown(tester.view.reset);
       final now = DateTime.now();
       String two(int n) => n.toString().padLeft(2, "0");
-      String stamp(DateTime d) =>
-          "${d.year}${two(d.month)}${two(d.day)}"
+      String stamp(DateTime d) => "${d.year}${two(d.month)}${two(d.day)}"
           "T${two(d.hour)}${two(d.minute)}${two(d.second)}";
       SharedPreferences.setMockInitialValues({
         // one lecture running right now: feeds the today card AND the
@@ -372,8 +403,7 @@ void main() {
       });
       await tester.pumpWidget(ChangeNotifierProvider<KITProvider>(
         create: (_) => KITProvider(),
-        child: MaterialApp(
-            home: AgendaPage(scrollToToday: scrollToToday)),
+        child: MaterialApp(home: AgendaPage(scrollToToday: scrollToToday)),
       ));
       // wait for the cache-load rebuild: the CHANGED band is a built and
       // visible first child, so its text proves the data pass landed
@@ -391,6 +421,7 @@ void main() {
           i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
+      await drainRefetchTail(tester);
     }
 
     double agendaScroll(WidgetTester tester) => tester
@@ -413,6 +444,147 @@ void main() {
       expect(find.textContaining("Aenderung 0"), findsWidgets);
       // ...and nothing scrolled at all
       expect(agendaScroll(tester), 0);
+    });
+  });
+
+  group("shell lifecycle tokens (profileReady flap)", () {
+    test("a superseded shell's dispose cannot kill the live shell", () {
+      // the fast false→true flap: the NEW shell's shellAppeared runs
+      // BEFORE the old shell's AnimatedSwitcher exit disposes; the old
+      // token's shellGone must be inert, or _shellReady sticks false and
+      // every later deep link queues forever
+      final router = NotificationDeepLinkRouter();
+      final stale = router.shellAppeared(); // no Navigator: drains are inert
+      final fresh = router.shellAppeared();
+      expect(fresh, isNot(stale));
+      router.shellGone(appearedToken: stale);
+      expect(router.shellReady, isTrue);
+      router.handleTap('agenda');
+      // the live shell's queue survives the stale teardown call
+      expect(router.hasPending, isTrue); // only: no Navigator attached yet
+      // the NEWEST shell's own teardown (and token-less calls) still runs
+      router.shellGone(appearedToken: fresh);
+      expect(router.shellReady, isFalse);
+      expect(router.hasPending, isFalse);
+    });
+
+    test("token-less shellGone (main.dart listener) always runs", () {
+      final router = NotificationDeepLinkRouter();
+      router.shellAppeared();
+      router.shellGone();
+      expect(router.shellReady, isFalse);
+    });
+  });
+
+  testWidgets("shellGone pops session-dead pages and frees ActivePages keys",
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final router = NotificationDeepLinkRouter();
+    final observer = RecordingObserver();
+    await tester.pumpWidget(harness(router, observer: observer));
+
+    Future<void> draw() async {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    // a deep-link page ...
+    router.handleTap('exams');
+    await draw();
+    expect(find.byType(ExamsPage), findsOneWidget);
+
+    // ... and a manually pushed page above it (pushPageOnce path)
+    final nav = router.navigatorKey.currentState!;
+    unawaited(pushPageOnce(nav,
+        routeName: AgendaPage.routeName, page: (_) => const AgendaPage()));
+    await draw();
+    expect(find.byType(AgendaPage), findsOneWidget);
+
+    // logout: main.dart fires the bare shellGone the instant profileReady
+    // flips false — the root swaps to the login form, and EVERY pushed
+    // page must go with it (dead account's data must not sit above the
+    // login form holding its ActivePages key)
+    router.shellGone();
+    // pop animations run 300 ms; the finished route leaves the tree on
+    // the rebuild AFTER its ticker reports completion — pump past both
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.byType(ExamsPage), findsNothing);
+    expect(find.byType(AgendaPage), findsNothing);
+    expect(observer.removed, isEmpty); // popped, never removed
+    // keys deregister through the routes' own popped handlers
+    expect(ActivePages.isOpen(nav, ExamsPage.routeName), isFalse);
+    expect(ActivePages.isOpen(nav, AgendaPage.routeName), isFalse);
+
+    // after a re-login the next tap pushes fresh — no orphan dedupe
+    router.shellAppeared();
+    router.handleTap('exams');
+    await draw();
+    expect(find.byType(ExamsPage), findsOneWidget);
+    await drainRefetchTail(tester); // the popped agenda's fetch-tail timers
+  });
+
+  group("foreign-open wakes (intent passes through the resync payload)", () {
+    Future<void> draw(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    testWidgets("agenda link kinds arm their arrival options on an open page",
+        (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final router = NotificationDeepLinkRouter();
+      final observer = RecordingObserver();
+      await tester.pumpWidget(harness(router, observer: observer));
+      final nav = router.navigatorKey.currentState!;
+      unawaited(pushPageOnce(nav,
+          routeName: AgendaPage.routeName, page: (_) => const AgendaPage()));
+      await draw(tester);
+      expect(observer.pushed, ["/", "/agenda"]);
+
+      AgendaResync.scrollToToday = false; // isolate from earlier tests
+      AgendaResync.highlightChanges = false;
+      router.handleTap('agenda:today');
+      await tester.pump();
+      expect(observer.pushed, ["/", "/agenda"]); // surfaced, never cloned
+      expect(AgendaResync.scrollToToday, isTrue);
+      expect(observer.removed, isEmpty);
+
+      router.handleTap('agenda:changes');
+      await tester.pump();
+      expect(observer.pushed, ["/", "/agenda"]);
+      expect(AgendaResync.highlightChanges, isTrue);
+      // each request REPLACES the pair: a stale scroll must not replay
+      expect(AgendaResync.scrollToToday, isFalse);
+
+      router.handleTap('agenda');
+      await tester.pump();
+      expect(AgendaResync.scrollToToday, isFalse);
+      expect(AgendaResync.highlightChanges, isFalse);
+      await drainRefetchTail(tester);
+    });
+
+    testWidgets("exams tap on a foreign-open ExamsPage wakes without cloning",
+        (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final router = NotificationDeepLinkRouter();
+      final observer = RecordingObserver();
+      await tester.pumpWidget(harness(router, observer: observer));
+      final nav = router.navigatorKey.currentState!;
+      unawaited(pushPageOnce(nav,
+          routeName: ExamsPage.routeName, page: (_) => const ExamsPage()));
+      await draw(tester);
+
+      // deadline tap while the page is already open: the fetch fires
+      // (no page-observable signal here — assert the OBSERVABLE contract:
+      // exactly one page, no clone, no removal, no crash from the wake)
+      router.handleTap('exams');
+      await tester.pump();
+      expect(observer.pushed, ["/", "/exams"]);
+      expect(observer.removed, isEmpty);
+      expect(find.byType(ExamsPage), findsOneWidget);
+      await drainRefetchTail(tester); // let the offline wake fetch die
     });
   });
 }

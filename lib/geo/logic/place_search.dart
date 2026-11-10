@@ -36,12 +36,30 @@ class PlaceMatch {
       this.distanceMeters});
 }
 
+/// Folds every remaining accented lowercase letter to its ASCII base
+/// (ä/ö/ü/ß are handled BEFORE this, as their German search expansions).
+/// Built as an index table because this SDK's dart:core ships no Unicode
+/// normalization (String.normalize does not exist) and pub deps are frozen.
+const _accentFrom =
+    "àáâãåāăąçćĉčďèéêëēėęěğģìíîïīĭįıłñńņòóôõøōőŗśŝšşťùúûūŭůųűýÿźżž";
+const _accentTo =
+    "aaaaaaaaccccdeeeeeeeeggiiiiiiiilnnnooooooorsssstuuuuuuuuyyzzz";
+
 /// walk_hint's plain lower-casing plus a German umlaut fold, so a freshman
 /// typing "kit-cafe" still finds the "KIT-Café" alias.
 String normalizePlaceText(String s) {
   var t = s.toLowerCase().trim();
   t = t.replaceAll("ä", "ae").replaceAll("ö", "oe").replaceAll("ü", "ue");
   t = t.replaceAll("ß", "ss");
+  // the umlaut expansions only cover ä/ö/ü/ß: every OTHER accented alias
+  // in the directory (é in "KIT-Café", ç/ø/å in institute names) stayed
+  // unreachable for the accent-free query that promises to find it — the
+  // alias tier scored 0 and only fuzzy luck answered. Fold the rest to
+  // their base letters so "cafe" reaches "Café" symmetrically (queries
+  // pass through here too).
+  t = t.replaceAll("æ", "ae").replaceAll("œ", "oe");
+  t = t.replaceAllMapped(RegExp("[$_accentFrom]", unicode: true),
+      (m) => _accentTo[_accentFrom.indexOf(m[0]!)]);
   return t.replaceAll(RegExp(r"\s+"), " ");
 }
 
@@ -93,7 +111,13 @@ List<PlaceMatch> rankPlaces(List<KITPlace> places, String query,
       for (final a in p.aliasList) {
         final na = normalizePlaceText(a);
         if (na.isEmpty) continue;
-        final s = na == nq ? 75 : na.startsWith(nq) ? 70 : na.contains(nq) ? 65 : 0;
+        final s = na == nq
+            ? 75
+            : na.startsWith(nq)
+                ? 70
+                : na.contains(nq)
+                    ? 65
+                    : 0;
         if (s == 0) continue;
         // tie-break: among aliases scoring equally the alphabetically
         // first wins, so the shown "auch:" hint no longer rides on the
@@ -143,8 +167,7 @@ List<PlaceMatch> rankPlaces(List<KITPlace> places, String query,
     return byTier != 0 ? byTier : b.score.compareTo(a.score);
   });
   // certified tiers sort first, so the trailing block is exactly fuzzy
-  final certified =
-      out.takeWhile((m) => m.tier != PlaceMatchTier.fuzzy).length;
+  final certified = out.takeWhile((m) => m.tier != PlaceMatchTier.fuzzy).length;
   return out.length - certified > _fuzzyRowCap
       ? out.sublist(0, certified + _fuzzyRowCap)
       : out;

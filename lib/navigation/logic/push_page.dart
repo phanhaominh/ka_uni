@@ -1,32 +1,46 @@
 import 'package:flutter/material.dart';
 
-/// Per-Navigator live set of page identity keys. Shared by [pushPageOnce]
-/// and the notification deep-link router so BOTH entry paths dedupe against
-/// each other: a manually opened AgendaPage and a deep-link tap onto
-/// "/agenda" are the same page.
+/// Per-Navigator live map of page identity key -> the Route that owns it.
+/// Shared by [pushPageOnce] and the notification deep-link router so BOTH
+/// entry paths dedupe against each other: a manually opened AgendaPage and
+/// a deep-link tap onto "/agenda" are the same page.
 ///
-/// Keyed by [NavigatorState] instead of one global set: a disposed test
-/// Navigator (or a shell torn down by logout) must not leave its keys
-/// behind for the NEXT Navigator to dedupe against - Route.dispose never
-/// completes [Route.popped], so popped-based cleanup cannot be trusted for
-/// teardown, only for pops.
+/// Keyed by [NavigatorState]: the deep-link harness (tests) and any future
+/// scoped Navigator must not dedupe against another Navigator's pages. The
+/// app itself has exactly ONE Navigator for its whole lifetime (root
+/// MaterialApp navigator; no nested `Navigator(` exists), so entries are
+/// naturally bounded and the shell/logout flap never clears live pages.
+///
+/// Values (not just membership) matter twice:
+///  * removal fires on [Route.popped] but only deletes the entry if it
+///    STILL belongs to that route - the deep-link "remove stale, push
+///    fresh" path completes the old route's popped AFTER the new route
+///    registered the same key (microtask ordering), and a blind remove
+///    would silently deregister the live page;
+///  * the router must distinguish "this page is open" from "THIS page is
+///    open": its own stale route is registered too, and dedupe against
+///    itself would defeat the flag-refresh replace.
 class ActivePages {
   ActivePages._();
 
-  static final Map<NavigatorState, Set<String>> _open = {};
+  static final Map<NavigatorState, Map<String, Route<dynamic>>> _open = {};
 
   static bool isOpen(NavigatorState nav, String key) =>
-      _open[nav]?.contains(key) ?? false;
+      _open[nav]?.containsKey(key) ?? false;
 
-  /// Register [key] on [nav] as open and arm removal when [route] finishes
-  /// (user pop or deep-link removeRoute both complete [Route.popped]).
+  /// The route currently holding [key] on [nav], if any.
+  static Route<dynamic>? routeFor(NavigatorState nav, String key) =>
+      _open[nav]?[key];
+
+  /// Register [key] on [nav] as owned by [route]; removal is armed on
+  /// [Route.popped] (user pop or removeRoute both complete it) but only
+  /// fires for the route that still owns the key (see class doc).
   static void track(NavigatorState nav, String key, Route<void> route) {
-    _open.putIfAbsent(nav, () => <String>{}).add(key);
-    route.popped.whenComplete(() => _open[nav]?.remove(key));
+    _open.putIfAbsent(nav, () => <String, Route<dynamic>>{})[key] = route;
+    route.popped.whenComplete(() {
+      if (_open[nav]?[key] == route) _open[nav]!.remove(key);
+    });
   }
-
-  /// Whole shell destroyed: drop everything registered on it.
-  static void clearFor(NavigatorState nav) => _open.remove(nav);
 
   @visibleForTesting
   static void resetForTest() => _open.clear();

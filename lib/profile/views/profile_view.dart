@@ -11,9 +11,7 @@ import '../../state_management/kit_provider.dart';
 import '../../toasts/models/toasts_provider.dart';
 
 class ProfileView extends StatelessWidget {
-  final GlobalKey relevantModulesTitleKey;
-
-  const ProfileView({super.key, required this.relevantModulesTitleKey});
+  const ProfileView({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -40,11 +38,15 @@ class ProfileView extends StatelessWidget {
                   children: [
                     Positioned(
                       left: -30,
-                      child: SvgPicture.asset("assets/images/Fan.svg", width: 150, fit: BoxFit.none,),
+                      child: SvgPicture.asset(
+                        "assets/images/Fan.svg",
+                        width: 150,
+                        fit: BoxFit.none,
+                      ),
                     ),
-
                     GestureDetector(
-                      onLongPress: () async => toastsProvider.showTextToast("Hi :)"),
+                      onLongPress: () async =>
+                          toastsProvider.showTextToast("Hi :)"),
                       child: Container(
                         padding: EdgeInsets.symmetric(horizontal: 15),
                         child: Row(
@@ -58,8 +60,7 @@ class ProfileView extends StatelessWidget {
                               child: Hero(
                                   tag: "student_name_repr",
                                   child: Text(vm.student.name.repr,
-                                      style:
-                                          theme.textTheme.headlineSmall,
+                                      style: theme.textTheme.headlineSmall,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis)),
                             ),
@@ -81,7 +82,15 @@ class ProfileView extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(L10n.t("settings.degreeProgram"), style: theme.textTheme.titleMedium,),
+                // the German "Studiengang" label at large font scales is
+                // wider than the leftover column: as an inflexible Text it
+                // overflowed before the Expanded value could shrink
+                Flexible(
+                  child: Text(L10n.t("settings.degreeProgram"),
+                      style: theme.textTheme.titleMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                ),
                 const Padding(padding: EdgeInsets.all(10)),
                 Expanded(
                   child: Text(
@@ -100,72 +109,92 @@ class ProfileView extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(L10n.t("settings.semester"), style: theme.textTheme.titleMedium,),
-                Text(KITProvider.currentSemesterString, style: theme.textTheme.titleMedium,),
+                Flexible(
+                  child: Text(L10n.t("settings.semester"),
+                      style: theme.textTheme.titleMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                ),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(KITProvider.currentSemesterString,
+                        style: theme.textTheme.titleMedium),
+                  ),
+                ),
               ],
             ),
           ),
 
-          !settingsVM.showingAvgMark.value ?
-          BlockContainer(
-              padding: EdgeInsets.only(top: 7),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(L10n.t("settings.creditPoints"), style: theme.textTheme.titleMedium,),
+          !settingsVM.showingAvgMark.value
+              ? BlockContainer(
+                  padding: EdgeInsets.only(top: 7),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // the exact inflexible-Text-in-spaceBetween-Row bug the
+                      // sibling rows guard against: with the avg-mark toggle
+                      // off, the German "Leistungspunkte" label pushed the
+                      // ECTS value past the card edge at large font scales
+                      Flexible(
+                        child: Text(L10n.t("settings.creditPoints"),
+                            style: theme.textTheme.titleMedium,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ),
 
-                  Text(vm.student.ectsAcquired, style: theme.textTheme.titleMedium,),
-                ],
-              )
-          )
+                      Text(
+                        vm.student.ectsAcquired,
+                        style: theme.textTheme.titleMedium,
+                      ),
+                    ],
+                  ))
               : Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              BlockContainer(
-                padding: EdgeInsets.only(top: 7),
-                child: SizedBox(
-                  width: MediaQuery.of(context).size.width * 0.36,
-                  // fixed 0.36*screen budget: the German label overflows it
-                  // at large font scales without Flexible + ellipsis
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: Text(L10n.t("settings.avgGrade"),
-                            style: theme.textTheme.titleMedium,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    BlockContainer(
+                      padding: EdgeInsets.only(top: 7),
+                      child: SizedBox(
+                        width: MediaQuery.of(context).size.width * 0.36,
+                        // fixed 0.36*screen budget: the German label overflows it
+                        // at large font scales without Flexible + ellipsis
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Flexible(
+                              child: Text(L10n.t("settings.avgGrade"),
+                                  style: theme.textTheme.titleMedium,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(vm.student.avgMark.toString(),
+                                style: theme.textTheme.titleMedium),
+                          ],
+                        ),
                       ),
-                      const SizedBox(width: 6),
-                      Text(vm.student.avgMark.toString(),
-                          style: theme.textTheme.titleMedium),
-                    ],
-                  ),
+                    ),
+                    BlockContainer(
+                        padding: EdgeInsets.only(top: 7),
+                        child: SizedBox(
+                          width: MediaQuery.of(context).size.width * 0.36,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Flexible(
+                                child: Text(L10n.t("settings.creditsShort"),
+                                    style: theme.textTheme.titleMedium,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(vm.student.ectsAcquired,
+                                  style: theme.textTheme.titleMedium),
+                            ],
+                          ),
+                        )),
+                  ],
                 ),
-              ),
-
-              BlockContainer(
-                padding: EdgeInsets.only(top: 7),
-                child: SizedBox(
-                  width: MediaQuery.of(context).size.width * 0.36,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: Text(L10n.t("settings.creditsShort"),
-                            style: theme.textTheme.titleMedium,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(vm.student.ectsAcquired,
-                          style: theme.textTheme.titleMedium),
-                    ],
-                  ),
-                )
-              ),
-            ],
-          ),
 
           // the Studienverlauf tree aggregated into a pass/fail/pending
           // ledger with the 30 CP orientation milestone; the data is already
@@ -180,24 +209,23 @@ class ProfileView extends StatelessWidget {
             innerPadding: EdgeInsets.zero,
             child: InkWell(
               borderRadius: const BorderRadius.all(appBorderRadius),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (context) => const GradesPage())),
+              onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (context) => const GradesPage())),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
                 child: Row(
                   children: [
                     Expanded(
                       child: Text(L10n.t("grades.entry"),
                           style: theme.textTheme.titleMedium),
                     ),
-                    Icon(Icons.chevron_right,
-                        color: theme.colorScheme.outline),
+                    Icon(Icons.chevron_right, color: theme.colorScheme.outline),
                   ],
                 ),
               ),
             ),
           ),
-
         ],
       ),
     );

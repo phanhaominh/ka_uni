@@ -47,8 +47,7 @@ void main() {
         _row(level: 3, title: "Zweites Modul"),
         _row(level: 3, title: "Drittes Modul", grade: "5,0"),
       ]);
-      expect(
-          book.modules.map((m) => m.title),
+      expect(book.modules.map((m) => m.title),
           ["Erstes Modul", "Zweites Modul", "Drittes Modul"]);
       expect(book.passed.map((m) => m.title), ["Erstes Modul"]);
       expect(book.failed.map((m) => m.title), ["Drittes Modul"]);
@@ -65,10 +64,7 @@ void main() {
             // space arrives already decoded (&thinsp; never arrives as text)
             title: "Numerische&nbsp;Methoden\u2009I",
             grade: "&nbsp;"),
-        _row(
-            level: 3,
-            title: "  Numerische   Methoden  I ",
-            grade: "2,3"),
+        _row(level: 3, title: "  Numerische   Methoden  I ", grade: "2,3"),
       ]);
       expect(book.modules, hasLength(1));
       final m = book.modules.single;
@@ -204,7 +200,11 @@ void main() {
 
     test("'&nbsp;' grade is pending with an empty label", () {
       final m = _book([
-        _row(level: 3, title: "Noch offen", grade: "&nbsp;", pointsMax: "&nbsp;"),
+        _row(
+            level: 3,
+            title: "Noch offen",
+            grade: "&nbsp;",
+            pointsMax: "&nbsp;"),
       ]).modules.single;
       expect(m.state, GradeState.pending);
       expect(m.gradeLabel, "");

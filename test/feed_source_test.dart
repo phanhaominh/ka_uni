@@ -17,9 +17,11 @@ void main() {
   // under a growing suite
   final clock = DateTime(2026, 10, 30, 18);
   final real = WebcalFeed.parse(
-      File('test/fixtures/wc_now.ics').readAsStringSync(), now: clock)!;
+      File('test/fixtures/wc_now.ics').readAsStringSync(),
+      now: clock)!;
   final e2e = WebcalFeed.parse(
-      File('test/fixtures/webcal_e2e.ics').readAsStringSync(), now: clock)!;
+      File('test/fixtures/webcal_e2e.ics').readAsStringSync(),
+      now: clock)!;
 
   test("unrelated calendars have different fingerprints", () {
     // both sides of the fingerprint sit in the same fixture-clock window:
@@ -35,8 +37,10 @@ void main() {
   });
 
   test("re-seeded baseline diffs clean against itself", () {
-    expect(e2e.changesSince(WebcalFeed.parse(
-        File('test/fixtures/webcal_e2e.ics').readAsStringSync(),
-        now: clock)!), isEmpty);
+    expect(
+        e2e.changesSince(WebcalFeed.parse(
+            File('test/fixtures/webcal_e2e.ics').readAsStringSync(),
+            now: clock)!),
+        isEmpty);
   });
 }

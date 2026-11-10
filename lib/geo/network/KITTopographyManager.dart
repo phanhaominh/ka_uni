@@ -5,7 +5,8 @@ import 'package:http/http.dart';
 import 'package:kit_mobile/geo/models/kit_place.dart';
 
 class KITTopographyManager {
-  static const String dataSrcUrl = "https://www.kit.edu/campusplan/public/scripts/data_de.js";
+  static const String dataSrcUrl =
+      "https://www.kit.edu/campusplan/public/scripts/data_de.js";
 
   /// Prefs key of the offline place snapshot (see encodePlacesSnapshot);
   /// the Raum-Finder restores it when the live list is still empty.

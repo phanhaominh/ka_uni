@@ -24,7 +24,9 @@ class ExamsPage extends StatelessWidget {
     if (!cm.examsLoaded && !cm.isFetchingExams && !cm.examsSurfaceBroken) {
       // self-heal: a stale session that never ran fetchExams (e.g. login
       // predates this build) must not leave the user on an endless spinner
-      SchedulerBinding.instance.addPostFrameCallback((_) => cm.fetchExams());
+      // single-flight via the provider: the agenda's synthetic-exam
+      // re-render joins exactly this chain through vm.examsDone
+      SchedulerBinding.instance.addPostFrameCallback((_) => vm.fetchExams());
     }
     final exams = cm.exams;
     final now = DateTime.now();
@@ -73,65 +75,77 @@ class ExamsPage extends StatelessWidget {
       // the empty list especially needs a manual re-sync
       body: MaxWidthBody(
         child: RefreshIndicator(
-        onRefresh: () async {
-          final toasts = context.read<ToastsProvider>();
-          final ok = await cm.fetchExams();
-          if (!ok) toasts.showTextToast(L10n.t("exams.loadError"));
-        },
-        child: !cm.examsLoaded
-            ? (cm.examsSurfaceBroken
-                ? ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    children: [
-                      const SizedBox(height: 200),
-                      Center(child: Text(L10n.t("exams.loadError"))),
-                      const SizedBox(height: 12),
-                      Center(
-                        child: FilledButton(
-                          onPressed: () => cm.fetchExams(),
-                          child: Text(L10n.t("exams.retry")),
+          onRefresh: () => _refresh(context, vm),
+          child: !cm.examsLoaded
+              ? (cm.examsSurfaceBroken
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        const SizedBox(height: 200),
+                        Center(child: Text(L10n.t("exams.loadError"))),
+                        const SizedBox(height: 12),
+                        Center(
+                          child: FilledButton(
+                            // the button used to fire fetchExams() and drop
+                            // its Future<bool>: a failed retry re-threw
+                            // nothing, re-toasted nothing - the user just
+                            // kept staring at the error. Same body as
+                            // pull-to-refresh now, failure included.
+                            onPressed: () => _refresh(context, vm),
+                            child: Text(L10n.t("exams.retry")),
+                          ),
                         ),
+                      ],
+                    )
+                  : ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: const [
+                        SizedBox(height: 240),
+                        Center(child: CircularProgressIndicator()),
+                      ],
+                    ))
+              : ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 130),
+                  children: [
+                    if (exams.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 200),
+                        child: Center(child: Text(L10n.t("exams.empty"))),
                       ),
-                    ],
-                  )
-                : ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    children: const [
-                      SizedBox(height: 240),
-                      Center(child: CircularProgressIndicator()),
-                    ],
-                  ))
-            : ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 130),
-                children: [
-                  if (exams.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 200),
-                      child: Center(child: Text(L10n.t("exams.empty"))),
-                    ),
-                  if (open.isNotEmpty)
-                    _section(
-                        context, L10n.t("exams.sectionActNow"), open, now,
-                        danger: true),
-                  if (upcoming.isNotEmpty)
-                    _section(context, L10n.t("exams.sectionOpensSoon"),
-                        upcoming, now),
-                  if (registered.isNotEmpty)
-                    _section(context, L10n.t("exams.sectionRegistered"),
-                        registered, now),
-                  if (rest.isNotEmpty)
-                    _section(context, L10n.t("exams.sectionOther"), rest, now),
-                  if (catalog.isNotEmpty)
-                    _section(context, L10n.t("exams.sectionCatalog"), catalog,
-                        now,
-                        quiet: true),
-                  _freshFooter(context, cm),
-                ],
-              ),
-      ),
+                    if (open.isNotEmpty)
+                      _section(
+                          context, L10n.t("exams.sectionActNow"), open, now,
+                          danger: true),
+                    if (upcoming.isNotEmpty)
+                      _section(context, L10n.t("exams.sectionOpensSoon"),
+                          upcoming, now),
+                    if (registered.isNotEmpty)
+                      _section(context, L10n.t("exams.sectionRegistered"),
+                          registered, now),
+                    if (rest.isNotEmpty)
+                      _section(
+                          context, L10n.t("exams.sectionOther"), rest, now),
+                    if (catalog.isNotEmpty)
+                      _section(
+                          context, L10n.t("exams.sectionCatalog"), catalog, now,
+                          quiet: true),
+                    _freshFooter(context, cm),
+                  ],
+                ),
+        ),
       ),
     );
+  }
+
+  /// One refresh body for pull-to-refresh AND the retry button; the toast
+  /// is guarded because the fetch outlives the page pop.
+  Future<void> _refresh(BuildContext context, KITProvider vm) async {
+    final toasts = context.read<ToastsProvider>();
+    final ok = await vm.fetchExams();
+    if (!ok && context.mounted) {
+      toasts.showTextToast(L10n.t("exams.loadError"));
+    }
   }
 
   @visibleForTesting
@@ -151,8 +165,8 @@ class ExamsPage extends StatelessWidget {
       (a.windowStart ?? DateTime(2100))
           .compareTo(b.windowStart ?? DateTime(2100));
 
-  Widget _section(BuildContext context, String title, List<ExamEntry> exams,
-      DateTime now,
+  Widget _section(
+      BuildContext context, String title, List<ExamEntry> exams, DateTime now,
       {bool danger = false, bool quiet = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -164,8 +178,8 @@ class ExamsPage extends StatelessWidget {
                   color: danger ? Theme.of(context).colorScheme.error : null,
                   fontWeight: FontWeight.bold)),
         ),
-        ...exams.map(
-            (e) => _card(context, e, now, danger: danger, quiet: quiet)),
+        ...exams
+            .map((e) => _card(context, e, now, danger: danger, quiet: quiet)),
       ],
     );
   }
@@ -188,7 +202,7 @@ class ExamsPage extends StatelessWidget {
       else if (e.windowEnd != null)
         L10n.t("exams.detailDeadline", [L10n.deadline(e.windowEnd!)]),
       if (e.examiners.isNotEmpty)
-          L10n.t("exams.detailExaminers", [e.examiners]),
+        L10n.t("exams.detailExaminers", [e.examiners]),
       e.examType,
     ];
 
@@ -227,8 +241,7 @@ class ExamsPage extends StatelessWidget {
                   // plain caption, not a second pill: an identical chip
                   // for the module number invites taps that do nothing
                   Text(e.examNumber,
-                      style: TextStyle(
-                          fontSize: 11, color: scheme.outline)),
+                      style: TextStyle(fontSize: 11, color: scheme.outline)),
               ],
             ),
           ],
@@ -241,7 +254,8 @@ class ExamsPage extends StatelessWidget {
         visualDensity: VisualDensity.compact,
         // scheme-based colors keep tinted labels contrast-safe per theme
         label: Text(label,
-            style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+            style: TextStyle(
+                fontSize: 11, color: color, fontWeight: FontWeight.w600)),
         backgroundColor: color.withValues(alpha: 0.18),
         side: BorderSide(color: color.withValues(alpha: 0.6)),
       );
@@ -258,6 +272,7 @@ class ExamsPage extends StatelessWidget {
         backgroundColor: scheme.errorContainer,
         side: BorderSide(color: scheme.error),
       );
+
   /// "Stand: HH:MM" / orange staleness — cascampus is fetched live on every
   /// login but NOTHING else refreshes it: without this a pull at 08:00 and
   /// a pull three days later render identically (agenda footer, same rule)

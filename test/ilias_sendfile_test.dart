@@ -15,8 +15,8 @@ void main() {
             "w/sendfile.php?ref_id=1"),
         isFalse);
     expect(isIliasSendfileUrl("https://evil.example/sendfile"), isFalse);
-    expect(isIliasSendfileUrl("https://kit.edu.evil.example/sendfile"),
-        isFalse);
+    expect(
+        isIliasSendfileUrl("https://kit.edu.evil.example/sendfile"), isFalse);
     expect(
         isIliasSendfileUrl(
             "https://ilias.studium.kit.edu.evil.example/w/sendfile.php"),
@@ -31,8 +31,7 @@ void main() {
 
   test("evil.example sendfile yields no destination", () {
     expect(sendfileFileName("https://evil.example/sendfile"), isNull);
-    expect(
-        iliasSendfilePath(docsDir, "https://evil.example/sendfile?ref_id=1"),
+    expect(iliasSendfilePath(docsDir, "https://evil.example/sendfile?ref_id=1"),
         isNull);
   });
 
@@ -54,8 +53,7 @@ void main() {
 
   test("dots-only or missing ref_id yields nothing", () {
     expect(sendfileFileName(sendfile("%2E%2E")), isNull);
-    expect(
-        sendfileFileName("https://ilias.studium.kit.edu/w/sendfile.php"),
+    expect(sendfileFileName("https://ilias.studium.kit.edu/w/sendfile.php"),
         isNull);
     // Dart decodes invalid escapes leniently (kept literally); the
     // scrubber neutralises the '%' and no separator can survive anyway

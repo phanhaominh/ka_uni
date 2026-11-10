@@ -35,10 +35,12 @@ List<String> _uids(String block) => RegExp(r"UID:(kauni-exam-[^\r\n]+)")
 void main() {
   group("buildExamSynthBlock", () {
     test("registered sitting emits a VEVENT with room and parsed end", () {
-      final block =
-          buildExamSynthBlock([_exam(terms: [_term("Di, 23.03.2027", "17:30 - 19:00")])]);
+      final block = buildExamSynthBlock([
+        _exam(terms: [_term("Di, 23.03.2027", "17:30 - 19:00")])
+      ]);
       expect(block, contains("BEGIN:VEVENT"));
-      expect(block, contains("UID:kauni-exam-01-A-9001-20270323T173000@ka_uni"));
+      expect(
+          block, contains("UID:kauni-exam-01-A-9001-20270323T173000@ka_uni"));
       expect(block, contains("DTSTAMP:"));
       expect(block, contains("DTSTART;TZID=Europe/Berlin:20270323T173000"));
       expect(block, contains("DTEND;TZID=Europe/Berlin:20270323T190000"));
@@ -49,12 +51,19 @@ void main() {
 
     test("unregistered entries emit nothing", () {
       final block = buildExamSynthBlock([
-        _exam(num: "01-A-1111", registered: false, terms: [_term("Di, 23.03.2027", "17:30 - 19:00")]),
-        _exam(num: "01-A-2222", title: "Analysis II", terms: [_term("Fr, 16.04.2027", "09:00 - 11:00")]),
+        _exam(
+            num: "01-A-1111",
+            registered: false,
+            terms: [_term("Di, 23.03.2027", "17:30 - 19:00")]),
+        _exam(
+            num: "01-A-2222",
+            title: "Analysis II",
+            terms: [_term("Fr, 16.04.2027", "09:00 - 11:00")]),
       ]);
       expect(block, isNot(contains("01-A-1111")));
       expect(block, isNot(contains("Klausur: Analysis I\r\n")));
-      expect(block, contains("UID:kauni-exam-01-A-2222-20270416T090000@ka_uni"));
+      expect(
+          block, contains("UID:kauni-exam-01-A-2222-20270416T090000@ka_uni"));
     });
 
     test("cancelled sittings are skipped", () {
@@ -85,8 +94,9 @@ void main() {
     });
 
     test("missing end token omits DTEND (never export a guessed end)", () {
-      final block =
-          buildExamSynthBlock([_exam(terms: [_term("Di, 23.03.2027", "10:00")])]);
+      final block = buildExamSynthBlock([
+        _exam(terms: [_term("Di, 23.03.2027", "10:00")])
+      ]);
       expect(block, contains("DTSTART;TZID=Europe/Berlin:20270323T100000"));
       expect(block, isNot(contains("DTEND")));
       // the webcal parser restores the in-app +90 default and marks the
@@ -99,8 +109,9 @@ void main() {
     });
 
     test("overnight end token rolls to the next day", () {
-      final block =
-          buildExamSynthBlock([_exam(terms: [_term("Di, 23.03.2027", "22:00 - 01:00")])]);
+      final block = buildExamSynthBlock([
+        _exam(terms: [_term("Di, 23.03.2027", "22:00 - 01:00")])
+      ]);
       expect(block, contains("DTEND;TZID=Europe/Berlin:20270324T010000"));
     });
 
@@ -126,8 +137,9 @@ void main() {
 
     test("commas and semicolons in titles are escaped", () {
       final block = buildExamSynthBlock([
-        _exam(title: "Angewandte Informatik, Vertiefung; II",
-            terms: [_term("Di, 23.03.2027", "17:30 - 19:00", "Geb. 50.20, HS")]),
+        _exam(title: "Angewandte Informatik, Vertiefung; II", terms: [
+          _term("Di, 23.03.2027", "17:30 - 19:00", "Geb. 50.20, HS")
+        ]),
       ]);
       expect(
           block,
@@ -146,24 +158,29 @@ void main() {
     test("empty input -> empty string", () {
       expect(buildExamSynthBlock([]), isEmpty);
       expect(buildExamSynthBlock([_exam(registered: false)]), isEmpty);
-      expect(buildExamSynthBlock([_exam(terms: [_term("", "", "")])]), isEmpty);
+      expect(
+          buildExamSynthBlock([
+            _exam(terms: [_term("", "", "")])
+          ]),
+          isEmpty);
     });
 
     test("emitted events survive the webcal parser", () {
       // sit seven days out so the parser's 56-day horizon always contains it
       final d = DateTime.now().add(const Duration(days: 7));
       String two(int v) => v.toString().padLeft(2, "0");
-      final label =
-          "Mo, ${two(d.day)}.${two(d.month)}.${d.year}";
-      final block =
-          buildExamSynthBlock([_exam(terms: [_term(label, "17:30 - 19:00")])]);
+      final label = "Mo, ${two(d.day)}.${two(d.month)}.${d.year}";
+      final block = buildExamSynthBlock([
+        _exam(terms: [_term(label, "17:30 - 19:00")])
+      ]);
       final raw = CampusManager.injectExamSynth(
           "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", block);
       final feed = WebcalFeed.parse(raw)!;
-      final occ = feed.occurrences
-          .firstWhere((o) => o.title == "Klausur: Analysis I");
+      final occ =
+          feed.occurrences.firstWhere((o) => o.title == "Klausur: Analysis I");
       expect(occ.start, DateTime(d.year, d.month, d.day, 17, 30));
-      expect(occ.end.difference(occ.start), const Duration(hours: 1, minutes: 30));
+      expect(
+          occ.end.difference(occ.start), const Duration(hours: 1, minutes: 30));
       expect(occ.room, "AVI 105");
       final stamp = "${d.year}${two(d.month)}${two(d.day)}T173000";
       expect(occ.uid, "kauni-exam-01-A-9001-$stamp@ka_uni");
@@ -186,7 +203,9 @@ void main() {
       String two(int v) => v.toString().padLeft(2, "0");
       final label = "Di, ${two(past.day)}.${two(past.month)}.${past.year}";
       expect(
-          buildExamSynthBlock([_exam(terms: [_term(label, "17:30 - 19:00")])]),
+          buildExamSynthBlock([
+            _exam(terms: [_term(label, "17:30 - 19:00")])
+          ]),
           isEmpty);
     });
 
@@ -200,8 +219,8 @@ void main() {
       ]);
       expect(block, contains("SUMMARY:Klausur: A B\r\n"));
       expect(block, contains("LOCATION:A B\r\n"));
-      expect(block.split("\r\n").where((l) => l.startsWith("LOCATION")).length,
-          1);
+      expect(
+          block.split("\r\n").where((l) => l.startsWith("LOCATION")).length, 1);
       expect(block.split("\n").where((l) => l == "B").length, 0);
     });
 
@@ -233,12 +252,13 @@ void main() {
           "DTSTART:20261102T080000\r\nDTEND:20261102T094500\r\n"
           "RRULE:FREQ=WEEKLY;UNTIL=20270201T000000\r\nEND:VEVENT\r\n"
           "END:VCALENDAR\r\n";
-      final exam = buildExamSynthBlock(
-          [_exam(terms: [_term("Di, 23.03.2027", "17:30 - 19:00")])]);
+      final exam = buildExamSynthBlock([
+        _exam(terms: [_term("Di, 23.03.2027", "17:30 - 19:00")])
+      ]);
       final feed =
           WebcalFeed.parse(CampusManager.injectExamSynth(lecture, exam))!;
-      expect(feed.occurrences.any((o) => o.title.startsWith("Klausur:")),
-          isTrue);
+      expect(
+          feed.occurrences.any((o) => o.title.startsWith("Klausur:")), isTrue);
       final titles = CampusManager.gridTemplate(feed)
           .days
           .expand((d) => d.appointments)
@@ -275,13 +295,15 @@ void main() {
     });
 
     test("exam and signmeup blocks coexist and strip independently", () {
-      const smBlock = "BEGIN:VEVENT\r\nUID:signmeup-7-0@ka_uni\r\nEND:VEVENT\r\n";
+      const smBlock =
+          "BEGIN:VEVENT\r\nUID:signmeup-7-0@ka_uni\r\nEND:VEVENT\r\n";
       final merged = CampusManager.injectSignMeUpSynth(
           CampusManager.injectExamSynth(stub, block), smBlock);
       expect(CampusManager.extractExamSynth(merged), block);
       expect(CampusManager.extractSignMeUpSynth(merged), smBlock);
       expect(
-          CampusManager.stripSignMeUpSynth(CampusManager.stripExamSynth(merged)),
+          CampusManager.stripSignMeUpSynth(
+              CampusManager.stripExamSynth(merged)),
           stub);
     });
 
@@ -297,7 +319,8 @@ void main() {
       final clean = CampusManager.sanitizeSentinels(poisoned);
       expect(clean, isNot(contains("X-EXAM-SYNTH")));
       expect(clean, contains("UID:mine@ka_uni"));
-      expect(clean, isNot(contains("X-WR-CALNAME"))); // aggressive even mid-value
+      expect(
+          clean, isNot(contains("X-WR-CALNAME"))); // aggressive even mid-value
       expect(CampusManager.extractExamSynth(clean), isEmpty);
       expect(CampusManager.stripExamSynth(clean), clean);
     });
@@ -316,8 +339,7 @@ void main() {
 
     test("line anchoring tolerates legacy LF-only cache bodies", () {
       const lfStub = "BEGIN:VCALENDAR\nEND:VCALENDAR\n";
-      const lf =
-          "BEGIN:VCALENDAR\nX-EXAM-SYNTH-BEGIN\n$block"
+      const lf = "BEGIN:VCALENDAR\nX-EXAM-SYNTH-BEGIN\n$block"
           "X-EXAM-SYNTH-END\nEND:VCALENDAR\n";
       expect(CampusManager.extractExamSynth(lf), block);
       expect(CampusManager.stripExamSynth(lf), lfStub);
@@ -353,13 +375,15 @@ void main() {
       expect(cache, isNot(contains("kauni-exam-")));
     });
 
-    test("deterministic identical block re-injection is a true no-op", () async {
+    test("deterministic identical block re-injection is a true no-op",
+        () async {
       SharedPreferences.setMockInitialValues({
         "DATA_webcalUrl": "https://cascampus.invalid/wc.ics",
         "DATA_webcalIcsCache": stub,
       });
-      final block = buildExamSynthBlock(
-          [_exam(terms: [_term("Di, 23.03.2027", "17:30 - 19:00")])]);
+      final block = buildExamSynthBlock([
+        _exam(terms: [_term("Di, 23.03.2027", "17:30 - 19:00")])
+      ]);
       await cm.reapplyExamSynth(block);
       expect(cm.examSynth, block);
       expect(notified, 1);
@@ -395,8 +419,7 @@ void main() {
       expect(cm.examSynth, "BEGIN:VEVENT\r\nEND:VEVENT\r\n");
     });
 
-    test("carry drops sittings that ended while the app was closed",
-        () async {
+    test("carry drops sittings that ended while the app was closed", () async {
       // C29: a finished Klausur is history, not an appointment - it must
       // not ride the cached block back into memory on a cold start
       const withEnd = "BEGIN:VEVENT\r\n"
@@ -423,8 +446,9 @@ void main() {
       SharedPreferences.setMockInitialValues({
         "DATA_webcalIcsCache": CampusManager.injectExamSynth(stub, stale),
       });
-      final block = buildExamSynthBlock(
-          [_exam(terms: [_term("Di, 23.03.2027", "17:30 - 19:00")])]);
+      final block = buildExamSynthBlock([
+        _exam(terms: [_term("Di, 23.03.2027", "17:30 - 19:00")])
+      ]);
       await cm.reapplyExamSynth(block);
       expect(cm.examSynth, isEmpty);
       final prefs = await SharedPreferences.getInstance();

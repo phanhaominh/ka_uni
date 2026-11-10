@@ -39,6 +39,7 @@ class CampusManager extends KITLoginManager {
   List<ExamEntry> exams = [];
   bool examsLoaded = false;
   bool isFetchingExams = false;
+
   /// when the exam list last came from the server; runtime-only like the
   /// list itself (exams have no disk cache), feeds the freshness footer
   DateTime? examsFetchedAt;
@@ -49,6 +50,15 @@ class CampusManager extends KITLoginManager {
 
   // i don't like this but it kinda does its job (~_~)
   bool isFetchingSchedule = false;
+
+  /// true when the last [fetchSchedule] hit one of [_fetchScheduleInner]'s
+  /// silent abort paths (stage 0 rejected / stage 3 dead) - those return
+  /// WITHOUT throwing, so a consumer (the grades page pull) cannot tell a
+  /// failed fetch from a legitimate "no data yet" without this. Reset at
+  /// every fetch start; the cross-module consumer contract fixes the name,
+  /// do not rename.
+  bool scheduleFetchFailed = false;
+
   bool isFetchingModules = false;
   bool allModulesFetched = false;
   bool mostImportantModulesFetched = false;
@@ -258,6 +268,11 @@ class CampusManager extends KITLoginManager {
   /// (the OLD account must not bleed into the NEW one's memory or prefs).
   int _teardownEpoch = 0;
 
+  /// read view for UI-side async chains (agenda ILIAS card): a fetch that
+  /// straddles a logout must not repopulate prefs/watcher state for the
+  /// account that just tore itself down
+  int get teardownEpoch => _teardownEpoch;
+
   /// Drops every piece of account-derived in-memory state. CampusManager
   /// (via KITProvider) is created once and SURVIVES logout, so anything not
   /// listed here keeps rendering the previous student's data to the next
@@ -280,6 +295,14 @@ class CampusManager extends KITLoginManager {
     examsFetchedAt = null;
     examsSurfaceBroken = false;
     isFetchingExams = false;
+    // drop the DEAD account's in-flight memo: until its socket chain
+    // settled, the next login's fetchExams joined it and awaited (and
+    // agenda's examsDone relayed) a fetch that can only ever fail
+    _examsInFlight = null;
+    // the "current modules" card list is account data too: an uncleared
+    // list (or its re-admitting reload `stored ?? relevantModuleRowIDs`)
+    // would bleed A's row ids straight back into the purged RMR key
+    relevantModuleRowIDs = [];
     allModulesFetched = false;
     mostImportantModulesFetched = false;
     // A's accepted tutorials must not ride into B's cache/agenda/pushes:
@@ -290,6 +313,19 @@ class CampusManager extends KITLoginManager {
     personalIcs = "";
     personalIcsUrl = "";
     _personalIcsLoaded = false;
+  }
+
+  /// Logout hook (KITProvider.dropInFlightFetches): like the exam memo in
+  /// [wipeAccountMemory], the schedule chain and the per-row module-page
+  /// memos belong to the DEAD account - until their sockets settle, the
+  /// next login's fetchSchedule would JOIN A's doomed stage chain and
+  /// getOrFetchModuleForRow would await A's parsed page (setDisplayName
+  /// writing A's name into B's storage is the visible symptom). The
+  /// chains' identity-bound finally-clearing keeps them from nulling the
+  /// NEW account's replacements when they eventually settle.
+  void dropInFlightFetches() {
+    _scheduleInFlight = null;
+    _moduleInFlight.clear();
   }
 
   Future<http.Response?> _fetchScheduleStage3ObtainSchedule(
@@ -349,6 +385,7 @@ class CampusManager extends KITLoginManager {
     // on over stale data, grading itself as done
     final inflight = _scheduleInFlight;
     if (inflight != null) return inflight;
+    scheduleFetchFailed = false;
     final future = _fetchScheduleGuarded(
         notify: notify,
         retryIfFailed: retryIfFailed,
@@ -356,7 +393,13 @@ class CampusManager extends KITLoginManager {
         refreshSession: refreshSession,
         startRefreshTimer: startRefreshTimer);
     _scheduleInFlight = future;
-    return future.whenComplete(() => _scheduleInFlight = null);
+    // identity-bound clear: a logout (via dropInFlightFetches) drops this
+    // memo while the stage chain is still in flight - the OLD account's
+    // chain settling must not null the NEW account's memo behind the
+    // logout sweep's back
+    return future.whenComplete(() {
+      if (identical(_scheduleInFlight, future)) _scheduleInFlight = null;
+    });
   }
 
   Future<void> _fetchScheduleGuarded({
@@ -391,6 +434,11 @@ class CampusManager extends KITLoginManager {
     required bool refreshSession,
     required bool startRefreshTimer,
   }) async {
+    // account-bound chain (same fence as _fetchExamsInner): everything
+    // from stage 3's page on is account data - a logout mid-stages must
+    // not repopulate the purged DATA_student cache or flip ready=true
+    // over the login form with the OLD student's name
+    final epoch = _teardownEpoch;
     if (refreshSession) {
       await clearCookiesAndCache();
     }
@@ -403,6 +451,7 @@ class CampusManager extends KITLoginManager {
       // invalid credentials / no JSESSIONID: posting stage 1-2 credentials
       // against a sessionless jar would only churn the IdP
       if (kDebugMode) print("Stage 0 returned $stage0 - aborting schedule");
+      scheduleFetchFailed = true; // silent abort - visible to the grades pull
       return;
     }
     http.Response currentResponse = await fetchStage1_TryToOpenLoginPage(
@@ -425,9 +474,16 @@ class CampusManager extends KITLoginManager {
       if (kDebugMode) {
         print("Stage 3 failed!");
       }
+      scheduleFetchFailed = true; // silent abort - visible to the grades pull
       return;
     }
     currentResponse = stage3Response;
+
+    if (epoch != _teardownEpoch) {
+      // logout happened somewhere across the stage GETs: parsing and
+      // publishing this page below is exactly the post-logout write bleed
+      return;
+    }
 
     // parse the response
     var document = parse(currentResponse.body);
@@ -529,6 +585,9 @@ class CampusManager extends KITLoginManager {
       return cleaned.isEmpty ? "0,0" : cleaned;
     }
 
+    // tail fence: the no-grades-row retry above is an await gap (and can
+    // itself straddle the logout) - do not publish the OLD student now
+    if (epoch != _teardownEpoch) return;
     student.set(
         name: Name(firstName: firstName, lastName: lastName),
         matriculationNumber: matrn,
@@ -537,6 +596,10 @@ class CampusManager extends KITLoginManager {
         ectsAcquired: ectsAcquired);
 
     await writeStudentData();
+
+    // the prefs write is an await gap too: ready=true over a freshly
+    // cleared login form would leave the app looking logged in as A
+    if (epoch != _teardownEpoch) return;
 
     // fetchTimetable().then((_) {
     //   fetchAllModules();
@@ -594,8 +657,7 @@ class CampusManager extends KITLoginManager {
           continue;
         }
 
-        await _fetchModuleForChain(row)
-            .catchError((_) => KITModule());
+        await _fetchModuleForChain(row).catchError((_) => KITModule());
         addRelevantModuleRow(row);
       }
     }
@@ -629,7 +691,6 @@ class CampusManager extends KITLoginManager {
         lessImportantRows.add(row);
       }
     }
-
 
     if (rowsToFetch.isEmpty) {
       rowsToFetch = lessImportantRows;
@@ -774,7 +835,12 @@ class CampusManager extends KITLoginManager {
     try {
       return await future;
     } finally {
-      _moduleInFlight.remove(row.id);
+      // identity-bound removal: after a logout cleared this map (and the
+      // NEW account registered its own scrape for the same row id), the
+      // OLD chain settling must not drop the successor's memo
+      if (identical(_moduleInFlight[row.id], future)) {
+        _moduleInFlight.remove(row.id);
+      }
     }
   }
 
@@ -1026,7 +1092,12 @@ class CampusManager extends KITLoginManager {
   /// has its own row id (see [moduleKeysDenoteSameModule]).
   Future<void> addRelevantModuleRow(HierarchicTableRow row,
       {keepSorted = true}) async {
+    // teardown fence (same double-gap as the store paths): the lock wait
+    // AND the persist below can both straddle a logout - an admitted row
+    // of the dead account must never re-persist the purged RMR key
+    final epoch = _teardownEpoch;
     await _addRelevantModuleLock.run(() async {
+      if (epoch != _teardownEpoch) return; // logout while queued on the lock
       final module = rowModules[row.id];
       if (module == null) {
         if (kDebugMode) print("Somehow module is null :(");
@@ -1258,7 +1329,14 @@ class CampusManager extends KITLoginManager {
         "https://cascampus.studium.kit.edu/campus/student/specificBrickView.asp";
 
     final response = await guardedCasPost(url, {action: cell.objectValue});
-    final isOk =
+    // an expired session answers the POST with a 200 "Sitzung abgelaufen"
+    // page (<div class="message message-error">) - the old
+    // "sitzung ist abgelaufen" substring NEVER matches that wording, so
+    // the toggle was reported successful, the star stayed flipped and the
+    // change never reached the server. sessionExpired() is the single
+    // source of truth for the expired page (fetchModule, _ensureWebcalUrl,
+    // stage 3); the old wording stays as a belt for other expired variants
+    final isOk = !sessionExpired(response.body) &&
         !response.body.toLowerCase().contains("sitzung ist abgelaufen");
 
     for (final row in moduleRows) {
@@ -1406,6 +1484,103 @@ class CampusManager extends KITLoginManager {
     return base.replaceRange(at, at, wrapped);
   }
 
+  // ---- feed-coverage dedupe of the SignMeUp block (live capture b47) ----
+  // The webcal feed carries some Belegungspflicht courses that SignMeUp
+  // ALSO assigns tutorial groups for, and both halves land in the merged
+  // cache: the agenda listed every one of them twice ("3173008 - Materials
+  // Science and Engineering I (Lecture) (V), Gibmeier, MACH" next to
+  // "Materials Science and Engineering I (Lecture)", same 08:00 slot).
+  // This drops a synthetic VEVENT only when the feed itself already has an
+  // event at the SAME weekday + clock time whose title plausibly matches
+  // the synthetic one; anything the judgement cannot decide stays - a
+  // visible duplicate beats a silently lost tutorial.
+
+  static final _synthEventBlock =
+      RegExp("BEGIN:VEVENT.*?END:VEVENT\r\n", dotAll: true);
+  static final _synthSummaryLine = RegExp(r"^SUMMARY:(.*)$", multiLine: true);
+  static final _synthStartLine =
+      RegExp(r"^DTSTART[^:]*:(\d{8})T(\d{4})", multiLine: true);
+
+  /// Comparison key: lowercase, lecturer tail dropped at the first ", "
+  /// (same rule as [lectureTitleKey]), leading course-number prefix
+  /// ("3173008 - ") gone, and the synthetic "(Tutorial - Group 2)"
+  /// spelling folded into the feed's "(Group 2)".
+  static String _synthTitleKey(String raw) {
+    var t = raw.toLowerCase();
+    final comma = t.indexOf(", ");
+    if (comma > 10) t = t.substring(0, comma);
+    t = t.replaceFirst(RegExp(r"^\s*\d{3,}\s*(?:[-/–]\s*\d+)*\s*[-–]\s*"), "");
+    t = t.replaceAllMapped(
+        RegExp(r"\(\s*(?:tutorial|uebungen?|übungen?)\s*[-–]\s*"), (m) => "(");
+    return t.replaceAll(RegExp(r"\s+"), " ").trim();
+  }
+
+  static String _icsHeaderValue(String escaped) => escaped
+      .replaceAll(r"\,", ",")
+      .replaceAll(r"\;", ";")
+      .replaceAll(r"\\", r"\");
+
+  /// [block] minus every synthetic VEVENT the feed body already carries
+  /// (same weekday+time, title containment either direction - feed titles
+  /// carry number prefixes/lecturer suffixes the synthetic one lacks, the
+  /// synthetic one may carry a topic suffix). A feed that will not parse
+  /// suppresses nothing: keeping a duplicate is always the safer error.
+  @visibleForTesting
+  static String dropSignMeUpSynthCoveredByFeed(String feedRaw, String block) {
+    if (block.isEmpty || !block.contains("BEGIN:VEVENT")) return block;
+    final feed = WebcalFeed.parse(feedRaw);
+    if (feed == null) return block; // unjudgeable feed: keep everything
+    // bucket genuine feed events by (weekday, clock time); SignMeUp/exam
+    // synth events in an already-merged body must never serve as
+    // suppression candidates for their own kind
+    final feedAt = <int, List<String>>{};
+    for (final o in feed.occurrences) {
+      if (o.uid.startsWith("signmeup-") ||
+          o.uid.startsWith(examSynthUidPrefix)) {
+        continue;
+      }
+      feedAt
+          .putIfAbsent(
+              o.start.weekday * 1440 + o.start.hour * 60 + o.start.minute,
+              () => [])
+          .add(_synthTitleKey(o.title));
+    }
+    if (feedAt.isEmpty) return block;
+    final out = StringBuffer();
+    var last = 0;
+    for (final m in _synthEventBlock.allMatches(block)) {
+      out.write(block.substring(last, m.start));
+      last = m.end;
+      final ev = m.group(0)!;
+      final summary = _synthSummaryLine.firstMatch(ev)?.group(1);
+      final at = _synthStartLine.firstMatch(ev);
+      var covered = false;
+      if (summary != null && at != null) {
+        final y = int.parse(at.group(1)!.substring(0, 4));
+        final mo = int.parse(at.group(1)!.substring(4, 6));
+        final d = int.parse(at.group(1)!.substring(6, 8));
+        final hh = int.parse(at.group(2)!.substring(0, 2));
+        final mi = int.parse(at.group(2)!.substring(2, 4));
+        final title = _synthTitleKey(_icsHeaderValue(summary.trim()));
+        // short keys over-match by containment ("MINT" ⊂ everything);
+        // below this the event is never suppressed
+        if (title.length >= 6) {
+          final candidates =
+              feedAt[DateTime(y, mo, d, hh, mi).weekday * 1440 + hh * 60 + mi];
+          for (final f in candidates ?? const <String>[]) {
+            if (f.isNotEmpty && (f.contains(title) || title.contains(f))) {
+              covered = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!covered) out.write(ev);
+    }
+    out.write(block.substring(last));
+    return out.toString();
+  }
+
   // ---- Exam synthetic events (registered sittings from the exam list) ----
   // Same sentinel-bracketed VEVENT text as the SignMeUp block above: built
   // whenever the exam list parses successfully (exam_synth.dart, see
@@ -1509,7 +1684,8 @@ class CampusManager extends KITLoginManager {
     final uri = Uri.tryParse(trimmed);
     if (uri == null ||
         !(uri.isScheme("https") ||
-            (uri.isScheme("http") && const {
+            (uri.isScheme("http") &&
+                const {
                   "127.0.0.1",
                   "localhost",
                   "::1",
@@ -1517,8 +1693,7 @@ class CampusManager extends KITLoginManager {
       return "bad";
     }
     final response = await netGet(uri);
-    if (response.statusCode != 200 ||
-        !response.body.contains("BEGIN:VEVENT")) {
+    if (response.statusCode != 200 || !response.body.contains("BEGIN:VEVENT")) {
       return "fetch";
     }
     final err = await setPersonalIcsFromRaw(response.body);
@@ -1609,11 +1784,34 @@ class CampusManager extends KITLoginManager {
   /// in-memory weekly template so the grid shows assigned groups at once.
   Future<void> reapplySignMeUpSynth(String block) async {
     if (block == signMeUpSynth) return;
-    signMeUpSynth = block;
+    // same teardown fence as reapplyExamSynth: the SignMeUp chain can
+    // outlive a logout (cold-retry sleeps 20 s), and an old account's
+    // tutorial block must not be written back into the NEW account's
+    // ICS cache / in-memory template behind the logout sweep's back
+    final epoch = _teardownEpoch;
     final prefs = await SharedPreferences.getInstance();
+    if (epoch != _teardownEpoch) return; // logout mid-await
+    if (testWebcalUrl.isEmpty &&
+        (prefs.getString(_webcalUrlKey) ?? "").isEmpty) {
+      return; // logged out (or not provisioned yet)
+    }
     final cached = prefs.getString(_webcalIcsCacheKey);
-    if (cached == null || !cached.contains("BEGIN:VCALENDAR")) return;
-    final synth = injectSignMeUpSynth(cached, block);
+    if (cached == null || !cached.contains("BEGIN:VCALENDAR")) {
+      signMeUpSynth = block;
+      return;
+    }
+    // feed-coverage dedupe (see dropSignMeUpSynthCoveredByFeed): judged
+    // against the embedded feed ALONE - all three injected blocks stripped
+    final filtered = dropSignMeUpSynthCoveredByFeed(
+        stripPersonalIcs(stripSignMeUpSynth(stripExamSynth(cached))), block);
+    // byte-identity no-op on the FILTERED result: with the emitter made
+    // deterministic (content-keyed UIDs/DTSTAMP, signmeup_manager.dart)
+    // every routine pull lands here and leaves - the old DTSTAMP churn
+    // made this compare false each time, rewriting the cache and re-arming
+    // every lecture reminder + digest alarm on every refresh
+    if (filtered == signMeUpSynth) return;
+    final synth = injectSignMeUpSynth(cached, filtered);
+    signMeUpSynth = filtered;
     await prefs.setString(_webcalIcsCacheKey, synth);
     final feed = WebcalFeed.parse(synth);
     if (feed != null) {
@@ -1766,7 +1964,8 @@ class CampusManager extends KITLoginManager {
       t = t.substring(0, comma); // "Title (V), Schulze" -> drop lecturer
     }
     t = t.replaceAll(
-        RegExp(r'^(vorlesung|tutorial|tu|uebung|ubung|übung|seminar|praktikum|klausur)\s*[:\-–]\s*'),
+        RegExp(
+            r'^(vorlesung|tutorial|tu|uebung|ubung|übung|seminar|praktikum|klausur)\s*[:\-–]\s*'),
         "");
     // faculty ICS exports carry "- 3161010" / "- 2145191/2145192" course
     // number tails and "(Tutorial - Group 4)" labels; neither belongs in a
@@ -1904,7 +2103,8 @@ class CampusManager extends KITLoginManager {
       // words to align closely instead.
       if (eNums.length != tNums.length) {
         final ne = _nounWords(ev), nt = _nounWords(moduleKey);
-        if (ne.length >= 6 && nt.length >= 6 &&
+        if (ne.length >= 6 &&
+            nt.length >= 6 &&
             (ne.contains(nt) || nt.contains(ne) || ratio(ne, nt) >= 80)) {
           return true;
         }
@@ -2030,8 +2230,7 @@ class CampusManager extends KITLoginManager {
   /// E2E test seam: `--dart-define=TEST_WEBCAL_URL=<url>` redirects the
   /// whole webcal pipeline (foreground fetch + background poll) at a
   /// controlled feed. Empty in every normal build - zero production effect.
-  static const testWebcalUrl =
-      String.fromEnvironment("TEST_WEBCAL_URL");
+  static const testWebcalUrl = String.fromEnvironment("TEST_WEBCAL_URL");
 
   Future<bool> fetchWebcalTimetable() async {
     // Contain EVERY failure (incl. TimeoutException from _ensureWebcalUrl
@@ -2042,9 +2241,8 @@ class CampusManager extends KITLoginManager {
     try {
       await ensurePersonalIcsLoaded();
       await carryExamSynthFromCache();
-      final url = testWebcalUrl.isNotEmpty
-          ? testWebcalUrl
-          : await _ensureWebcalUrl();
+      final url =
+          testWebcalUrl.isNotEmpty ? testWebcalUrl : await _ensureWebcalUrl();
       if (url == null) {
         return false;
       }
@@ -2078,7 +2276,8 @@ class CampusManager extends KITLoginManager {
       // resyncOnStartup then replayed as alarms on a later cold start:
       // same double fence as the background poll (C81) — teardown epoch
       // plus a live logged-in-URL probe
-      final urlLive = await SharedPreferencesAsync().getString(_webcalUrlKey);
+      final live = SharedPreferencesAsync();
+      final urlLive = await live.getString(_webcalUrlKey);
       if (epoch != _teardownEpoch ||
           (urlLive ?? "").isEmpty ||
           (testWebcalUrl.isEmpty && urlLive != url)) {
@@ -2091,33 +2290,46 @@ class CampusManager extends KITLoginManager {
         await prefs.remove(_webcalFingerprintKey);
       }
       await prefs.setString(_webcalFeedSourceKey, url);
-      final previousFingerprint = prefs.getString(_webcalFingerprintKey);
+      // fingerprint / changes / ICS cache are ALSO written by the
+      // WorkManager poll isolate: the legacy getInstance() snapshot is a
+      // stale per-isolate cache and never sees those writes, so diffing
+      // against it made this foreground fetch clobber the poll's merge
+      // (diff computed from an outdated cache body). Read them from the
+      // live store like the URL probe; writes stay on the shared
+      // instance - they land in the same platform store these reads see.
+      final previousFingerprint = await live.getString(_webcalFingerprintKey);
       final fingerprint = feed.fingerprint();
+      final cachedLive = await live.getString(_webcalIcsCacheKey) ?? "";
+      var changesLiveRaw = await live.getString(_webcalChangesKey) ?? "";
       if (previousFingerprint != null && previousFingerprint != fingerprint) {
-        final changes = feed.changesSince(WebcalFeed.parse(stripPersonalIcs(
-            stripSignMeUpSynth(stripExamSynth(
-                prefs.getString(_webcalIcsCacheKey) ?? "")))));
+        final changes = feed.changesSince(WebcalFeed.parse(
+            stripPersonalIcs(stripSignMeUpSynth(stripExamSynth(cachedLive)))));
         if (changes.isNotEmpty) {
           // an empty diff under a changed fingerprint is the rolling parse
           // window, not a real change - flagging it stuck the tab badge with
           // an undismissable CHANGED band (agenda only renders non-empty)
           timetableChanged = true;
-          await prefs.setString(
-              _webcalChangesKey,
-              IcsChange.encode(mergeIcsChanges(
-                  IcsChange.decode(prefs.getString(_webcalChangesKey) ?? ""),
-                  changes)));
+          changesLiveRaw = IcsChange.encode(
+              mergeIcsChanges(IcsChange.decode(changesLiveRaw), changes));
+          await prefs.setString(_webcalChangesKey, changesLiveRaw);
         }
         if (kDebugMode) {
           print("WebCal feed CHANGED: ${changes.length} deltas");
         }
       }
       await prefs.setString(_webcalFingerprintKey, fingerprint);
+      // dedupe the carried-over tutorial block against the FRESH feed
+      // before embedding (live capture b47: agenda double rows) and keep
+      // the in-memory copy in step with what was actually embedded, so
+      // reapplySignMeUpSynth's byte-identity no-op stays honest
+      final synthBlock =
+          dropSignMeUpSynthCoveredByFeed(feed.raw, signMeUpSynth);
+      signMeUpSynth = synthBlock;
       await prefs.setString(
           _webcalIcsCacheKey,
           injectPersonalIcs(
               injectSignMeUpSynth(
-                  injectExamSynth(feed.raw, examSynth), signMeUpSynth),
+                  injectExamSynth(feed.raw, examSynth), synthBlock),
               personalIcs));
       // age stamp for the agenda stale-data footer (also written by the
       // background poll after it rewrites the cache)
@@ -2125,8 +2337,7 @@ class CampusManager extends KITLoginManager {
           WebcalKeys.fetchedAt, DateTime.now().toIso8601String());
 
       final merged = WebcalFeed.parse(injectPersonalIcs(
-          injectSignMeUpSynth(
-              injectExamSynth(feed.raw, examSynth), signMeUpSynth),
+          injectSignMeUpSynth(injectExamSynth(feed.raw, examSynth), synthBlock),
           personalIcs));
       timetable = gridTemplate(merged ?? feed);
       rememberEnrolledTitles(merged ?? feed);
@@ -2137,9 +2348,10 @@ class CampusManager extends KITLoginManager {
       // timetableChanged - a foreground fetch after a background-detected
       // change used to silently un-light the home badge the push announced.
       timetableSurfaceBroken = false;
-      timetableChanged =
-          (prefs.getString(_webcalChangesKey) ?? "").isNotEmpty ||
-              timetableChanged;
+      // changesLiveRaw already carries this fetch's merged write above (in
+      // which case timetableChanged is true anyway) - the live value read
+      // at the fence is what a background poll may have left behind
+      timetableChanged = changesLiveRaw.isNotEmpty || timetableChanged;
       notificationCallback();
       unawaited(MeiNotifications.scheduleLectureReminders(merged ?? feed));
       unawaited(MeiNotifications.scheduleMorningDigest(merged ?? feed));
@@ -2161,6 +2373,11 @@ class CampusManager extends KITLoginManager {
     if (kDebugMode) {
       print("Fetching timetable...");
     }
+    // account-bound chain: both the WebCal path and the HTML fallback
+    // below publish the page they fetch - fence before handing it to the
+    // cache/parsers (the retry recursion refetches, so its response can
+    // never predate this capture by more than one hop, fenced again)
+    final epoch = _teardownEpoch;
     if (await fetchWebcalTimetable()) {
       return;
     }
@@ -2174,6 +2391,13 @@ class CampusManager extends KITLoginManager {
     final url =
         "https://cascampus.studium.kit.edu/campus/student/timetable.asp?tguid=${tguid ?? ""}";
     final response = await guardedCasGet(url);
+
+    if (epoch != _teardownEpoch) {
+      // logout while the GET was in flight: the page belongs to the torn-
+      // down account - caching it would repopulate the purged
+      // DATA_timetableSrc_* key behind the logout sweep's back
+      return;
+    }
 
     final ok = await updateTimetableFromStrSrc(response.body);
 
@@ -2198,7 +2422,11 @@ class CampusManager extends KITLoginManager {
     if (inflight != null) return inflight;
     final future = _fetchExamsGuarded(retryIfFailed: retryIfFailed);
     _examsInFlight = future;
-    return future.whenComplete(() => _examsInFlight = null);
+    // identity-bound clear: wipeAccountMemory may have dropped this memo
+    // already - the old chain settling must not null the successor's
+    return future.whenComplete(() {
+      if (identical(_examsInFlight, future)) _examsInFlight = null;
+    });
   }
 
   Future<bool> _fetchExamsGuarded({required bool retryIfFailed}) async {
@@ -2255,11 +2483,13 @@ class CampusManager extends KITLoginManager {
       // a well-formed page with zero rows is a valid empty state, not
       // breakage - but DATA rows plus zero parsed entries is a cell reflow:
       // the old bare "EXAMLIST" string gate waved that through, leaving
-      // exams empty with examsLoaded true and the seal icon dead quietly
-      if (parsed.isNotEmpty ||
-          (response.body.contains("EXAMLIST") &&
-              !ExamListParser.examListHasRows(response.body))) {
-
+      // exams empty with examsLoaded true and the seal icon dead quietly.
+      // Emptiness must be PROVEN (the #EXAMLIST table exists and carries
+      // zero data-shaped rows): after a table-id reflow only the anchor
+      // <a name="EXAMLIST"> survives, and examListHasRows now reports
+      // "has rows" when the table lookup fails, so the gate falls through
+      // to the surface-broken funnel instead of shipping the empty state
+      if (parsed.isNotEmpty || !ExamListParser.examListHasRows(response.body)) {
         // RUNBOOK's seal-icon row promises "possibleexams + sqassign": the
         // ÜQ/SQ-Leistungen tab carries its own rows in the same view under
         // view=sqassign - fetched here (BEFORE the teardown fence below, so
@@ -2348,8 +2578,14 @@ class CampusManager extends KITLoginManager {
       return false;
     }
 
+    final epoch = _teardownEpoch;
     if (cacheSrc) {
       await _cacheTimetableSrc(src);
+      // the prefs write is an await gap: after a logout the parsed page
+      // belongs to the torn-down account. Report SUCCESS on this bail
+      // deliberately - false would make fetchTimetable read it as a markup
+      // parse failure and re-boot the cascampus session of the dead chain
+      if (epoch != _teardownEpoch) return true;
     }
 
     timetable = timetableUpdate;
@@ -2359,7 +2595,11 @@ class CampusManager extends KITLoginManager {
   }
 
   Future<void> _cacheTimetableSrc(String src) async {
+    // teardown fence: the prefs lookup awaits - a logout mid-way must not
+    // repopulate the purged DATA_timetableSrc_* cache with the old page
+    final epoch = _teardownEpoch;
     final prefs = await SharedPreferences.getInstance();
+    if (epoch != _teardownEpoch) return;
     await prefs.setString(_timetableSrcCurrentSemesterKey, src);
   }
 

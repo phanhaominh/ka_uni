@@ -79,8 +79,7 @@ class NextUp {
             (o.start.isBefore(nextStart) && o.end.isAfter(dayStart)) &&
             // one row per lecture; the room is part of the key so two
             // genuinely parallel groups of one family keep their own rows
-            seen.add(
-                "${o.title}|${o.start.toIso8601String()}|${o.room}"))
+            seen.add("${o.title}|${o.start.toIso8601String()}|${o.room}"))
         .toList()
       ..sort((a, b) => a.start.compareTo(b.start));
   }
@@ -91,8 +90,7 @@ class NextUp {
         ...onDay(feed, DateTime(now.year, now.month, now.day + 1)),
       ];
 
-  static String _hm(DateTime d) =>
-      "${d.hour.toString().padLeft(2, "0")}:"
+  static String _hm(DateTime d) => "${d.hour.toString().padLeft(2, "0")}:"
       "${d.minute.toString().padLeft(2, "0")}";
 }
 
@@ -129,8 +127,8 @@ class NextUpCard extends StatelessWidget {
                 Text(hero.displayTitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style:
-                        TextStyle(fontSize: 13, color: scheme.onPrimaryContainer)),
+                    style: TextStyle(
+                        fontSize: 13, color: scheme.onPrimaryContainer)),
                 if (hero.room.isNotEmpty)
                   Text(hero.room,
                       maxLines: 1,

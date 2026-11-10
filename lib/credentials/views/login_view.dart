@@ -97,10 +97,10 @@ class LoginPageState extends State<LoginPage> {
                             padding: const EdgeInsets.all(10),
                             child: CupertinoTextField(
                               controller: _usernameInputController,
-                              placeholder: L10n.t("settings.usernamePlaceholder"),
-                              enabled:
-                                  (credsVM.credentialsLoaded &&
-                                      !credsVM.loggingIn),
+                              placeholder:
+                                  L10n.t("settings.usernamePlaceholder"),
+                              enabled: (credsVM.credentialsLoaded &&
+                                  !credsVM.loggingIn),
                               autocorrect: false,
                               style: theme.textTheme.bodyMedium,
                               decoration: myCupertinoInputDecoration,
@@ -111,9 +111,8 @@ class LoginPageState extends State<LoginPage> {
                             child: CupertinoTextField(
                               controller: _passwordInputController,
                               placeholder: L10n.t("settings.password"),
-                              enabled:
-                                  (credsVM.credentialsLoaded &&
-                                      !credsVM.loggingIn),
+                              enabled: (credsVM.credentialsLoaded &&
+                                  !credsVM.loggingIn),
                               keyboardType: TextInputType.visiblePassword,
                               obscureText: true,
                               style: theme.textTheme.bodyMedium,
@@ -156,8 +155,7 @@ class LoginPageState extends State<LoginPage> {
                             boxShadow: [
                               BoxShadow(
                                 color: theme.colorScheme.primary.withValues(
-                                    alpha: theme.brightness ==
-                                            Brightness.light
+                                    alpha: theme.brightness == Brightness.light
                                         ? 0.8
                                         : 0.5),
                                 blurRadius: 50,
@@ -165,8 +163,8 @@ class LoginPageState extends State<LoginPage> {
                               )
                             ],
                             color: theme.colorScheme.primary,
-                            borderRadius: BorderRadius.all(Radius.circular(
-                                mq.size.width * 7))),
+                            borderRadius: BorderRadius.all(
+                                Radius.circular(mq.size.width * 7))),
                         width: mq.size.width * 7,
                         height: mq.size.width * 7),
                   ),
@@ -198,13 +196,13 @@ class LoginPageState extends State<LoginPage> {
                                 child: Hero(
                                   tag: "greeting",
                                   child: Text(
-                                    L10n.t("settings.helloName", [credsVM.displayName]),
+                                    L10n.t("settings.helloName",
+                                        [credsVM.displayName]),
                                     // theme default (dark ink on light, white
                                     // on dark): the glass has blur 0, so a
                                     // hardcoded white vanished in light mode
                                     style: theme.textTheme.headlineLarge
-                                        ?.copyWith(
-                                            fontWeight: FontWeight.bold),
+                                        ?.copyWith(fontWeight: FontWeight.bold),
                                     maxLines: 2,
                                   ),
                                 ),

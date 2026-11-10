@@ -21,9 +21,8 @@ void main() {
     expect(honest, startsWith("08:00–09:30"));
     expect(honest, contains("AVI 105"));
 
-    final guessed =
-        MeiNotifications.reminderBody(_occ("Klausur: Analysis I", 8,
-            guessed: true));
+    final guessed = MeiNotifications.reminderBody(
+        _occ("Klausur: Analysis I", 8, guessed: true));
     expect(guessed, startsWith("ab 08:00"));
     expect(guessed, isNot(contains("–"))); // no fabricated end span
     expect(guessed, contains("AVI 105"));

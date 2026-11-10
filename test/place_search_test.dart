@@ -103,6 +103,20 @@ void main() {
       expect(rank.first.matchedAlias, "KIT-Café");
     });
 
+    // the umlaut expansions (ä/ö/ü/ß) do not cover é: before the general
+    // accent fold, "cafe" only reached "KIT-Café" through the FUZZY tier -
+    // the certified alias tier the doc comment promises scored 0
+    test("accent-free queries reach accented aliases (accent fold)", () {
+      final rank = rankPlaces([mensaNord()], "cafe");
+      expect(rank.single.tier, PlaceMatchTier.alias);
+      expect(rank.single.matchedAlias, "KIT-Café");
+      // the fold is symmetric: an accented query also certifies against
+      // accented aliases exactly ("KIT-Café" == "KIT-Café")
+      final exact = rankPlaces([mensaNord()], "KIT-Café");
+      expect(exact.single.tier, PlaceMatchTier.alias);
+      expect(exact.single.score, 75);
+    });
+
     test("empty directory or empty query yields no matches", () {
       expect(rankPlaces([audimax()], "   "), isEmpty);
       expect(rankPlaces([], "audimax"), isEmpty);
@@ -125,8 +139,7 @@ void main() {
 
     // F4 lens pin: the floor-40 fuzzy tier admitted the finance
     // institute for "KIT-Café" (weightedRatio ~46 < new floor 65)
-    test("'KIT-Café' certifies the alias hit and drops the finance junk",
-        () {
+    test("'KIT-Café' certifies the alias hit and drops the finance junk", () {
       final rank = rankPlaces(
           [audimax(), mensaNord(), finanz(), building2010()], "KIT-Café");
       expect(rank.first.place.id, "10.20"); // certified alias, not a guess
@@ -135,8 +148,7 @@ void main() {
     });
 
     // F4 lens pin: below 4 normalized chars only certified tiers run
-    test("short queries return certified-tier hits only - never guesses",
-        () {
+    test("short queries return certified-tier hits only - never guesses", () {
       // "spr" fuzzy-almost-matches the sport institute (partial_ratio
       // clears the old 40 bar) but contains NO certified substring:
       // the honest answer is an empty list, not a guess presented as a hit
@@ -149,11 +161,12 @@ void main() {
     });
 
     // F9: the fuzzy wall - generic queries used to end in 200 noise rows
-    test("fuzzy tier is capped at 12 rows, certified tiers stay complete",
-        () {
+    test("fuzzy tier is capped at 12 rows, certified tiers stay complete", () {
       final noise = [
         for (var i = 0; i < 20; i++)
-          KITPlace(id: "am$i", title: "Audi Max$i") // fuzzy only: no "audimax" substring
+          KITPlace(
+              id: "am$i",
+              title: "Audi Max$i") // fuzzy only: no "audimax" substring
       ];
       final rank = rankPlaces([bareAudimaxSimple(), ...noise], "audimax");
       expect(rank.first.place.id, "am-exact");
@@ -170,8 +183,8 @@ void main() {
       await prefs.setString(KITTopographyManager.snapshotKey,
           encodePlacesSnapshot([audimax(), mensaNord()]));
 
-      final restored =
-          decodePlacesSnapshot(prefs.getString(KITTopographyManager.snapshotKey))!;
+      final restored = decodePlacesSnapshot(
+          prefs.getString(KITTopographyManager.snapshotKey))!;
       expect(restored.length, 2);
       final mensa = restored[1];
       expect(mensa.id, "10.20");
@@ -186,6 +199,25 @@ void main() {
       expect(mensa.latLngFromList!.longitude, closeTo(8.4317, 1e-9));
     });
 
+    // ONE entry without aliasList/positionList used to throw inside
+    // fromJSON: that aborted the per-entry loop of the whole 824-place
+    // fetch AND made decodePlacesSnapshot return null for the entire
+    // cache - siblings are all null-tolerant, these two must be too
+    test("entries missing aliasList/positionList no longer poison the batch",
+        () {
+      final bare = KITPlace.fromJSON({"id": "1", "title": "Ohne Listen"});
+      expect(bare.aliasList, isEmpty);
+      expect(bare.positionList, isEmpty);
+      expect(bare.latLngFromList, isNull);
+
+      final restored = decodePlacesSnapshot(
+          '[{"id":"1","title":"Ohne Listen"},{"id":"2","title":"Audimax",'
+          '"aliasList":["Audimax"]}]')!;
+      expect(restored.length, 2);
+      expect(restored.first.title, "Ohne Listen");
+      expect(restored.last.aliasList, const ["Audimax"]);
+    });
+
     test("corrupt or missing cache decodes to null, restore reads it back",
         () async {
       SharedPreferences.setMockInitialValues(
@@ -195,8 +227,7 @@ void main() {
       expect(await KITTopographyManager.loadSnapshot(), isNull);
 
       SharedPreferences.setMockInitialValues({
-        KITTopographyManager.snapshotKey:
-            encodePlacesSnapshot([audimax()])
+        KITTopographyManager.snapshotKey: encodePlacesSnapshot([audimax()])
       });
       final restored = await KITTopographyManager.loadSnapshot();
       expect(restored!.single.title, "Audimax (10.30)");
@@ -329,7 +360,8 @@ void main() {
     });
 
     testWidgets("tapping a row expands the details in place", (tester) async {
-      await tester.pumpWidget(harness(initialQuery: "Mensa", places: [mensaNord()]));
+      await tester
+          .pumpWidget(harness(initialQuery: "Mensa", places: [mensaNord()]));
       await tester.pump();
       expect(find.text("KIT-Website öffnen"), findsNothing);
 
@@ -384,7 +416,10 @@ void main() {
       ]));
       await tester.pump();
       expect(find.text("Prüfungsamt Wirren"), findsOneWidget);
-      for (final title in ["Prüfungsamt Wirren", "Prüfungsamt Kladderadatsch"]) {
+      for (final title in [
+        "Prüfungsamt Wirren",
+        "Prüfungsamt Kladderadatsch"
+      ]) {
         await tester.tap(find.text(title)); // expand both in turn
         await tester.pump();
         expect(find.text("KIT-Website öffnen"), findsNothing, reason: title);
@@ -438,8 +473,7 @@ void main() {
       await tester.pumpWidget(line("20.30"));
       final textFinder = find.text("20.30");
       expect(
-          find.ancestor(
-              of: textFinder, matching: find.byType(GestureDetector)),
+          find.ancestor(of: textFinder, matching: find.byType(GestureDetector)),
           findsOneWidget);
       final scheme = Theme.of(tester.element(textFinder)).colorScheme;
       expect(tester.widget<Text>(textFinder).style!.color, scheme.primary);

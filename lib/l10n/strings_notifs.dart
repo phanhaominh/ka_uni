@@ -33,10 +33,8 @@ const Map<String, String> en_notifs = {
   "notifs.changesDetails": "Details in the agenda.",
   "notifs.bannerBotProtection":
       "KIT changed its bot protection — data retrieval is disrupted until further notice. An update is needed.",
-  "notifs.bannerBoth":
-      "Could not read exams & timetable (KIT site changed?).",
-  "notifs.bannerExams":
-      "Could not read the exam list (KIT site changed?).",
+  "notifs.bannerBoth": "Could not read exams & timetable (KIT site changed?).",
+  "notifs.bannerExams": "Could not read the exam list (KIT site changed?).",
   "notifs.bannerTimetable":
       "Could not update the timetable (KIT site changed?).",
   // ---- ilias.* — see de_notifs note ----

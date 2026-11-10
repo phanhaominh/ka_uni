@@ -12,30 +12,48 @@ class ModuleInfoTableGeneric extends StatelessWidget {
 
     return Column(
       children: [
-        Text(table.caption, style: theme.textTheme.titleMedium,),
-
-        SizedBox(height: 10,),
-
-        Table(
-          border: TableBorder.all(color: theme.dividerColor, borderRadius: BorderRadius.all(Radius.circular(8))),
-          children: [
-            TableRow(
-                children: table.colTitles.map((title) {
-                  return Padding(padding: EdgeInsets.all(5), child: Text(title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),));
-                }).toList()
-            )
-          ] + table.rows.map((row) {
-            return TableRow(
-              children: row.cells.map((cell) {
-                return Padding(padding: EdgeInsets.all(5), child: Text(cell.body, maxLines: 10,),);
-              }).toList(),
-            );
-          }).toList(),
+        // localisedCaption: German CampusKIT captions would otherwise leak
+        // into the English UI (see ModuleInfoTable.localisedCaption)
+        Text(
+          table.localisedCaption,
+          style: theme.textTheme.titleMedium,
         ),
 
+        SizedBox(
+          height: 10,
+        ),
+
+        Table(
+          border: TableBorder.all(
+              color: theme.dividerColor,
+              borderRadius: BorderRadius.all(Radius.circular(8))),
+          children: [
+                TableRow(
+                    children: table.colTitles.map((title) {
+                  return Padding(
+                      padding: EdgeInsets.all(5),
+                      child: Text(
+                        title,
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ));
+                }).toList())
+              ] +
+              table.rows.map((row) {
+                return TableRow(
+                  children: row.cells.map((cell) {
+                    return Padding(
+                      padding: EdgeInsets.all(5),
+                      child: Text(
+                        cell.body,
+                        maxLines: 10,
+                      ),
+                    );
+                  }).toList(),
+                );
+              }).toList(),
+        ),
       ],
     );
   }
-
-
 }

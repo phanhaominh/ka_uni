@@ -14,5 +14,4 @@ class AlphaBadge extends StatelessWidget {
     // everything after the old `return SizedBox()` was dead code
     return const SizedBox(width: 0, height: 0);
   }
-
 }

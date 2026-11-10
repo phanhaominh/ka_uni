@@ -6,13 +6,7 @@ import 'package:kit_mobile/geo/models/kit_place.dart';
 import 'package:kit_mobile/parsing/util/remove_html_children.dart';
 import 'package:latlong2/latlong.dart';
 
-enum TimetableAppointmentType {
-  lecture,
-  tutorial,
-  lunchBreak,
-  other,
-  empty
-}
+enum TimetableAppointmentType { lecture, tutorial, lunchBreak, other, empty }
 
 class TimetableAppointment {
   String title = "—";
@@ -46,7 +40,10 @@ class TimetableAppointment {
   /// OWN imported ICS block, not the KIT feed (duplicate tell-apart).
   bool fromPersonalIcs = false;
 
-  TimetableAppointment({DateTime? begin, DateTime? end, this.type = TimetableAppointmentType.empty}) {
+  TimetableAppointment(
+      {DateTime? begin,
+      DateTime? end,
+      this.type = TimetableAppointmentType.empty}) {
     if (begin != null) {
       this.begin = begin;
     }
@@ -55,7 +52,8 @@ class TimetableAppointment {
       this.end = end;
     }
 
-    if (type == TimetableAppointmentType.lunchBreak && (title == "—" || title.isEmpty)) {
+    if (type == TimetableAppointmentType.lunchBreak &&
+        (title == "—" || title.isEmpty)) {
       title = "MITTAGSPAUSE";
     }
   }
@@ -67,7 +65,7 @@ class TimetableAppointment {
   bool get isEmpty {
     return id.isEmpty && title == "—";
   }
-  
+
   /// Faculty ICS exports append the course number ("... - 3161011",
   /// "... - 2145191/2145192"); on half-height cards that tail wraps to its
   /// own line like a second title. Strip it for display only - matching,
@@ -99,28 +97,28 @@ class TimetableAppointment {
           .get(Uri.parse(place.dataUrl))
           .timeout(const Duration(seconds: 15));
       var document = parse(response.body);
-    final targetDiv = document.getElementById("rwro_map-field");
-    if (targetDiv == null) {
-      return kitLocation;
-    }
-    
-    final links = targetDiv.getElementsByTagName("a");
-    if (links.length <2) {
-      return kitLocation;
-    }
+      final targetDiv = document.getElementById("rwro_map-field");
+      if (targetDiv == null) {
+        return kitLocation;
+      }
 
-    String? href = links[1].attributes["href"];
-    if (href == null) {
-      return kitLocation;
-    }
+      final links = targetDiv.getElementsByTagName("a");
+      if (links.length < 2) {
+        return kitLocation;
+      }
 
-    final openMapUri = Uri.parse(href);
-    final lon = double.tryParse(openMapUri.queryParameters["mlon"] ?? "-1");
-    final lat = double.tryParse(openMapUri.queryParameters["mlat"] ?? "-1");
+      String? href = links[1].attributes["href"];
+      if (href == null) {
+        return kitLocation;
+      }
 
-    if (lat == null || lon == null) {
-      return kitLocation;
-    }
+      final openMapUri = Uri.parse(href);
+      final lon = double.tryParse(openMapUri.queryParameters["mlon"] ?? "-1");
+      final lat = double.tryParse(openMapUri.queryParameters["mlat"] ?? "-1");
+
+      if (lat == null || lon == null) {
+        return kitLocation;
+      }
 
       return LatLng(lat, lon);
     } on Object {
@@ -130,7 +128,6 @@ class TimetableAppointment {
   }
 
   static TimetableAppointment? parseFromHtmlTr(Element appointmentNode) {
-
     // –
 
     final links = appointmentNode.getElementsByTagName("a");
@@ -159,11 +156,13 @@ class TimetableAppointment {
       appointment.title = titleParts[1].trim();
     }
 
-    final intervalStr = appointmentNode.attributes["app-interval"] ?? "00:00 00:00";
+    final intervalStr =
+        appointmentNode.attributes["app-interval"] ?? "00:00 00:00";
     final intervalStrSplit = intervalStr.split(" ");
     if (intervalStrSplit.length < 2) {
       if (kDebugMode) {
-        print("Failed to parse the appointment! intervalStrSplit is $intervalStrSplit");
+        print(
+            "Failed to parse the appointment! intervalStrSplit is $intervalStrSplit");
       }
       return null;
     }
@@ -173,7 +172,8 @@ class TimetableAppointment {
 
     if (beginStringSplit.length != 2 || endStringSplit.length != 2) {
       if (kDebugMode) {
-        print("Failed to parse the appointment! $beginStringSplit or $endStringSplit");
+        print(
+            "Failed to parse the appointment! $beginStringSplit or $endStringSplit");
       }
       return null;
     }
@@ -182,17 +182,21 @@ class TimetableAppointment {
     final beginMinute = int.tryParse(beginStringSplit[1]);
     final endHour = int.tryParse(endStringSplit[0]);
     final endMinute = int.tryParse(endStringSplit[1]);
-    if (beginHour == null || beginMinute == null || endHour == null || endMinute == null) {
+    if (beginHour == null ||
+        beginMinute == null ||
+        endHour == null ||
+        endMinute == null) {
       if (kDebugMode) {
-        print("Failed to parse the appointment! malformed app-interval \"$intervalStr\"");
+        print(
+            "Failed to parse the appointment! malformed app-interval \"$intervalStr\"");
       }
       return null;
     }
 
-    appointment.begin = appointment.begin.copyWith(hour: beginHour, minute: beginMinute);
-    appointment.end = appointment.end.copyWith(hour: endHour, minute: endMinute);
-
-
+    appointment.begin =
+        appointment.begin.copyWith(hour: beginHour, minute: beginMinute);
+    appointment.end =
+        appointment.end.copyWith(hour: endHour, minute: endMinute);
 
     return appointment;
   }

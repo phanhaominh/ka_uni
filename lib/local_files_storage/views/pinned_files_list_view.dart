@@ -95,7 +95,12 @@ class _PinnedFilesListViewState extends State<PinnedFilesListView> {
                 '${_twoDigits(addedAt.day)}.${_twoDigits(addedAt.month)}.${addedAt.year} ${_twoDigits(addedAt.hour)}:${_twoDigits(addedAt.minute)}';
 
             return ListTile(
-              title: Text(file.customName),
+              // isThreeLine gives exactly 4 text lines of tile height; an
+              // unwrapped title that wrapped (files_cache_page documents
+              // the same class of bug) made 1+2 = 4 lines of content plus
+              // padding clip past the tile bottom. One honest title line:
+              title: Text(file.customName,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: Text('${file.moduleTitle}\n$addedAtLabel'),
               isThreeLine: true,
               onTap: () => _openFile(context, vm, file),
@@ -141,7 +146,6 @@ class _PinnedFilesListViewState extends State<PinnedFilesListView> {
   }
 
   void _openFile(BuildContext context, KITProvider vm, PinnedFile file) {
-
     Navigator.of(context).push(
       MaterialPageRoute(
           // builder: (context) => IliasPageView(
@@ -160,37 +164,44 @@ class _PinnedFilesListViewState extends State<PinnedFilesListView> {
     PinnedFile file,
   ) async {
     final controller = TextEditingController(text: file.customName);
-    final newName = await showCupertinoDialog<String>(
-      context: context,
-      builder: (dialogContext) {
-        return CupertinoAlertDialog(
-          title: Text(L10n.t('files.renameFile')),
-          content: SizedBox(
-            height: 75, // MediaQuery.of(context).devicePixelRatio,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: CupertinoTextField(
-                controller: controller,
-                autofocus: true,
-                placeholder: L10n.t('files.newName'),
+    final String? newName;
+    try {
+      // module_page._attachIliasLink's standard: the dialog's controller
+      // used to leak on every rename — it must die with the dialog
+      newName = await showCupertinoDialog<String>(
+        context: context,
+        builder: (dialogContext) {
+          return CupertinoAlertDialog(
+            title: Text(L10n.t('files.renameFile')),
+            content: SizedBox(
+              height: 75, // MediaQuery.of(context).devicePixelRatio,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: CupertinoTextField(
+                  controller: controller,
+                  autofocus: true,
+                  placeholder: L10n.t('files.newName'),
+                ),
               ),
             ),
-          ),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(L10n.t('files.cancel')),
-            ),
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              onPressed: () =>
-                  Navigator.of(dialogContext).pop(controller.text.trim()),
-              child: Text(L10n.t('files.save')),
-            ),
-          ],
-        );
-      },
-    );
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(L10n.t('files.cancel')),
+              ),
+              CupertinoDialogAction(
+                isDefaultAction: true,
+                onPressed: () =>
+                    Navigator.of(dialogContext).pop(controller.text.trim()),
+                child: Text(L10n.t('files.save')),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+    }
 
     if (newName == null) {
       return;
@@ -213,8 +224,7 @@ class _PinnedFilesListViewState extends State<PinnedFilesListView> {
       builder: (dialogContext) {
         return CupertinoAlertDialog(
           title: Text(L10n.t('files.removeFile')),
-          content: Text(
-              L10n.t('files.removeFileConfirm', [file.customName])),
+          content: Text(L10n.t('files.removeFileConfirm', [file.customName])),
           actions: [
             CupertinoDialogAction(
               onPressed: () => Navigator.of(dialogContext).pop(false),

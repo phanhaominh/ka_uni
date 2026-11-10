@@ -163,104 +163,101 @@ class _FilesCachePageState extends State<FilesCachePage> {
                           : semestersToFiles[currentSemesterString]!;
 
                       return Padding(
-                          padding: EdgeInsets.all(defaultPagePadding),
-                          child: BlockContainer(
-                              child: Column(
-                            children: [
-                              // the whole header row opens the semester, not
-                              // just the small chevron: opaque hit testing so
-                              // taps in the gap count too, and one button
-                              // node for TalkBack instead of dead text
-                              Semantics(
-                                button: true,
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () => _expandSemester(
-                                      currentSemesterString,
-                                      semestersToFiles[
-                                          currentSemesterString]!),
-                                  child: Row(
-                                    children: [
-                                      Text(
-                                        _prettifySemesterString(
-                                            currentSemesterString),
-                                        style: theme.textTheme.titleMedium,
-                                      ),
-                                      Text(
-                                        L10n.t(
-                                            cachedFiles.length == 1
-                                                ? "files.cachedFileCountOne"
-                                                : "files.cachedFileCountOther",
-                                            [cachedFiles.length]),
-                                        style: TextStyle(
-                                            fontSize: 12,
-                                            color: theme.colorScheme
-                                                .onSurfaceVariant),
-                                      ),
-                                      SizedBox(width: 8),
-                                      Spacer(),
-                                      AnimatedRotation(
-                                        curve: defaultChevronRotationAnimationCurve,
-                                        turns: iAmSelected ? 0 : -0.25,
-                                        duration: defaultChevronRotationAnimationDuration,
-                                        child: CupertinoButton(
-                                          onPressed: () => _expandSemester(
-                                              currentSemesterString,
-                                              semestersToFiles[
-                                                  currentSemesterString]!),
-                                          padding: EdgeInsets.zero,
-                                          child: Semantics(
-                                            button: true,
-                                            // the chevron reveals the whole
-                                            // file list of the semester; no
-                                            // dedicated expand string exists
-                                            label: L10n.t("settings.viewAll"),
-                                            child: Icon(
-                                                CupertinoIcons.chevron_down),
-                                          ),
+                        padding: EdgeInsets.all(defaultPagePadding),
+                        child: BlockContainer(
+                            child: Column(
+                          children: [
+                            // the whole header row opens the semester, not
+                            // just the small chevron: opaque hit testing so
+                            // taps in the gap count too, and one button
+                            // node for TalkBack instead of dead text
+                            Semantics(
+                              button: true,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => _expandSemester(
+                                    currentSemesterString,
+                                    semestersToFiles[currentSemesterString]!),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      _prettifySemesterString(
+                                          currentSemesterString),
+                                      style: theme.textTheme.titleMedium,
+                                    ),
+                                    Text(
+                                      L10n.t(
+                                          cachedFiles.length == 1
+                                              ? "files.cachedFileCountOne"
+                                              : "files.cachedFileCountOther",
+                                          [cachedFiles.length]),
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: theme
+                                              .colorScheme.onSurfaceVariant),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Spacer(),
+                                    AnimatedRotation(
+                                      curve:
+                                          defaultChevronRotationAnimationCurve,
+                                      turns: iAmSelected ? 0 : -0.25,
+                                      duration:
+                                          defaultChevronRotationAnimationDuration,
+                                      child: CupertinoButton(
+                                        onPressed: () => _expandSemester(
+                                            currentSemesterString,
+                                            semestersToFiles[
+                                                currentSemesterString]!),
+                                        padding: EdgeInsets.zero,
+                                        child: Semantics(
+                                          button: true,
+                                          // the chevron reveals the whole
+                                          // file list of the semester; no
+                                          // dedicated expand string exists
+                                          label: L10n.t("settings.viewAll"),
+                                          child:
+                                              Icon(CupertinoIcons.chevron_down),
                                         ),
-                                      )
-                                    ],
-                                  ),
+                                      ),
+                                    )
+                                  ],
                                 ),
                               ),
-                              !iAmSelected
-                                  ? SizedBox.shrink()
-                                  : Column(
-                                      children: <Widget>[
-                                            Padding(padding: EdgeInsets.all(5)),
-                                            Divider(),
-                                          ] +
-                                          // the semester index can outlive its
-                                          // files (everything deleted): an
-                                          // expanded zero-file semester used
-                                          // to be blank space
-                                          (cachedFiles.isEmpty
-                                              ? <Widget>[
-                                                  Padding(
-                                                    padding: EdgeInsets
-                                                        .symmetric(
-                                                            vertical: 16,
-                                                            horizontal: 8),
-                                                    child: Text(
-                                                      L10n.t(
-                                                          "files.cacheEmpty"),
-                                                      textAlign:
-                                                          TextAlign.center,
-                                                      style: theme.textTheme
-                                                          .bodyMedium
-                                                          ?.copyWith(
-                                                              color: theme
-                                                                  .colorScheme
-                                                                  .onSurfaceVariant),
-                                                    ),
+                            ),
+                            !iAmSelected
+                                ? SizedBox.shrink()
+                                : Column(
+                                    children: <Widget>[
+                                          Padding(padding: EdgeInsets.all(5)),
+                                          Divider(),
+                                        ] +
+                                        // the semester index can outlive its
+                                        // files (everything deleted): an
+                                        // expanded zero-file semester used
+                                        // to be blank space
+                                        (cachedFiles.isEmpty
+                                            ? <Widget>[
+                                                Padding(
+                                                  padding: EdgeInsets.symmetric(
+                                                      vertical: 16,
+                                                      horizontal: 8),
+                                                  child: Text(
+                                                    L10n.t("files.cacheEmpty"),
+                                                    textAlign: TextAlign.center,
+                                                    style: theme
+                                                        .textTheme.bodyMedium
+                                                        ?.copyWith(
+                                                            color: theme
+                                                                .colorScheme
+                                                                .onSurfaceVariant),
                                                   ),
-                                                ]
-                                              : <Widget>[]) +
-                                        cachedFiles
-                                            .map<Widget>((semFile) {
-                                          final fileDisplayName = semFile
-                                              .substring(semFile.indexOf(
+                                                ),
+                                              ]
+                                            : <Widget>[]) +
+                                        cachedFiles.map<Widget>((semFile) {
+                                          final fileDisplayName =
+                                              semFile.substring(semFile.indexOf(
                                                   expandedSemesterString));
                                           return Row(
                                             children: [
@@ -279,8 +276,7 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                               Spacer(),
                                               FutureBuilder(
                                                   future: File(semFile).stat(),
-                                                  builder:
-                                                      (context, snapshot) {
+                                                  builder: (context, snapshot) {
                                                     if (snapshot.hasData &&
                                                         snapshot.data != null) {
                                                       return Text(
@@ -290,7 +286,8 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                                       // a vanished or
                                                       // unreadable file must
                                                       // not spin forever
-                                                      return const Text("\u2014");
+                                                      return const Text(
+                                                          "\u2014");
                                                     }
 
                                                     return KITProgressIndicator();
@@ -306,27 +303,26 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                                   ),
                                                   onPressed: () {
                                                     Navigator.of(context).push(MaterialPageRoute(
-                                                        builder: (BuildContext
-                                                                context) =>
-                                                            PDFScreen(
-                                                                iliasFile: PinnedFile(
-                                                                    semesterString:
-                                                                        currentSemesterString,
-                                                                    urlString: "",
-                                                                    moduleTitle:
-                                                                        "",
-                                                                    addedAt:
-                                                                        DateTime
-                                                                            .now(),
-                                                                    customName:
-                                                                        fileDisplayName,
-                                                                    fileSystemPath:
-                                                                        semFile))));
+                                                        builder: (BuildContext context) => PDFScreen(
+                                                            iliasFile: PinnedFile(
+                                                                semesterString:
+                                                                    currentSemesterString,
+                                                                urlString: "",
+                                                                moduleTitle: "",
+                                                                addedAt:
+                                                                    DateTime
+                                                                        .now(),
+                                                                customName:
+                                                                    fileDisplayName,
+                                                                fileSystemPath:
+                                                                    semFile))));
                                                   }),
                                               CupertinoButton(
                                                 onPressed: () async {
-                                                  final shouldDelete = await _confirmFileDeletion(_sanitizeFileDisplayName(
-                                                      fileDisplayName));
+                                                  final shouldDelete =
+                                                      await _confirmFileDeletion(
+                                                          _sanitizeFileDisplayName(
+                                                              fileDisplayName));
 
                                                   if (shouldDelete != true) {
                                                     return;
@@ -340,6 +336,10 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                                       .getFilesForSemesterString(
                                                           currentSemesterString);
 
+                                                  // backing out of the cache
+                                                  // page mid-delete used to
+                                                  // hit setState-after-dispose
+                                                  if (!mounted) return;
                                                   setState(() {
                                                     expandedSemesterStringFiles =
                                                         newSemFiles;
@@ -347,7 +347,8 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                                     // count off the scan, which
                                                     // rebuilds no longer re-run:
                                                     // patch it
-                                                    _lastScan?[currentSemesterString] =
+                                                    _lastScan?[
+                                                            currentSemesterString] =
                                                         newSemFiles;
                                                   });
                                                 },
@@ -367,7 +368,13 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                         [
                                           CupertinoButton(
                                             onPressed: () async {
-                                              final shouldDelete = await _confirmFileDeletion(L10n.t("files.allFilesInSemester", [_prettifySemesterString(currentSemesterString)]));
+                                              final shouldDelete =
+                                                  await _confirmFileDeletion(L10n.t(
+                                                      "files.allFilesInSemester",
+                                                      [
+                                                    _prettifySemesterString(
+                                                        currentSemesterString)
+                                                  ]));
                                               if (shouldDelete != true) {
                                                 return;
                                               }
@@ -378,25 +385,34 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                                     .localFileStorageManager
                                                     .removeFile(file);
                                               }
+                                              // the wipe outlives the page
+                                              // on a slow disk: after
+                                              // dispose only the files may
+                                              // go, the state must not be
+                                              // touched (same class of bug
+                                              // as the single-file delete)
+                                              if (!mounted) return;
                                               setState(() {
-                                                expandedSemesterStringFiles = [];
+                                                expandedSemesterStringFiles =
+                                                    [];
                                                 expandedSemesterString = "";
-                                                _lastScan?[currentSemesterString] =
+                                                _lastScan?[
+                                                        currentSemesterString] =
                                                     const [];
                                               });
                                             },
                                             foregroundColor: Colors.red,
                                             // text-labelled already: VoiceOver
                                             // reads "Alle Löschen, Knopf"
-                                            child: Text(
-                                                L10n.t("files.deleteAll")),
+                                            child:
+                                                Text(L10n.t("files.deleteAll")),
                                           )
                                         ],
-                                      )
-                            ],
-                          )),
-                    );
-                  });
+                                  )
+                          ],
+                        )),
+                      );
+                    });
               })),
     );
   }
@@ -405,8 +421,8 @@ class _FilesCachePageState extends State<FilesCachePage> {
   /// both the per-row file counts and the expansion list
   Future<Map<String, List<String>>> _loadCachedFiles(
       IliasFilesProvider filesVM) async {
-    final semesters = await filesVM.localFileStorageManager
-        .getSemestersWithCachedFiles();
+    final semesters =
+        await filesVM.localFileStorageManager.getSemestersWithCachedFiles();
     final filesPerSemester = await Future.wait(semesters
         .map(filesVM.localFileStorageManager.getFilesForSemesterString));
     return {
@@ -416,21 +432,23 @@ class _FilesCachePageState extends State<FilesCachePage> {
   }
 
   Future<bool?> _confirmFileDeletion(String filename) async {
-    return await showCupertinoDialog<bool>(context: context, builder: (dialogContext) => CupertinoAlertDialog(
-      title: Text(L10n.t("files.confirmDeletionTitle")),
-      content: Text(L10n.t("files.confirmDeletionBody", [filename])),
-      actions: [
-        CupertinoDialogAction(
-          onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: Text(L10n.t("files.cancel")),
-        ),
-        CupertinoDialogAction(
-          isDestructiveAction: true,
-          onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: Text(L10n.t("files.delete")),
-        ),
-      ],
-    ));
+    return await showCupertinoDialog<bool>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+              title: Text(L10n.t("files.confirmDeletionTitle")),
+              content: Text(L10n.t("files.confirmDeletionBody", [filename])),
+              actions: [
+                CupertinoDialogAction(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: Text(L10n.t("files.cancel")),
+                ),
+                CupertinoDialogAction(
+                  isDestructiveAction: true,
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: Text(L10n.t("files.delete")),
+                ),
+              ],
+            ));
   }
 
   String _prettifySemesterString(String semesterString) {

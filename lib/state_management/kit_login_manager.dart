@@ -64,12 +64,10 @@ class KITLoginManager {
     // 'charset=utf-8' the corrected bytes would read back as latin1 again.
     // (Response(String) can't be used at all: it latin1-encodes and throws
     // on the non-latin1 chars a corrected body legitimately contains.)
-    return http.Response.bytes(
-        utf8.encode(utf), r.statusCode,
+    return http.Response.bytes(utf8.encode(utf), r.statusCode,
         headers: {
           ...r.headers,
-          'content-type':
-              "${ct ?? 'application/octet-stream'}; charset=utf-8",
+          'content-type': "${ct ?? 'application/octet-stream'}; charset=utf-8",
         },
         request: r.request);
   }
@@ -365,6 +363,7 @@ class KITLoginManager {
   // raw client; the resulting identity cookie is merged back into the
   // shared session and all later API calls use it normally.
   bool plusReady = false;
+
   /// Last ensurePlusSession() ended with "SSO chain completed, plus issued
   /// no identity cookie" -> the account has no Campus+ subscription, not a
   /// transient failure (a caller hint like botChallengeAlgorithmChanged).
@@ -764,8 +763,7 @@ class KITLoginManager {
         body.contains("relaystate");
   }
 
-  Future<http.Response?> handleNoJSResponse(String body,
-      {Uri? base}) async {
+  Future<http.Response?> handleNoJSResponse(String body, {Uri? base}) async {
     if (kDebugMode) {
       print("Attempting to handle the no-js manual redirect...");
     }

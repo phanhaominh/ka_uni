@@ -19,7 +19,8 @@ void main() {
     });
 
     test("badge hunt falls back to the whole page if the marker vanished", () {
-      expect(unreadFrom('<html><span class="badge">5</span></html>').notifications,
+      expect(
+          unreadFrom('<html><span class="badge">5</span></html>').notifications,
           5);
     });
 

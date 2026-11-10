@@ -51,8 +51,7 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
         )
         .toList(growable: false);
 
-    final modulesById =
-        _modulesById(vm.campusManager.rowModules.values);
+    final modulesById = _modulesById(vm.campusManager.rowModules.values);
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -136,7 +135,9 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                     ],
                   ),
 
-                  SizedBox(height: 24,),
+                  SizedBox(
+                    height: 24,
+                  ),
 
                   Row(
                     children: [
@@ -144,8 +145,14 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                         L10n.t("agenda.lecturesExercises"),
                         style: theme.textTheme.titleLarge,
                       ),
-                      vm.campusManager.mostImportantModulesFetched ? SizedBox.shrink() : SizedBox(width: 8,),
-                      vm.campusManager.mostImportantModulesFetched ? SizedBox.shrink() : KITProgressIndicator()
+                      vm.campusManager.mostImportantModulesFetched
+                          ? SizedBox.shrink()
+                          : SizedBox(
+                              width: 8,
+                            ),
+                      vm.campusManager.mostImportantModulesFetched
+                          ? SizedBox.shrink()
+                          : KITProgressIndicator()
                     ],
                   ),
 
@@ -157,20 +164,31 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                   ),
 
                   Column(
-                    children: vm.campusManager.moduleInfoTablesWithAppointments.keys.map((rowId) {
-                      final tables = vm.campusManager.moduleInfoTablesWithAppointments[rowId]!;
+                    children: vm
+                        .campusManager.moduleInfoTablesWithAppointments.keys
+                        .map((rowId) {
+                      final tables = vm.campusManager
+                          .moduleInfoTablesWithAppointments[rowId]!;
                       if (tables.isEmpty) {
-                        return Row(children: [],);
+                        return Row(
+                          children: [],
+                        );
                       }
 
                       return Column(
                         children: [
-                          SizedBox(height: 32,),
-
-                          Text(sanitizeModuleTitle(tables.first.parentModule.title), style: theme.textTheme.titleLarge, textAlign: TextAlign.center,),
-
-                          SizedBox(height: 8,),
-
+                          SizedBox(
+                            height: 32,
+                          ),
+                          Text(
+                            sanitizeModuleTitle(
+                                tables.first.parentModule.title),
+                            style: theme.textTheme.titleLarge,
+                            textAlign: TextAlign.center,
+                          ),
+                          SizedBox(
+                            height: 8,
+                          ),
                           BlockContainer(
                             child: Column(
                               children: tables.map((table) {
@@ -178,8 +196,7 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                                   padding: EdgeInsets.only(bottom: 16),
                                   child: ModuleInfoTableSensible(table: table),
                                 );
-                              }
-                              ).toList(),
+                              }).toList(),
                             ),
                           )
                         ],
@@ -277,7 +294,7 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                           constraints: BoxConstraints(
                             maxWidth: dialogWidth,
                             maxHeight:
-                            MediaQuery.of(dialogContext).size.height * 0.85,
+                                MediaQuery.of(dialogContext).size.height * 0.85,
                           ),
                           child: Padding(
                             padding: const EdgeInsets.all(20),
@@ -301,21 +318,21 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                                     DropdownButtonFormField<String>(
                                       initialValue: selectedModuleId,
                                       decoration: InputDecoration(
-                                          labelText:
-                                              L10n.t("timetable.selectModule"),
+                                        labelText:
+                                            L10n.t("timetable.selectModule"),
                                       ),
                                       items: moduleList
                                           .map(
                                             (module) => DropdownMenuItem(
-                                          value: module.id,
-                                          child: Text(module.title),
-                                        ),
-                                      )
+                                              value: module.id,
+                                              child: Text(module.title),
+                                            ),
+                                          )
                                           .toList(),
                                       onChanged: (value) {
                                         if (value == null) return;
                                         setState(
-                                                () => selectedModuleId = value);
+                                            () => selectedModuleId = value);
                                       },
                                     ),
 
@@ -324,15 +341,16 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                                     DropdownButtonFormField<Weekday>(
                                       initialValue: selectedWeekday,
                                       decoration: InputDecoration(
-                                          labelText: L10n.t("timetable.weekdayLabel")),
+                                          labelText:
+                                              L10n.t("timetable.weekdayLabel")),
                                       items: workingWeekdays
                                           .map(
                                             (weekday) => DropdownMenuItem(
-                                          value: weekday,
-                                          child:
-                                          Text(_weekdayLabel(weekday)),
-                                        ),
-                                      )
+                                              value: weekday,
+                                              child:
+                                                  Text(_weekdayLabel(weekday)),
+                                            ),
+                                          )
                                           .toList(),
                                       onChanged: (value) {
                                         if (value == null) return;
@@ -345,19 +363,20 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                                     DropdownButtonFormField<int>(
                                       initialValue: selectedBlockIndex,
                                       decoration: InputDecoration(
-                                          labelText: L10n.t("timetable.timeBlock")),
+                                          labelText:
+                                              L10n.t("timetable.timeBlock")),
                                       items: _blockOptions
                                           .map(
                                             (option) => DropdownMenuItem(
-                                          value: option.index,
-                                          child: Text(option.label),
-                                        ),
-                                      )
+                                              value: option.index,
+                                              child: Text(option.label),
+                                            ),
+                                          )
                                           .toList(),
                                       onChanged: (value) {
                                         if (value == null) return;
                                         setState(
-                                                () => selectedBlockIndex = value);
+                                            () => selectedBlockIndex = value);
                                       },
                                     ),
 
@@ -383,7 +402,8 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                                               horizontal: 12, vertical: 8),
                                           onPressed: () =>
                                               Navigator.of(dialogContext).pop(),
-                                          child: Text(L10n.t("timetable.cancel")),
+                                          child:
+                                              Text(L10n.t("timetable.cancel")),
                                         ),
                                         const SizedBox(width: 12),
                                         CupertinoButton.filled(
@@ -391,59 +411,57 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                                               horizontal: 14, vertical: 8),
                                           onPressed: () async {
                                             final module =
-                                            modulesById[selectedModuleId];
+                                                modulesById[selectedModuleId];
                                             if (module == null) {
                                               return;
                                             }
 
                                             final tutorial = existing != null
                                                 ? existing.copyWith(
-                                              moduleId: module.id,
-                                              moduleTitle: module.title
-                                                  .trim()
-                                                  .isEmpty
-                                                  ? module.title
-                                                  : module.title.trim(),
-                                              weekday: selectedWeekday,
-                                              blockIndex:
-                                              selectedBlockIndex,
-                                              notes: notesController.text
-                                                  .trim()
-                                                  .isEmpty
-                                                  ? null
-                                                  : notesController.text
-                                                  .trim(),
-                                            )
+                                                    moduleId: module.id,
+                                                    moduleTitle: module.title
+                                                            .trim()
+                                                            .isEmpty
+                                                        ? module.title
+                                                        : module.title.trim(),
+                                                    weekday: selectedWeekday,
+                                                    blockIndex:
+                                                        selectedBlockIndex,
+                                                    notes: notesController.text
+                                                            .trim()
+                                                            .isEmpty
+                                                        ? null
+                                                        : notesController.text
+                                                            .trim(),
+                                                  )
                                                 : Tutorial.createNew(
-                                              moduleId: module.id,
-                                              moduleTitle: module.title
-                                                  .trim()
-                                                  .isEmpty
-                                                  ? module.title
-                                                  : module.title.trim(),
-                                              weekday: selectedWeekday,
-                                              blockIndex:
-                                              selectedBlockIndex,
-                                              semesterString: KITProvider
-                                                  .currentSemesterString,
-                                              notes: notesController.text
-                                                  .trim()
-                                                  .isEmpty
-                                                  ? null
-                                                  : notesController.text
-                                                  .trim(),
-                                            );
+                                                    moduleId: module.id,
+                                                    moduleTitle: module.title
+                                                            .trim()
+                                                            .isEmpty
+                                                        ? module.title
+                                                        : module.title.trim(),
+                                                    weekday: selectedWeekday,
+                                                    blockIndex:
+                                                        selectedBlockIndex,
+                                                    semesterString: KITProvider
+                                                        .currentSemesterString,
+                                                    notes: notesController.text
+                                                            .trim()
+                                                            .isEmpty
+                                                        ? null
+                                                        : notesController.text
+                                                            .trim(),
+                                                  );
 
                                             await context
                                                 .read<TutorialManager>()
                                                 .addOrUpdateTutorial(tutorial);
-                                            if (dialogContext
-                                                .mounted) {
+                                            if (dialogContext.mounted) {
                                               // the OUTER dialog route pops
                                               // here: guard that context, not
                                               // the page State's
-                                              Navigator.of(dialogContext)
-                                                  .pop();
+                                              Navigator.of(dialogContext).pop();
                                             }
                                           },
                                           child: Text(L10n.t("timetable.save")),
@@ -661,12 +679,14 @@ class _TutorialListTile extends StatelessWidget {
         children: [
           CupertinoButton(
             padding: EdgeInsets.zero,
-            onPressed: onEdit, minimumSize: Size(32, 32),
+            onPressed: onEdit,
+            minimumSize: Size(32, 32),
             child: const Icon(CupertinoIcons.pencil),
           ),
           CupertinoButton(
             padding: EdgeInsets.zero,
-            onPressed: onDelete, minimumSize: Size(32, 32),
+            onPressed: onDelete,
+            minimumSize: Size(32, 32),
             child: Icon(CupertinoIcons.trash, color: theme.colorScheme.error),
           ),
         ],

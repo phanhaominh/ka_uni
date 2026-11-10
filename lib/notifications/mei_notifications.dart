@@ -27,7 +27,6 @@ const String channelIdDaily = "mei_daily";
 const String channelIdDeadlines = "mei_deadlines";
 const String channelIdChanges = "mei_changes";
 
-
 /// Exact map of notification id bands - every family cancels its own range
 /// before re-arming, so a new family MUST take a fresh gap and join this
 /// list: 10-400 lecture T−30 · 410-499 T−15 re-arm for CHANGED lectures
@@ -109,12 +108,27 @@ class MeiNotifications {
     return details.notificationResponse?.payload;
   }
 
-  /// Id 0 => rotating slot in the 1000-1019 band: consecutive changes must
-  /// not replace each other in the shade, and the band is cancelled on
-  /// logout. Seeded from the wall clock on first use (C63): every WorkManager
-  /// poll runs in a FRESH isolate, where a 0-start counter would reuse id
-  /// 1000 and silently replace the previous run's still-unopened heads-up.
-  static int _changeSeq = -1;
+  /// Notification id in the 1000-1019 CHANGED heads-up band, derived PER
+  /// PUSH from the wall clock (see [changeSlot]); the band is cancelled
+  /// wholesale on logout.
+  static int _changeSlotRotation = 0;
+
+  /// Pure slot math for [notifyChange]'s id (C63 follow-up). The old fix
+  /// seeded a per-process counter from epoch-milliseconds and rotated it
+  /// per push - but seed inequality is NOT id inequality: two ++-rotating
+  /// sequences modulo 20 intersect whenever their seeds differ by a small
+  /// residue, i.e. a FRESH WorkManager poll still silently replaced the
+  /// main process's still-unopened heads-up. Deriving the slot from the
+  /// wall-clock MINUTE bucket makes two isolates hit the same id only if
+  /// they push nearly simultaneously (no id scheme without cross-process
+  /// state can separate same-minute pushes from two isolates; a reused
+  /// id then merely replaces the older unopened heads-up ~every 20 min).
+  /// The per-process [rotation] spread keeps a BURST distinct: the ILIAS
+  /// watcher pushes up to three announcements back-to-back and a pure
+  /// bucket would collapse them into one visible notification.
+  @visibleForTesting
+  static int changeSlot(int millisecondsSinceEpoch, int rotation) =>
+      (millisecondsSinceEpoch ~/ 60000 + rotation) % 20;
 
   /// Immediate heads-up (used by the background diff job). [payload] routes
   /// the tap: callers whose content has no CHANGED band to point at (ILIAS
@@ -123,18 +137,10 @@ class MeiNotifications {
       {String? payload}) async {
     if (!MeiNotifications.supported) return;
     if (!_ready) await init(requestPermissions: false);
-    if (_changeSeq < 0) {
-      // C63: seed per process so a FRESH WorkManager isolate's first
-      // push never reuses a still-shaded id. The 30-min bucket seed
-      // collided when the poll isolate and the main isolate both pushed
-      // inside the same bucket (identical seeds -> the later show()
-      // silently replaced the earlier heads-up); epoch-milliseconds
-      // differ per process to practical certainty, and the per-push ++
-      // rotation is untouched
-      _changeSeq = DateTime.now().microsecondsSinceEpoch ~/ 1000;
-    }
     await _plugin.show(
-        1000 + (_changeSeq++ % 20),
+        1000 +
+            changeSlot(
+                DateTime.now().millisecondsSinceEpoch, _changeSlotRotation++),
         title,
         body,
         NotificationDetails(
@@ -194,12 +200,11 @@ class MeiNotifications {
   /// identical alerts (dumpsys-observed) - collapse to one reminder per
   /// (displayTitle, start), first occurrence wins.
   @visibleForTesting
-  static List<IcsOccurrence> dedupOccurrences(
-      List<IcsOccurrence> occurrences) {
+  static List<IcsOccurrence> dedupOccurrences(List<IcsOccurrence> occurrences) {
     final seen = <String>{};
     return occurrences
-        .where((o) =>
-            seen.add("${o.displayTitle}|${o.start.toIso8601String()}"))
+        .where(
+            (o) => seen.add("${o.displayTitle}|${o.start.toIso8601String()}"))
         .toList();
   }
 
@@ -254,6 +259,7 @@ class MeiNotifications {
                 .putIfAbsent(day, () => changes.removedOrMovedBlocks(day))
                 .contains(block);
       }
+
       for (final occ in dedupOccurrences(feed.occurrences)) {
         if (id > 400 && (changes.isEmpty || changeId > 499)) break;
         final remindAt = occ.start.subtract(const Duration(minutes: 30));
@@ -263,8 +269,7 @@ class MeiNotifications {
           if (epoch != teardownEpoch) return; // logout mid-flight
           await _zoned(id++, channelIdDaily, occ.displayTitle,
               reminderBody(occ), remindAt,
-              deadlines: false,
-              payload: NotificationPayload.agendaToday);
+              deadlines: false, payload: NotificationPayload.agendaToday);
         }
         if (changes.isEmpty || changeId > 499) continue;
         final t15 = occ.start.subtract(const Duration(minutes: 15));
@@ -455,8 +460,8 @@ class MeiNotifications {
   /// dismissed; the CHANGED band + badge carry that signal at open time.
   @visibleForTesting
   static (String, String) digestTexts(List<IcsOccurrence> occ) {
-    final examOnly = occ.isNotEmpty &&
-        occ.every((o) => o.title.startsWith("Klausur: "));
+    final examOnly =
+        occ.isNotEmpty && occ.every((o) => o.title.startsWith("Klausur: "));
     final first = _hm(occ.first.start);
     return examOnly
         ? (
@@ -511,8 +516,7 @@ class MeiNotifications {
       return;
     }
     final prefs = await SharedPreferences.getInstance();
-    final feed =
-        WebcalFeed.parse(prefs.getString("DATA_webcalIcsCache") ?? "");
+    final feed = WebcalFeed.parse(prefs.getString("DATA_webcalIcsCache") ?? "");
     if (feed != null) {
       await scheduleLectureReminders(feed);
       await scheduleMorningDigest(feed);
@@ -571,8 +575,8 @@ Future<void> _iliasBackgroundDiff() async {
     return; // logged out (or never provisioned)
   }
   // options MUST mirror CredentialsProvider's (iOS keychain account!)
-  const storage = FlutterSecureStorage(
-      iOptions: IOSOptions(accountName: "kit-student"));
+  const storage =
+      FlutterSecureStorage(iOptions: IOSOptions(accountName: "kit-student"));
   final user = await storage.read(key: "username");
   final pass = await storage.read(key: "password");
   if ((user ?? "").isEmpty || (pass ?? "").isEmpty) return;
@@ -586,8 +590,7 @@ Future<void> _iliasBackgroundDiff() async {
   }
   final fresh = await mgr.fetchAnnouncements();
   if (fresh.isEmpty) return; // never seed from a board we did not prove
-  await IliasWatcher.diffAndNotify(
-      fresh,
+  await IliasWatcher.diffAndNotify(fresh,
       stillOurs: () async =>
           (await SharedPreferencesAsync().getString(WebcalKeys.url) ?? "")
               .isNotEmpty);
@@ -604,9 +607,8 @@ void meiBackgroundCallback() {
       await L10n.reload();
       // E2E test seam: same --dart-define as the foreground fetch
       final testUrl = CampusManager.testWebcalUrl;
-      final url = testUrl.isNotEmpty
-          ? testUrl
-          : prefs.getString("DATA_webcalUrl");
+      final url =
+          testUrl.isNotEmpty ? testUrl : prefs.getString("DATA_webcalUrl");
       if (url == null || url.isEmpty) {
         // C68: main() registers the poll on EVERY start incl. logged-out
         // ones, where it can never do anything - unregister on the first
@@ -653,20 +655,21 @@ void meiBackgroundCallback() {
       final prefsLive = SharedPreferencesAsync();
       final cacheLive = await prefsLive.getString("DATA_webcalIcsCache");
       final strippedOld = WebcalFeed.parse(CampusManager.stripPersonalIcs(
-          CampusManager.stripSignMeUpSynth(CampusManager.stripExamSynth(
-              cacheLive ?? ""))));
+          CampusManager.stripSignMeUpSynth(
+              CampusManager.stripExamSynth(cacheLive ?? ""))));
       // feed-source guard mirrors the foreground fetch: never diff a
       // baseline that belongs to a different calendar URL
       final previousSource = prefs.getString("DATA_webcalFeedSource");
       if (previousSource != null && previousSource != url) {
         await prefs.remove("DATA_webcalFingerprint");
       }
-      await prefs.setString("DATA_webcalFeedSource", url);
       final previous = await prefsLive.getString("DATA_webcalFingerprint");
       final current = feed.fingerprint();
       var advanceFingerprint = previous == null || previous != current;
+      List<IcsChange> changes = const [];
+      var surfaceChanges = false;
       if (previous != null && previous != current) {
-        final changes = strippedOld == null
+        changes = strippedOld == null
             ? <IcsChange>[]
             : feed.changesSince(strippedOld);
         // epoch re-check: a foreground fetch that advanced the baseline
@@ -674,15 +677,47 @@ void meiBackgroundCallback() {
         // described it; notifying ours would double-count or phantom
         final stillOurs =
             await prefsLive.getString("DATA_webcalFingerprint") == previous;
-        if (changes.isNotEmpty && stillOurs) {
-          await prefs.setString(
-              "DATA_webcalChanges",
-              IcsChange.encode(mergeIcsChanges(
-                  IcsChange.decode(prefs.getString("DATA_webcalChanges") ?? ""),
-                  changes)));
-          final summary = changes.take(3).map((c) => c.describe()).join("\n");
+        surfaceChanges = changes.isNotEmpty && stillOurs;
+      }
+      // C81's fence family extended to the transition-bearing writes:
+      // between the urlLive probe up top and the writes below used to sit
+      // ~6 platform awaits (cache, source, two fingerprint reads) — a
+      // logout in that window re-seeded the swept feedSource/changes keys
+      // with the OLD account's course titles and fired a heads-up after
+      // the teardown, on a shared device. Bail here WITHOUT advancing the
+      // fingerprint: the next (re-provisioned) run re-diffs against the
+      // old baseline and surfaces the transition exactly once. The
+      // feedSource write moved down behind the same fence.
+      if ((await SharedPreferencesAsync().getString("DATA_webcalUrl") ?? "")
+          .isEmpty) {
+        return true; // logged out mid-diff
+      }
+      await prefs.setString("DATA_webcalFeedSource", url);
+      if (surfaceChanges) {
+        await prefs.setString(
+            "DATA_webcalChanges",
+            IcsChange.encode(mergeIcsChanges(
+                // LIVE read: the legacy snapshot this isolate loaded can
+                // predate the agenda dismissing the band — merging against
+                // it would re-seed already-dismissed changes
+                IcsChange.decode(
+                    (await prefsLive.getString("DATA_webcalChanges")) ?? ""),
+                changes)));
+        final summary = changes.take(3).map((c) => c.describe()).join("\n");
+        // A heads-up failure must NOT strand the ordering (the other
+        // option, advancing the fingerprint before the push, trades the
+        // crash window C10 keeps for the body/fingerprint pair): it used
+        // to escape to the outer catch AFTER the change log persisted and
+        // BEFORE the baseline advanced, so the next poll re-diffed the
+        // same transition and pushed it TWICE. Swallowing it instead lets
+        // the run advance the fingerprint: the persisted diff still
+        // surfaces in the CHANGED band + badge, so a lost heads-up stays
+        // lost (at-most-once in the shade) and never becomes a duplicate.
+        try {
           await MeiNotifications.notifyChange(
               L10n.t("agenda.timetableChangedN", [changes.length]), summary);
+        } on Object catch (e) {
+          if (kDebugMode) print("change heads-up failed: $e");
         }
       }
       final urlLive2 =
@@ -701,7 +736,15 @@ void meiBackgroundCallback() {
           CampusManager.injectSignMeUpSynth(
               CampusManager.injectExamSynth(
                   body, CampusManager.extractExamSynth(staleCache)),
-              CampusManager.extractSignMeUpSynth(staleCache)),
+              // feed-coverage dedupe of the CARRIED synth block (b48: the
+              // poll re-seeded the pre-dedupe block verbatim, reviving
+              // double agenda rows the foreground paths now filter):
+              // judge the carried block against the FRESH feed alone
+              // (same rule as CampusManager's foreground embed) - suppress
+              // only feed-covered events, keep synth-only ones (AdvMath,
+              // MINT tutorials)
+              CampusManager.dropSignMeUpSynthCoveredByFeed(
+                  body, CampusManager.extractSignMeUpSynth(staleCache))),
           CampusManager.extractPersonalIcs(staleCache));
       await prefs.setString("DATA_webcalIcsCache", mergedRaw);
       await prefs.setString(

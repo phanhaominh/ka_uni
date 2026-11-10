@@ -10,6 +10,7 @@ import 'package:kit_mobile/timetable/logic/now_clock.dart';
 import 'package:kit_mobile/timetable/models/timetable_appointment.dart';
 import 'package:kit_mobile/timetable/models/timetable_daily.dart';
 import 'package:kit_mobile/timetable/models/timetable_weekly.dart';
+import 'package:kit_mobile/timetable/models/webcal.dart';
 import 'package:kit_mobile/timetable/pages/timetable_appointment_page.dart';
 import 'package:kit_mobile/timetable/views/timetable_daily_view.dart';
 import 'package:kit_mobile/tutorials/data/tutorial_manager.dart';
@@ -275,5 +276,138 @@ void main() {
     final b = tester.getRect(find.text('09:00'));
     expect(b.top - a.bottom, lessThan(90),
         reason: 'no invisible 90-min band between adjacent classes');
+  });
+
+  testWidgets('cross-midnight row shows the running chip over its span',
+      (tester) async {
+    // personal ICS 22:00→02:00: _spanMin commits a 90-minute block, but the
+    // raw wall endMin (02:00 = 120) lies below every evening minute, so the
+    // raw compare never let the "läuft · bis" chip show although the row
+    // visibly runs - the chip must use the span the layout committed to
+    final night = DateTime(2026, 11, 2, 22, 30);
+    NowClock.timeSource = () => night;
+    NowClock.debugPublish(night);
+    final d = TimetableDaily(weekday: Weekday.monday)
+      ..appointments = [
+        ap('Nachtshift (ICS)', 7, '54.11', DateTime(2026, 11, 2, 22, 0),
+            DateTime(2026, 11, 3, 2, 0)),
+      ];
+    await tester.pumpWidget(MaterialApp(
+      home: MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => KITProvider()),
+          ChangeNotifierProvider(create: (c) => SettingsProvider(context: c)),
+          ChangeNotifierProvider(create: (_) => TutorialManager()),
+        ],
+        child: Scaffold(
+            body: SizedBox(
+                height: 700,
+                child: TimetableDailyView(tt: d, showNowLine: true))),
+      ),
+    ));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('läuft · bis 02:00'), findsOneWidget,
+        reason: '22:30 lies inside the rendered 90-min block');
+  });
+
+  testWidgets('ghost card scales into its short gap box', (tester) async {
+    // a lecture cancelled 9:40→10:00 leaves a 20-min gap = 18 px; the struck
+    // title + 'Entfällt' line measure ~45 px, and the old unclipped Column
+    // painted RenderFlex overflow stripes over BOTH neighbouring lectures
+    TimetableAppointment emptySlot(int h1, int m1, int h2, int m2) =>
+        TimetableAppointment(
+            begin: DateTime(2026, 11, 2, h1, m1),
+            end: DateTime(2026, 11, 2, h2, m2))
+          ..title = '—';
+    final d = TimetableDaily(weekday: Weekday.monday)
+      ..appointments = [
+        ap('Konstruktion I (Lecture)', 1, '10.91', DateTime(2026, 11, 2, 8, 0),
+            DateTime(2026, 11, 2, 9, 40)),
+        emptySlot(9, 45, 11, 15),
+        ap('Rechnungswesen (Tutorial)', 2, '54.11',
+            DateTime(2026, 11, 2, 10, 0), DateTime(2026, 11, 2, 11, 0)),
+      ];
+    await tester.pumpWidget(MaterialApp(
+      home: MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => KITProvider()),
+          ChangeNotifierProvider(create: (c) => SettingsProvider(context: c)),
+          ChangeNotifierProvider(create: (_) => TutorialManager()),
+        ],
+        child: Scaffold(
+          body: SizedBox(
+            height: 700,
+            child: TimetableDailyView(
+              tt: d,
+              changes: [
+                IcsChange(
+                    kind: IcsChangeKind.removed,
+                    title: 'Gestrichene Vorlesung',
+                    when: DateTime(2026, 11, 2, 9, 45),
+                    room: ''),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    expect(tester.takeException(), isNull,
+        reason: 'the ~45px ghost content must scale down into the 18px box, '
+            'not overflow-report over both neighbours');
+    expect(find.textContaining('Gestrichene Vorlesung'), findsOneWidget);
+    expect(find.textContaining('Entfällt'), findsOneWidget);
+  });
+
+  testWidgets('free-gap chip only names gaps that hold a text line',
+      (tester) async {
+    // a 15-min gap measures 13.5 px - less than one bodySmall line - and
+    // Center does not clip, so the chip used to straddle the seam hairline;
+    // it is now SUPPRESSED below one line height, shown for real gaps
+    TimetableAppointment emptySlot(int h1, int m1, int h2, int m2) =>
+        TimetableAppointment(
+            begin: DateTime(2026, 11, 2, h1, m1),
+            end: DateTime(2026, 11, 2, h2, m2))
+          ..title = '—';
+    Future<void> pumpGap({required int prevEnd, required int next}) async {
+      final d = TimetableDaily(weekday: Weekday.monday)
+        ..appointments = [
+          ap('Englisch I (Lecture)', 1, '10.91', DateTime(2026, 11, 2, 8, 0),
+              DateTime(2026, 11, 2).add(Duration(minutes: prevEnd))),
+          emptySlot(0, prevEnd + 5, 0, prevEnd + 95),
+          ap(
+              'Datenbanken (Lecture)',
+              2,
+              '54.11',
+              DateTime(2026, 11, 2).add(Duration(minutes: next)),
+              DateTime(2026, 11, 2).add(Duration(minutes: next + 60))),
+        ];
+      await tester.pumpWidget(MaterialApp(
+        home: MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => KITProvider()),
+            ChangeNotifierProvider(create: (c) => SettingsProvider(context: c)),
+            ChangeNotifierProvider(create: (_) => TutorialManager()),
+          ],
+          child: Scaffold(
+              body: SizedBox(
+                  height: 700,
+                  child: TimetableDailyView(tt: d, showNowLine: false))),
+        ),
+      ));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    }
+
+    // 9:45 → 10:00 gap = 15 min = 13.5 px: too short for a whole line
+    await pumpGap(prevEnd: 9 * 60 + 45, next: 10 * 60);
+    expect(find.textContaining(' · '), findsNothing,
+        reason: 'sub-line-height gap stays a bare seam, no straddling chip');
+
+    // 9:00 → 11:30 gap = 150 min: roomy, the chip must name it as before
+    await pumpGap(prevEnd: 9 * 60, next: 11 * 60 + 30);
+    expect(find.textContaining(' · 2:30'), findsOneWidget,
+        reason: 'a gap with room still names itself');
   });
 }

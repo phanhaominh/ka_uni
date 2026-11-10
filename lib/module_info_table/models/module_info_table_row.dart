@@ -17,7 +17,10 @@ class ModuleInfoTableRow {
     ModuleInfoTableRow row = ModuleInfoTableRow();
 
     row.id = node.attributes["id"] ?? "";
-    row.cells = node.getElementsByTagName("td").map((e) => ModuleInfoTableCell.parseFromHtml(e)).toList();
+    row.cells = node
+        .getElementsByTagName("td")
+        .map((e) => ModuleInfoTableCell.parseFromHtml(e))
+        .toList();
 
     for (final cell in row.cells) {
       if (cell.isAppointment) {

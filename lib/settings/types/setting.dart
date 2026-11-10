@@ -6,7 +6,8 @@ class Setting<T> {
 
   late T _value;
 
-  Setting({required this.valueKey, required defaultValue, this.notifyCallback}) {
+  Setting(
+      {required this.valueKey, required defaultValue, this.notifyCallback}) {
     _value = defaultValue;
   }
 
@@ -65,5 +66,4 @@ class Setting<T> {
       throw UnsupportedError('Unsupported type: ${newValue.runtimeType}');
     }
   }
-
 }

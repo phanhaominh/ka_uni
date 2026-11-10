@@ -27,36 +27,46 @@ class KITModule {
   bool hasFavoriteChild = false;
 
   // Module({required this.csbrId, required this.title, required this.avgMark, required this.pointsAcquired});
-  
+
   void parseModulePage(String src) {
     final document = parse(src.replaceAll("&nbsp;", " "));
-    
+
     // get id
-    var elements = document.getElementById("csbr_id-field")?.getElementsByClassName("element");
+    var elements = document
+        .getElementById("csbr_id-field")
+        ?.getElementsByClassName("element");
     if (elements != null && elements.isNotEmpty) {
       id = elements.first.innerHtml;
     }
 
     // get title
-    elements = document.getElementById("cabr_name-field")?.getElementsByClassName("element");
+    elements = document
+        .getElementById("cabr_name-field")
+        ?.getElementsByClassName("element");
     if (elements != null && elements.isNotEmpty) {
       title = elements.first.text.replaceAll(RegExp(r"\s+"), " ").trim();
     }
 
     // get assignment type
-    elements = document.getElementById("csbr_assignmenttype-field")?.getElementsByClassName("element");
+    elements = document
+        .getElementById("csbr_assignmenttype-field")
+        ?.getElementsByClassName("element");
     if (elements != null && elements.isNotEmpty) {
       assignmentType = elements.first.innerHtml;
     }
 
     // get exam date
-    elements = document.getElementById("cagr_examdate-field")?.getElementsByClassName("element");
+    elements = document
+        .getElementById("cagr_examdate-field")
+        ?.getElementsByClassName("element");
     if (elements != null && elements.isNotEmpty) {
       examDateStr = elements.first.innerHtml.trim();
     }
 
     // get grade
-    elements = document.getElementById("cagr_grade-field")?.getElementsByClassName("element");
+    elements = document
+        .getElementById("cagr_grade-field")
+        ?.getElementsByClassName("element");
     if (elements != null && elements.isNotEmpty) {
       final gradeNode = elements.first;
       if (gradeNode.hasChildNodes()) {
@@ -69,7 +79,9 @@ class KITModule {
     }
 
     // get LP
-    elements = document.getElementById("csbr_credits-field")?.getElementsByClassName("element");
+    elements = document
+        .getElementById("csbr_credits-field")
+        ?.getElementsByClassName("element");
     if (elements != null && elements.isNotEmpty) {
       for (var child in elements.first.children) {
         child.remove();
@@ -78,7 +90,9 @@ class KITModule {
     }
 
     // get possible LP
-    elements = document.getElementById("csbr_requiredcredits-field")?.getElementsByClassName("element");
+    elements = document
+        .getElementById("csbr_requiredcredits-field")
+        ?.getElementsByClassName("element");
     if (elements != null && elements.isNotEmpty) {
       for (var child in elements.first.children) {
         child.remove();

@@ -16,16 +16,15 @@ class KITPlace {
   // dataUrl is the url to the page of the KITPlace
   // (if KITPlace was found parsing a module info table)
 
-
   LatLng? get latLngFromList {
     if (positionList.isEmpty || positionList[0].length != 2) {
       return null;
     }
-    
+
     try {
       final lat = double.parse(positionList[0][0]);
       final lon = double.parse(positionList[0][1]);
-      
+
       return LatLng(lat, lon);
     } catch (exc) {
       if (kDebugMode) {
@@ -51,11 +50,16 @@ class KITPlace {
       id: "${json["id"]}",
       title: json["title"] ?? "",
       category: json["category"] ?? "",
-      aliasList: (json["aliasList"] as List<dynamic>)
+      // null-tolerant like every sibling: ONE entry missing aliasList or
+      // positionList used to throw inside the per-entry loop of
+      // fetchPlaces/jsonDecode, aborting the whole 824-place fetch AND
+      // (via decodePlacesSnapshot) zeroing the restored directory
+      aliasList: (json["aliasList"] as List<dynamic>? ?? const [])
           .map((e) => e.toString())
           .toList(),
-      positionList: (json["positionList"] as List<dynamic>)
-          .map((e) => (e as List<dynamic>).map((coord) => coord.toString()).toList())
+      positionList: (json["positionList"] as List<dynamic>? ?? const [])
+          .map((e) =>
+              (e as List<dynamic>).map((coord) => coord.toString()).toList())
           .toList(),
       url: json["url"]?.toString() ?? "",
     );

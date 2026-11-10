@@ -2,7 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kit_mobile/signmeup/signmeup_manager.dart';
+import 'package:kit_mobile/state_management/campus/campus_manager.dart';
+import 'package:kit_mobile/student/student.dart';
 import 'package:kit_mobile/timetable/models/webcal.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Fixtures are live captures (2026-10-31) of the two Campus+ endpoints:
 /// the public offer list and the student's own registrations.
@@ -50,9 +53,14 @@ void main() {
       expect(math.accepted, isTrue);
       expect(math.topicName, contains('Group 2'));
       // accepted -> the student acted; the two state 0 drafts are still open
-      expect(
-          {for (final r in mine) if (r.submitted) r.procedureId},
-          {6964, 6965, 7345});
+      expect({
+        for (final r in mine)
+          if (r.submitted) r.procedureId
+      }, {
+        6964,
+        6965,
+        7345
+      });
     });
 
     test('group slot parsed from instructor HTML', () {
@@ -70,7 +78,8 @@ void main() {
           loadMine().firstWhere((r) => r.name.startsWith('Welcome Event'));
       final one = welcome.singleAppointment!;
       expect(one.start, DateTime(2026, 10, 23, 14, 0));
-      expect(one.end.difference(one.start), const Duration(hours: 2, minutes: 30));
+      expect(
+          one.end.difference(one.start), const Duration(hours: 2, minutes: 30));
     });
 
     test('two weekly slots on one line both become schedules', () {
@@ -111,7 +120,7 @@ void main() {
           "name": "G5",
           "description":
               "<p>Di 14:00-16:00 20.40 Geb. 11.20 / Mi 09:00-11:00 / "
-              "Di 16:00-18:00</p>",
+                  "Di 16:00-18:00</p>",
         },
       });
       final s = reg.schedules;
@@ -186,7 +195,8 @@ void main() {
       final synth = base.replaceRange(at, at, mgr.buildSynthBlock());
       final feed = WebcalFeed.parse(synth)!;
       final tue = feed.occurrences
-          .where((o) => o.title.startsWith('Advanced Mathematics I') &&
+          .where((o) =>
+              o.title.startsWith('Advanced Mathematics I') &&
               o.title.contains('Group 2'))
           .toList();
       expect(tue, isNotEmpty);
@@ -204,13 +214,187 @@ void main() {
       // week early, then step by the series period (7d) until the cutoff
       // admits it: exactly the parser's first survivor, whatever today is
       final cutoff = ref.subtract(const Duration(days: 1));
-      expectFirst = expectFirst.subtract(Duration(
-          days: (expectFirst.weekday - DateTime.tuesday + 7) % 7 + 7));
+      expectFirst = expectFirst.subtract(
+          Duration(days: (expectFirst.weekday - DateTime.tuesday + 7) % 7 + 7));
       while (expectFirst.isBefore(cutoff)) {
         expectFirst = expectFirst.add(const Duration(days: 7));
       }
       expect(tue.first.start, expectFirst);
       expect(tue.last.seriesEnd!.isAfter(DateTime(2027, 2, 1)), isTrue);
+    });
+
+    test('block is byte-identical across rebuilds (deterministic emitter)', () {
+      // the exam_synth lesson, applied to SignMeUp: positional UID seqs and
+      // DTSTAMP:DateTime.now() made every rebuild differ, so
+      // reapplySignMeUpSynth's byte-equality no-op never fired - every
+      // pull rewrote the ICS cache and re-armed all lecture alarms
+      final mgr = SignMeUpManager();
+      mgr.mine = loadMine();
+      mgr.loadedMine = true;
+      mgr.termStart = DateTime(2026, 10, 1);
+      expect(mgr.buildSynthBlock(), mgr.buildSynthBlock());
+    });
+
+    test('UIDs key the slot, not the emission order', () {
+      final reg = SignMeUpRegistration.fromJson({
+        "id": 7,
+        "procedureId": 3,
+        "name": "T",
+        "state": 3,
+        "assignedTopic": {
+          "name": "G1",
+          "description": "<p>Mo 10-12 SGS 35<br>Di 14:00-16:00</p>",
+        },
+      });
+      final mgr = SignMeUpManager();
+      mgr.mine = [reg];
+      mgr.loadedMine = true;
+      mgr.termStart = DateTime(2026, 10, 1);
+      final uids = RegExp(r"UID:(signmeup-[^\r\n]+)")
+          .allMatches(mgr.buildSynthBlock())
+          .map((m) => m.group(1)!)
+          .toSet();
+      expect(uids, contains('signmeup-7-1-600-720@ka_uni'));
+      expect(uids, contains('signmeup-7-2-840-960@ka_uni'));
+    });
+
+    test('reordering registrations keeps the UID set stable', () {
+      // a positional seq meant any reorder in the registrations list
+      // churned every UID -> exported calendars DUPLICATED the tutorial
+      // instead of updating it
+      final mgr = SignMeUpManager();
+      final regs = loadMine();
+      mgr.mine = regs;
+      mgr.loadedMine = true;
+      mgr.termStart = DateTime(2026, 10, 1);
+      Set<String> uids() => RegExp(r"UID:(signmeup-[^\r\n]+)")
+          .allMatches(mgr.buildSynthBlock())
+          .map((m) => m.group(1)!)
+          .toSet();
+      final first = uids();
+      mgr.mine = regs.reversed.toList();
+      expect(uids(), first);
+    });
+  });
+
+  group("synth/feed overlap dedupe", () {
+    // live capture b47: the webcal feed already carries some of the
+    // courses SignMeUp assigns groups for -> the agenda listed each of
+    // them twice (feed row with "<nr> - ... (V), lecturer" next to the
+    // synth row with the bare "(Lecture)" title, same 08:00 slot)
+    String local(DateTime d) => "${d.year.toString().padLeft(4, "0")}"
+        "${d.month.toString().padLeft(2, "0")}${d.day.toString().padLeft(2, "0")}"
+        "T${d.hour.toString().padLeft(2, "0")}"
+        "${d.minute.toString().padLeft(2, "0")}00";
+
+    DateTime nextSlot(int weekday, int hour, int minute) {
+      final now = DateTime.now();
+      var d = DateTime(now.year, now.month, now.day, hour, minute);
+      while (d.weekday != weekday) {
+        d = d.add(const Duration(days: 1));
+      }
+      return d;
+    }
+
+    String feedEvent(String uid, String title, DateTime start, int durMin) =>
+        "BEGIN:VEVENT\r\nUID:$uid\r\nSUMMARY:$title\r\n"
+        "DTSTART:${local(start)}\r\n"
+        "DTEND:${local(start.add(Duration(minutes: durMin)))}\r\n"
+        "RRULE:FREQ=WEEKLY;UNTIL=${local(start.add(const Duration(days: 120)))}"
+        "\r\nEND:VEVENT\r\n";
+    String feedWith(String events) =>
+        "BEGIN:VCALENDAR\r\n$events END:VCALENDAR\r\n";
+
+    String synthEvent(String uid, DateTime start, int durMin, String summary) =>
+        "BEGIN:VEVENT\r\nUID:$uid\r\n"
+        "DTSTAMP:${local(DateTime(2000, 1, 1))}\r\n"
+        "DTSTART;TZID=Europe/Berlin:${local(start)}\r\n"
+        "DTEND;TZID=Europe/Berlin:"
+        "${local(start.add(Duration(minutes: durMin)))}\r\n"
+        "RRULE:FREQ=WEEKLY;UNTIL=${local(start.add(const Duration(days: 100)))}"
+        "\r\nSUMMARY:$summary\r\nEND:VEVENT\r\n";
+
+    late DateTime mon8;
+    late DateTime mon16;
+    late DateTime tue8;
+    late String mseBlock;
+
+    setUp(() {
+      mon8 = nextSlot(DateTime.monday, 8, 0);
+      mon16 = nextSlot(DateTime.monday, 16, 0);
+      tue8 = nextSlot(DateTime.tuesday, 8, 0);
+      mseBlock = synthEvent('signmeup-1-1-480-570@ka_uni', mon8, 90,
+              'Materials Science and Engineering I (Lecture)') +
+          synthEvent('signmeup-2-2-480-570@ka_uni', tue8, 90,
+              'Advanced Mathematics I (Lecture)');
+    });
+
+    test('feed-carried event suppressed, synth-only event kept', () {
+      final feed = feedWith(feedEvent(
+          'evt-mse',
+          '3173008 - Materials Science and Engineering I (Lecture) (V), '
+              'Gibmeier, MACH',
+          mon8.subtract(const Duration(days: 14)),
+          90));
+      final out = CampusManager.dropSignMeUpSynthCoveredByFeed(feed, mseBlock);
+      expect(out, isNot(contains('signmeup-1-1-480-570')),
+          reason: 'feed already carries the Monday 08:00 MSE lecture');
+      expect(out, contains('signmeup-2-2-480-570'),
+          reason: 'no feed event Tuesday 08:00: synthesis is genuinely needed');
+    });
+
+    test('"(Tutorial - Group 2)" matches the feed\'s "(Group 2)" spelling', () {
+      final feed = feedWith(feedEvent(
+          'evt-am',
+          '4510001 - Advanced Mathematics (Group 2), Prof. Dr. Mustermann',
+          mon16.subtract(const Duration(days: 14)),
+          90));
+      final block = synthEvent('signmeup-3-1-960-1050@ka_uni', mon16, 90,
+          'Advanced Mathematics (Tutorial - Group 2)');
+      expect(
+          CampusManager.dropSignMeUpSynthCoveredByFeed(feed, block), isEmpty);
+    });
+
+    test('different time never suppresses, unjudgeable feed never suppresses',
+        () {
+      // same title at a different weekday+time is a different appointment
+      final feed = feedWith(feedEvent('evt-mse',
+          'Materials Science and Engineering I (Lecture)', tue8, 90));
+      final block = synthEvent('signmeup-1-1-480-570@ka_uni', mon8, 90,
+          'Materials Science and Engineering I (Lecture)');
+      expect(CampusManager.dropSignMeUpSynthCoveredByFeed(feed, block), block);
+      // garbage feed -> the judgement keeps everything (a visible duplicate
+      // beats a silently lost tutorial)
+      expect(
+          CampusManager.dropSignMeUpSynthCoveredByFeed(
+              'BEGIN:VCALENDAR\r\nbroken', mseBlock),
+          mseBlock);
+    });
+
+    test('reapplySignMeUpSynth embeds the deduped block and is then a no-op',
+        () async {
+      var notified = 0;
+      final cm = CampusManager(Student.empty, () => notified++);
+      final feed = feedWith(feedEvent(
+          'evt-mse',
+          '3173008 - Materials Science and Engineering I (Lecture) (V), '
+              'Gibmeier, MACH',
+          mon8.subtract(const Duration(days: 14)),
+          90));
+      SharedPreferences.setMockInitialValues({
+        "DATA_webcalUrl": "https://cascampus.invalid/wc.ics",
+        "DATA_webcalIcsCache": feed,
+      });
+      await cm.reapplySignMeUpSynth(mseBlock);
+      expect(cm.signMeUpSynth, isNot(contains('signmeup-1-1-480-570')));
+      expect(cm.signMeUpSynth, contains('signmeup-2-2-480-570'));
+      final prefs = await SharedPreferences.getInstance();
+      final cache = prefs.getString("DATA_webcalIcsCache")!;
+      expect(cache, contains("X-SIGNMEUP-SYNTH-BEGIN"));
+      expect(cache, isNot(contains('signmeup-1-1-480-570')));
+      expect(notified, 1);
+      await cm.reapplySignMeUpSynth(mseBlock); // byte-identical rebuild
+      expect(notified, 1); // filtered == stored: no rewrite, no alarm storm
     });
   });
 }

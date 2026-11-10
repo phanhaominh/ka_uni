@@ -7,8 +7,8 @@ import 'package:kit_mobile/geo/logic/maps_url.dart';
 void main() {
   group("mapsDirectionsUrl", () {
     test("omits origin so Maps starts from the current location", () {
-      final uri = Uri.parse(
-          mapsDirectionsUrl(const LatLng(49.0947012, 8.4316034)));
+      final uri =
+          Uri.parse(mapsDirectionsUrl(const LatLng(49.0947012, 8.4316034)));
       expect(uri.queryParameters.containsKey("origin"), isFalse);
       expect(uri.queryParameters["destination"], "49.094701,8.431603");
     });
@@ -30,11 +30,9 @@ void main() {
 
   group("mapsSearchUrl", () {
     test("room codes and umlauts survive URL encoding", () {
-      final uri =
-          Uri.parse(mapsSearchUrl("Geb. 30.30 Hörsaal KIT Karlsruhe"));
+      final uri = Uri.parse(mapsSearchUrl("Geb. 30.30 Hörsaal KIT Karlsruhe"));
       expect(uri.path, "/maps/search/");
-      expect(uri.queryParameters["query"],
-          "Geb. 30.30 Hörsaal KIT Karlsruhe");
+      expect(uri.queryParameters["query"], "Geb. 30.30 Hörsaal KIT Karlsruhe");
       // the wire form must carry percent-encoding, not a bare umlaut
       expect(uri.toString(), contains("H%C3%B6rsaal"));
     });

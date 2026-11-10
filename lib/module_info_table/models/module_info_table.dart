@@ -1,5 +1,6 @@
 import 'package:html/dom.dart';
 import 'package:html/parser.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/module/models/module.dart';
 import 'package:kit_mobile/module_info_table/models/module_info_table_cell.dart';
 import 'package:kit_mobile/module_info_table/models/module_info_table_type.dart';
@@ -19,10 +20,50 @@ class ModuleInfoTable {
     _caption = newValue;
     _type = ModuleInfoTableType.fromCaption(_caption);
   }
+
   String get caption => _caption;
 
   int get termCellIndex => colTitles.indexOf("Semester");
   int get titleCellIndex => colTitles.indexOf("Titel");
+
+  /// Render-time caption: CampusKIT captions are German-only regardless of
+  /// app language, which put 'Prüfungen (WS 26/27)' and 'Veranstaltungen'
+  /// on the module page of an English UI. Map the fixed set of CampusKIT
+  /// section captions onto L10n (semester suffix preserved: "Exams
+  /// (WS 26/27)"); anything module-specific passes through verbatim. The
+  /// data side (favorite toggles match against the live CampusKIT caption)
+  /// keeps reading [caption].
+  String get localisedCaption {
+    final trimmed = _caption.trim();
+    // every CampusKIT caption occurs BOTH bare and with a semester
+    // suffix - the device showed "Veranstaltungen (WS 26/27)" while an
+    // earlier capture had the bare form: the optional "(TERM)" tail must
+    // be split off for ALL captions, not just Prüfungen, or the
+    // German-in-English leak returns the moment KIT adds the suffix
+    final m = _captionWithTerm.firstMatch(trimmed);
+    final base = m?.group(1)?.trim() ?? trimmed;
+    final term = m?.group(2)?.trim();
+    final withTerm = term != null && term.isNotEmpty;
+    switch (base) {
+      case "Prüfungen":
+        return withTerm
+            ? L10n.t("module.sectionExamsTerm", [term])
+            : L10n.t("module.sectionExams");
+      case "Veranstaltungen":
+        return withTerm
+            ? L10n.t("module.sectionCoursesTerm", [term])
+            : L10n.t("module.sectionCourses");
+      case "Teilleistungen":
+        return L10n.t("module.sectionMilestones");
+      case "Leistungsnachweise":
+        return L10n.t("module.sectionRequirements");
+      case "Module":
+        return L10n.t("module.sectionModules");
+    }
+    return trimmed;
+  }
+
+  static final _captionWithTerm = RegExp(r"^(.*?)\s*\(([^()]*)\)\s*$");
 
   List<String> colTitles = [];
   List<ModuleInfoTableRow> rows = [];
@@ -33,24 +74,28 @@ class ModuleInfoTable {
 
   String? iliasLink;
   bool hasFavoriteChild = false;
-  
+
   static ModuleInfoTable? parseFromHtml(String src) {
     final document = parse(src.replaceAll("&nbsp;", " "));
-    
+
     final tableNodes = document.getElementsByTagName("table");
     if (tableNodes.isEmpty) {
       return null;
     }
-    
+
     final tableNode = tableNodes.first;
-    
-    final headTr = tableNode.getElementsByClassName("tablehead").firstOrNull?.getElementsByTagName("tr").firstOrNull;
+
+    final headTr = tableNode
+        .getElementsByClassName("tablehead")
+        .firstOrNull
+        ?.getElementsByTagName("tr")
+        .firstOrNull;
     if (headTr == null) {
       return null;
     }
-    
+
     var table = ModuleInfoTable();
-    
+
     headTr.getElementsByTagName("th").forEach((tableColTitleNode) {
       // removeHtmlChildren(tableColTitleNode);
       String text = "";
@@ -64,7 +109,11 @@ class ModuleInfoTable {
       table.colTitles.add(text);
     });
 
-    tableNode.getElementsByClassName("tablecontent").firstOrNull?.getElementsByTagName("tr").forEach((trNode) {
+    tableNode
+        .getElementsByClassName("tablecontent")
+        .firstOrNull
+        ?.getElementsByTagName("tr")
+        .forEach((trNode) {
       final row = ModuleInfoTableRow.parseFromHtml(trNode);
       // if (row.cells.length - table.colTitles.length == 1) {
       //   final lastCell = row.cells.removeAt(row.cells.length - 1);
@@ -82,7 +131,7 @@ class ModuleInfoTable {
       table._preprocessRow(row);
       table.rows.add(row);
     });
-    
+
     return table;
   }
 
@@ -90,7 +139,7 @@ class ModuleInfoTable {
   static String _clearTitle(String colTitle) {
     return colTitle.replaceAll("&nbsp;", " ").trim();
   }
-  
+
   static List<ModuleInfoTable> extractAllFromHtml(String src) {
     final document = parse(src);
 
@@ -104,7 +153,9 @@ class ModuleInfoTable {
     // milestone / appointment type detection and the caption-gated favorite
     // stars die on the whole module page.
     Element? pendingCaption;
-    document.querySelectorAll(".table-caption, .table-container").forEach((node) {
+    document
+        .querySelectorAll(".table-caption, .table-container")
+        .forEach((node) {
       if (node.classes.contains("table-caption")) {
         pendingCaption = node;
         return;
@@ -149,9 +200,7 @@ class ModuleInfoTable {
     for (var row in rows) {
       try {
         row.cells.removeAt(idx);
-      } catch (exc) {
-
-      }
+      } catch (exc) {}
     }
 
     return true;
@@ -162,7 +211,7 @@ class ModuleInfoTable {
     this.parentModule = parentModule;
 
     while (removeCol(name: "")) {
-       {}
+      {}
     }
 
     switch (caption.trim()) {
@@ -185,7 +234,38 @@ class ModuleInfoTable {
         break;
     }
 
+    // CampusKIT lists every recurring lecture TWICE in the "Veranstaltungen"
+    // table: once as the weekly rule line ("Do, wöchentlich 16:00 - 18:00")
+    // and once per expanded single date ("Do, 05.11.2026 ...", "Do,
+    // 12.11.2026 ...") - the audit saw both rows for one lecture. The
+    // scraped spans carry no machine rrule/override tag (unlike the webcal
+    // feed's IcsOccurrence), so group on day-of-week + time via the cell's
+    // isWeeklyRule/appointmentWeekday parse: drop every dated row a rule
+    // line covers, keep one-off Einzeltermine (different day or time).
+    if (_type == ModuleInfoTableType.appointments) {
+      final ruleKeys = <String>{};
+      for (final row in rows) {
+        final cell = row.appointmentCell;
+        final weekday = cell?.appointmentWeekday;
+        if (cell != null && cell.isWeeklyRule && weekday != null) {
+          ruleKeys.add("$weekday|${_timeKey(cell.timeStr)}");
+        }
+      }
+      if (ruleKeys.isNotEmpty) {
+        rows.removeWhere((row) {
+          final cell = row.appointmentCell;
+          final weekday = cell?.appointmentWeekday;
+          return cell != null &&
+              !cell.isWeeklyRule &&
+              weekday != null &&
+              ruleKeys.contains("$weekday|${_timeKey(cell.timeStr)}");
+        });
+      }
+    }
   }
+
+  static String _timeKey(String timeStr) =>
+      timeStr.replaceAll(RegExp(r"\s+"), " ").trim().toLowerCase();
 
   // called after the row is parsed and has finished all its internal processing
   // before adding it to the rows list of the table

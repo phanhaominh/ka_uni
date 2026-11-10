@@ -16,7 +16,8 @@ void main() {
           title: "Termverschiebung",
           url: "https://ilias.kit.edu/x"),
     ];
-    final raw = encodeIliasCard(const IliasUnread(notifications: 3, mails: 1), anns);
+    final raw =
+        encodeIliasCard(const IliasUnread(notifications: 3, mails: 1), anns);
     final back = decodeIliasCard(raw)!;
     expect(back.$1!.notifications, 3);
     expect(back.$1!.mails, 1);

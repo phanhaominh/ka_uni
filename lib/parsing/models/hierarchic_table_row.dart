@@ -4,7 +4,7 @@
 // methods) - which silently killed every course-tree row parse, leaving
 // rowsSorted empty ("no grade row") and login permanently broken.
 
-class HierarchicTableRow  {
+class HierarchicTableRow {
   final int level;
   String title;
   String href;
@@ -19,12 +19,21 @@ class HierarchicTableRow  {
 
   List<HierarchicTableRow> children = [];
 
-  HierarchicTableRow({required this.level, required this.title, required this.href, required this.type, required this.statusStr, required this.grade, required this.pointsAcquired, required this.pointsMax});
+  HierarchicTableRow(
+      {required this.level,
+      required this.title,
+      required this.href,
+      required this.type,
+      required this.statusStr,
+      required this.grade,
+      required this.pointsAcquired,
+      required this.pointsMax});
 
   String get id => "${level}_${title}_$year";
-  
-  bool get isGradeEmpty => grade.isEmpty || grade.startsWith("0") || grade.startsWith("&");
-  
+
+  bool get isGradeEmpty =>
+      grade.isEmpty || grade.startsWith("0") || grade.startsWith("&");
+
   int get relevancyRank {
     return isGradeEmpty ? 10 : 1;
   }
@@ -34,7 +43,8 @@ class HierarchicTableRow  {
   // the ledger's own _decimal accepts both shapes.
   static final _gradeMark = RegExp(r"\d{1,3}[,.]\d{1,2}");
 
-  static HierarchicTableRow? parseTr(element, Map<int, List<HierarchicTableRow>> rowsSorted) {
+  static HierarchicTableRow? parseTr(
+      element, Map<int, List<HierarchicTableRow>> rowsSorted) {
     int level = 0;
     final classes = element.attributes["class"]?.split(" ");
     if (classes == null) {

@@ -19,7 +19,6 @@ class ModuleInfoTableSensible extends StatefulWidget {
   State<StatefulWidget> createState() {
     return _ModuleInfoTableSensibleState();
   }
-
 }
 
 class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
@@ -28,7 +27,6 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final mq = MediaQuery.of(context);
     final vm = Provider.of<KITProvider>(context);
     final toastsProvider = Provider.of<ToastsProvider>(context);
 
@@ -36,6 +34,10 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
 
     final termCellIndex = table.termCellIndex;
     final titleCellIndex = table.titleCellIndex;
+    // CampusKIT captions are German-only; map known sections through L10n
+    // so an English UI shows "Exams (WS 26/27)" / "Courses" (audit: German
+    // headers on the module page). Favorite matching keeps using table.caption.
+    final captionText = table.localisedCaption;
 
     // rowsDrawn is used to skip the first divider
     int rowsDrawn = -1;
@@ -45,16 +47,26 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            table.caption.length > 30 ?
-            Expanded(child: Text(table.caption, style: theme.textTheme.titleMedium, maxLines: 3, overflow: TextOverflow.ellipsis,))
-            : Text(table.caption, style: theme.textTheme.titleMedium),
-            _isBusy ? SizedBox(width: 5,) : SizedBox.shrink(),
+            captionText.length > 30
+                ? Expanded(
+                    child: Text(
+                    captionText,
+                    style: theme.textTheme.titleMedium,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ))
+                : Text(captionText, style: theme.textTheme.titleMedium),
+            _isBusy
+                ? SizedBox(
+                    width: 5,
+                  )
+                : SizedBox.shrink(),
             _isBusy ? KITProgressIndicator() : SizedBox.shrink()
           ],
         ),
-
-        const SizedBox(height: 10,),
-
+        const SizedBox(
+          height: 10,
+        ),
         Column(
           children: table.rows.map((row) {
             final appointmentCell = row.appointmentCell;
@@ -65,113 +77,164 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
             ++rowsDrawn;
 
             final titleCell = row.cells[titleCellIndex];
-            final termCellBody = termCellIndex != -1 ? row.cells[termCellIndex].body : "";
+            final termCellBody =
+                termCellIndex != -1 ? row.cells[termCellIndex].body : "";
 
             return Column(
               children: [
                 rowsDrawn == 0 ? SizedBox(height: 0) : Divider(),
-
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
                       children: [
-                        SizedBox(
-                          width: mq.size.width * 0.5,
-                          child: Text(titleCell.body, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold), maxLines: 3, overflow: TextOverflow.ellipsis,),
+                        // the fixed 0.5*screen box left the scraped term
+                        // strings ("ab 2. Fachsemester") a ~97dp remainder
+                        // they blew through, pushing the favorite star off
+                        // the screen; Expanded title + Flexible term keeps
+                        // both inside the row, each ellipsizing on demand
+                        Expanded(
+                          child: Text(
+                            titleCell.body,
+                            style: theme.textTheme.bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        Text(termCellBody),
+                        Flexible(
+                          child: Text(
+                            termCellBody,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ],
                     ),
-
-                    (row.favoriteToggleCell == null || titleCell.body.toLowerCase().contains("tutorium")) ? Text("") : Semantics(
-                      button: true,
-                      // icon-only button: ON/OFF must be announced; reuses the
-                      // toggle-result toasts, dedicated label keys don't exist
-                      label: row.favoriteToggleCell!.isFavorite
-                          ? L10n.t("module.addedToTimetable")
-                          : L10n.t("module.removedFromTimetable"),
-                      child: CupertinoButton(
-                        child: Icon(row.favoriteToggleCell!.isFavorite ? CupertinoIcons.star_fill : CupertinoIcons.star),
-                        onPressed: () async {
-                          setState(() {
-                            _isBusy = true;
-                          });
-                          try {
-                            // final toggleSuccessful = await vm.toggleIsFavorite(row.favoriteToggleCell!, table.parentModule);
-                            final toggleSuccessful = await vm.toggleIsFavoriteFuzzy(titleCell.body, table.caption, table.parentModule.title);
-                            if (!mounted) return; // network outlives the page pop
-                            if (!toggleSuccessful) {
-                              toastsProvider.showTextToast(L10n.t("module.sessionExpired"));
-                              // retry ONE MORE TIME after refetching everything
-                              await vm.forceRefetchEverything(allModulesAsWell: false);
-                              if (!mounted) return;
-
-                              if (table.parentModule.row == null) {
-                                await Haptics.vibrate(HapticsType.error);
-                                toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
-                                if (mounted) {
+                    (row.favoriteToggleCell == null ||
+                            titleCell.body.toLowerCase().contains("tutorium"))
+                        ? Text("")
+                        : Semantics(
+                            button: true,
+                            // icon-only button: ON/OFF must be announced; reuses the
+                            // toggle-result toasts, dedicated label keys don't exist
+                            label: row.favoriteToggleCell!.isFavorite
+                                ? L10n.t("module.addedToTimetable")
+                                : L10n.t("module.removedFromTimetable"),
+                            child: CupertinoButton(
+                                child: Icon(row.favoriteToggleCell!.isFavorite
+                                    ? CupertinoIcons.star_fill
+                                    : CupertinoIcons.star),
+                                onPressed: () async {
                                   setState(() {
-                                    _isBusy = false;
+                                    _isBusy = true;
                                   });
-                                }
-                                await vm.campusManager.fetchAllModules();
-                                return;
-                              }
+                                  try {
+                                    // final toggleSuccessful = await vm.toggleIsFavorite(row.favoriteToggleCell!, table.parentModule);
+                                    final toggleSuccessful =
+                                        await vm.toggleIsFavoriteFuzzy(
+                                            titleCell.body,
+                                            table.caption,
+                                            table.parentModule.title);
+                                    if (!mounted)
+                                      return; // network outlives the page pop
+                                    if (!toggleSuccessful) {
+                                      toastsProvider.showTextToast(
+                                          L10n.t("module.sessionExpired"));
+                                      // retry ONE MORE TIME after refetching everything
+                                      await vm.forceRefetchEverything(
+                                          allModulesAsWell: false);
+                                      if (!mounted) return;
 
-                              final newRowEntry = vm.fuzzyFindHierarchicTableRowSimilarTo(table.parentModule.row!);
+                                      if (table.parentModule.row == null) {
+                                        await Haptics.vibrate(
+                                            HapticsType.error);
+                                        toastsProvider.showTextToast(L10n.t(
+                                            "module.addToTimetableFailed",
+                                            [titleCell.body]));
+                                        if (mounted) {
+                                          setState(() {
+                                            _isBusy = false;
+                                          });
+                                        }
+                                        await vm.campusManager
+                                            .fetchAllModules();
+                                        return;
+                                      }
 
-                              if (newRowEntry == null) {
-                                await Haptics.vibrate(HapticsType.error);
-                                toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
-                                if (mounted) {
-                                  setState(() {
-                                    _isBusy = false;
-                                  });
-                                }
-                                await vm.campusManager.fetchAllModules();
-                                return;
-                              }
+                                      final newRowEntry = vm
+                                          .fuzzyFindHierarchicTableRowSimilarTo(
+                                              table.parentModule.row!);
 
-                              // we only fetch the needed module for now (all the others later)
-                              await vm.getOrFetchModuleForRow(newRowEntry);
+                                      if (newRowEntry == null) {
+                                        await Haptics.vibrate(
+                                            HapticsType.error);
+                                        toastsProvider.showTextToast(L10n.t(
+                                            "module.addToTimetableFailed",
+                                            [titleCell.body]));
+                                        if (mounted) {
+                                          setState(() {
+                                            _isBusy = false;
+                                          });
+                                        }
+                                        await vm.campusManager
+                                            .fetchAllModules();
+                                        return;
+                                      }
 
-                              // the url or other data could have been changed after refetching everything,
-                              // although we assume that we can still find this entry by the module title,
-                              // caption (aka name) of the table and the title of this "row"
-                              final secondToggleSuccessful = await vm.toggleIsFavoriteFuzzy(titleCell.body, table.caption, table.parentModule.title);
+                                      // we only fetch the needed module for now (all the others later)
+                                      await vm
+                                          .getOrFetchModuleForRow(newRowEntry);
 
-                              if (!secondToggleSuccessful) {
-                                await Haptics.vibrate(HapticsType.error);
-                                toastsProvider.showTextToast(L10n.t("module.addToTimetableFailed", [titleCell.body]));
-                              } else {
-                                _onToggleFavoriteSuccess(!row.favoriteToggleCell!.isFavorite, toastsProvider);
-                              }
+                                      // the url or other data could have been changed after refetching everything,
+                                      // although we assume that we can still find this entry by the module title,
+                                      // caption (aka name) of the table and the title of this "row"
+                                      final secondToggleSuccessful =
+                                          await vm.toggleIsFavoriteFuzzy(
+                                              titleCell.body,
+                                              table.caption,
+                                              table.parentModule.title);
 
-                              // background sweep: nobody awaits this one,
-                              // so a failure must not leave a zone error
-                              vm.campusManager.fetchAllModules().catchError((_) {});
-                            } else {
-                              _onToggleFavoriteSuccess(row.favoriteToggleCell!.isFavorite, toastsProvider);
-                            }
-                          } on Object {
-                            // the button callback's future is nobody's to await:
-                            // a throw anywhere in the retry chain (dead network
-                            // mid-refetch) used to die as an unhandled zone
-                            // error and leave the spinner running - settle it
-                            // like the other failures of this flow
-                            await Haptics.vibrate(HapticsType.error);
-                            toastsProvider.showTextToast(L10n.t("module.sessionExpired"));
-                          } finally {
-                            if (mounted) {
-                              setState(() {
-                                _isBusy = false;
-                              });
-                            }
-                          }
-                        }
-                      ),
-                    ),
+                                      if (!secondToggleSuccessful) {
+                                        await Haptics.vibrate(
+                                            HapticsType.error);
+                                        toastsProvider.showTextToast(L10n.t(
+                                            "module.addToTimetableFailed",
+                                            [titleCell.body]));
+                                      } else {
+                                        _onToggleFavoriteSuccess(
+                                            !row.favoriteToggleCell!.isFavorite,
+                                            toastsProvider);
+                                      }
+
+                                      // background sweep: nobody awaits this one,
+                                      // so a failure must not leave a zone error
+                                      vm.campusManager
+                                          .fetchAllModules()
+                                          .catchError((_) {});
+                                    } else {
+                                      _onToggleFavoriteSuccess(
+                                          row.favoriteToggleCell!.isFavorite,
+                                          toastsProvider);
+                                    }
+                                  } on Object {
+                                    // the button callback's future is nobody's to await:
+                                    // a throw anywhere in the retry chain (dead network
+                                    // mid-refetch) used to die as an unhandled zone
+                                    // error and leave the spinner running - settle it
+                                    // like the other failures of this flow
+                                    await Haptics.vibrate(HapticsType.error);
+                                    toastsProvider.showTextToast(
+                                        L10n.t("module.sessionExpired"));
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() {
+                                        _isBusy = false;
+                                      });
+                                    }
+                                  }
+                                }),
+                          ),
                   ],
                 )
               ],
@@ -182,8 +245,11 @@ class _ModuleInfoTableSensibleState extends State<ModuleInfoTableSensible> {
     );
   }
 
-  Future<void> _onToggleFavoriteSuccess(bool newValue, ToastsProvider toastsProvider) async {
-    toastsProvider.showTextToast(newValue ? L10n.t("module.addedToTimetable") : L10n.t("module.removedFromTimetable"));
+  Future<void> _onToggleFavoriteSuccess(
+      bool newValue, ToastsProvider toastsProvider) async {
+    toastsProvider.showTextToast(newValue
+        ? L10n.t("module.addedToTimetable")
+        : L10n.t("module.removedFromTimetable"));
     await Haptics.vibrate(HapticsType.success);
   }
 }

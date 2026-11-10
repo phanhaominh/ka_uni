@@ -135,7 +135,11 @@ class SignMeUpRegistration {
   // are mapped case-insensitively next to them. Anything else stays
   // `unknown` and renders as its raw label.
   static const _acceptedLabels = {
-    "accepted", "angenommen", "zugelassen", "confirmed", "bestätigt"
+    "accepted",
+    "angenommen",
+    "zugelassen",
+    "confirmed",
+    "bestätigt"
   };
   static const _rejectedLabels = {
     "rejected",
@@ -163,8 +167,7 @@ class SignMeUpRegistration {
 
   /// Compact chip category; unknown labels keep their raw text in the UI.
   SignMeUpOutcome get outcome {
-    final label =
-        stateLabel.trim().toLowerCase().replaceAll(_labelSep, " ");
+    final label = stateLabel.trim().toLowerCase().replaceAll(_labelSep, " ");
     if (_acceptedLabels.contains(label)) return SignMeUpOutcome.accepted;
     if (_rejectedLabels.contains(label)) return SignMeUpOutcome.rejected;
     if (_openLabels.contains(label)) return SignMeUpOutcome.open;
@@ -469,7 +472,6 @@ class SignMeUpManager {
     if (!loadedMine) return "";
     final until = _lecturePeriodEnd;
     final out = StringBuffer();
-    var seq = 0;
     for (final r in mine) {
       if (!r.accepted) continue;
       final topic = (r.topicName?.trim().isNotEmpty ?? false)
@@ -491,8 +493,18 @@ class SignMeUpManager {
                 : Duration.zero);
         if (!end.isAfter(d)) continue;
         out.write("BEGIN:VEVENT\r\n"
-            "UID:signmeup-${r.id}-${seq++}@ka_uni\r\n"
-            "DTSTAMP:${_icsStamp(DateTime.now())}\r\n"
+            // UID keys the SLOT (registration id + weekday + wall times),
+            // not the emission INDEX: a positional seq made every rebuild
+            // after any reorder emit fresh UIDs, so exported calendars
+            // DUPLICATED the tutorial instead of updating it (and
+            // reapplySignMeUpSynth's byte-equality no-op was dead - see
+            // the exam_synth.dart emitter for the same lesson)
+            "UID:signmeup-${r.id}-${s.dayOfWeek}-${s.startMinutes}-${s.endMinutes}@ka_uni\r\n"
+            // DTSTAMP derived from the series start, not the wall clock:
+            // two rebuilds of the same registrations emit byte-identical
+            // blocks, which is what makes reapply's no-change early
+            // return real (no cache rewrite, no alarm re-arm storm)
+            "DTSTAMP:${_icsStamp(DateTime(d.year, d.month, d.day))}\r\n"
             "DTSTART;TZID=Europe/Berlin:${_icsLocal(d)}\r\n"
             "DTEND;TZID=Europe/Berlin:${_icsLocal(end)}\r\n"
             "RRULE:FREQ=WEEKLY;UNTIL=${_icsLocal(until)}\r\n"
@@ -504,8 +516,9 @@ class SignMeUpManager {
       if (one != null &&
           one.end.isAfter(DateTime.now().subtract(const Duration(days: 1)))) {
         out.write("BEGIN:VEVENT\r\n"
-            "UID:signmeup-${r.id}-${seq++}@ka_uni\r\n"
-            "DTSTAMP:${_icsStamp(DateTime.now())}\r\n"
+            "UID:signmeup-${r.id}-one-"
+            "${_icsLocal(one.start)}@ka_uni\r\n"
+            "DTSTAMP:${_icsStamp(DateTime(one.start.year, one.start.month, one.start.day))}\r\n"
             "DTSTART;TZID=Europe/Berlin:${_icsLocal(one.start)}\r\n"
             "DTEND;TZID=Europe/Berlin:${_icsLocal(one.end)}\r\n"
             "SUMMARY:${_icsEscape(title)}\r\n"

@@ -44,5 +44,4 @@ class KaUniAppBarTitle extends StatelessWidget {
       ],
     );
   }
-
 }

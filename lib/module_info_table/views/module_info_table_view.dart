@@ -15,7 +15,6 @@ class ModuleInfoTableView extends StatefulWidget {
   State<StatefulWidget> createState() {
     return _ModuleInfoTableViewState();
   }
-
 }
 
 class _ModuleInfoTableViewState extends State<ModuleInfoTableView> {
@@ -30,11 +29,12 @@ class _ModuleInfoTableViewState extends State<ModuleInfoTableView> {
 
       // ...making sure that there is a sensible title
       if (titleCellIndex != -1) {
-        return ModuleInfoTableSensible(table: widget.table,);
+        return ModuleInfoTableSensible(
+          table: widget.table,
+        );
       }
     }
 
     return ModuleInfoTableGeneric(table: widget.table);
   }
-
 }

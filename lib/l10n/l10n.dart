@@ -1,5 +1,6 @@
 import 'dart:ui' show Locale;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'strings_exams.dart';
@@ -45,7 +46,8 @@ class L10n {
   }
 
   /// System locale code captured at startup (preference "system" uses this).
-  static void setSystemLanguage(String code) => _systemLanguage = code == "en" ? "en" : "de";
+  static void setSystemLanguage(String code) =>
+      _systemLanguage = code == "en" ? "en" : "de";
 
   static String t(String key, [List<Object> args = const []]) {
     var raw = (_language == "en" ? _en[key] : null) ?? _de[key] ?? key;
@@ -54,6 +56,15 @@ class L10n {
     }
     return raw;
   }
+
+  /// The full key tables as shipped, exposed for the l10n parity test
+  /// (test/l10n_parity_test.dart): a key missing from [_en] silently
+  /// degrades to German in the English UI, which is exactly the leak the
+  /// module-page audit found. `t()` stays the runtime API.
+  @visibleForTesting
+  static const Map<String, String> deTable = _de;
+  @visibleForTesting
+  static const Map<String, String> enTable = _en;
 
   /// Localized short weekday abbreviation: "Mo", "Di" / "Mon", "Tue".
   static String weekday(int w) =>
@@ -79,8 +90,7 @@ class L10n {
   /// form (exam registration rows need day+month+year+time; `stamp` drops
   /// the year, `until` the time). The exams page previously shipped a
   /// private copy of this format; #12 funnels it back in here.
-  static String deadline(DateTime d) =>
-      "${d.day.toString().padLeft(2, "0")}."
+  static String deadline(DateTime d) => "${d.day.toString().padLeft(2, "0")}."
       "${d.month.toString().padLeft(2, "0")}."
       "${d.year} "
       "${d.hour.toString().padLeft(2, "0")}:"
@@ -136,13 +146,15 @@ class L10n {
     "agenda.iliasStale": "ILIAS nicht erreichbar – gespeicherter Stand",
     "agenda.nNew": "{0} neu",
     "agenda.examsOpen": "Prüfungsanmeldung offen",
-    "agenda.signMeUpNotCurrent": "Anmeldungsstatus gerade nicht abrufbar – beim nächsten Öffnen aktuell",
+    "agenda.signMeUpNotCurrent":
+        "Anmeldungsstatus gerade nicht abrufbar – beim nächsten Öffnen aktuell",
     "agenda.examsLoading": "Prüfungsanmeldungen werden geprüft…",
     "agenda.toRegistration": "Zur Anmeldung",
     "agenda.moreChanges": "… und {0} weitere",
     "agenda.dismiss": "Verstanden",
     "common.dismiss": "Schließen",
-    "common.refreshFailed": "Aktualisierung fehlgeschlagen – bitte erneut versuchen",
+    "common.refreshFailed":
+        "Aktualisierung fehlgeschlagen – bitte erneut versuchen",
     "info.privacyPolicy": "Datenschutzerklärung",
     "files.document": "Dokument",
     "settings.language": "Sprache",
@@ -159,12 +171,14 @@ class L10n {
     "ilias.downloading": "Wird heruntergeladen...",
     "ilias.downloadFailed": "Download fehlgeschlagen – bitte erneut versuchen",
     "ilias.refreshError": "Fehler beim Aktualisieren!",
-    "ilias.authFailed": "ILIAS-Anmeldung fehlgeschlagen – bitte erneut versuchen.",
+    "ilias.authFailed":
+        "ILIAS-Anmeldung fehlgeschlagen – bitte erneut versuchen.",
     "ilias.connecting": "Verbindung zu ILIAS wird hergestellt …",
     "ilias.retry": "Erneut versuchen",
     "ilias.backTooltip": "Zurück",
     "ilias.forwardTooltip": "In ILIAS eine Seite vor",
     "ilias.refreshTooltip": "ILIAS-Sitzung aktualisieren (erneut anmelden)",
+    "ilias.savedToFiles": "In Dateien gespeichert: {0}",
     "easter.currywerk": "Currywerk ist überschätzt",
     // round 1: next-up banner
     "agenda.nowRunning": "läuft · bis {0}",
@@ -180,10 +194,12 @@ class L10n {
     // round 1: stale-data footer
     "agenda.asOf": "Stand: {0} Uhr",
     "agenda.staleData": "Keine Aktualisierung seit {0}",
-    "agenda.staleUnknown": "Stundenplan evtl. veraltet – zum Aktualisieren ziehen",
+    "agenda.staleUnknown":
+        "Stundenplan evtl. veraltet – zum Aktualisieren ziehen",
     "exams.asOf": "Stand: {0} Uhr",
     "exams.staleData": "Keine Aktualisierung seit {0}",
-    "exams.staleUnknown": "Prüfungsliste evtl. veraltet – zum Aktualisieren ziehen",
+    "exams.staleUnknown":
+        "Prüfungsliste evtl. veraltet – zum Aktualisieren ziehen",
     // round 1: home empty-state
     "home.modulesEmpty": "Noch keine Module geladen",
     "home.modulesEmptyBtn": "Jetzt aktualisieren",
@@ -262,7 +278,8 @@ class L10n {
     "agenda.nNew": "{0} new",
     "agenda.examsOpen": "Exam registration open",
     "agenda.examsLoading": "Checking exam registrations…",
-    "agenda.signMeUpNotCurrent": "Registration status unavailable right now – current on next open",
+    "agenda.signMeUpNotCurrent":
+        "Registration status unavailable right now – current on next open",
     "agenda.toRegistration": "Register",
     "agenda.moreChanges": "… and {0} more",
     "agenda.dismiss": "Got it",
@@ -292,6 +309,7 @@ class L10n {
     "ilias.backTooltip": "Back",
     "ilias.forwardTooltip": "Forward a page in ILIAS",
     "ilias.refreshTooltip": "Refresh the ILIAS session (sign in again)",
+    "ilias.savedToFiles": "Saved to Files: {0}",
     "easter.currywerk": "Currywerk is overrated",
     "agenda.nowRunning": "running · until {0}",
     "agenda.startsSoon": "starting soon",
@@ -345,7 +363,6 @@ class L10n {
     "export.empty":
         "No timetable stored yet – pull down on the home page to load it",
     "export.failed": "Export failed – please try again",
-    "export.inFlight":
-        "Export already running – close the share sheet first",
+    "export.inFlight": "Export already running – close the share sheet first",
   };
 }

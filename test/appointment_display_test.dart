@@ -20,7 +20,8 @@ void main() {
     expect(b.displayPlace, "10.21 Carl-Benz-Hörsaal");
 
     // no false strip when the tail is part of the name
-    final c = TimetableAppointment()..title = "Advanced Mathematics I (Problem Class)";
+    final c = TimetableAppointment()
+      ..title = "Advanced Mathematics I (Problem Class)";
     expect(c.displayTitle, c.title);
   });
 

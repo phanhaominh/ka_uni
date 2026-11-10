@@ -14,41 +14,39 @@ class ToastsOverlay extends StatelessWidget {
     final toastsProvider = Provider.of<ToastsProvider>(context);
     final theme = Theme.of(context);
 
-    return SafeArea(child:
-      Column(
-        children: [
-          Spacer(),
-
-          Container(
-            padding: extraPadding,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AnimatedOpacity(
-                  opacity: toastsProvider.isShowing ? 1 : 0,
-                  duration: ToastsProvider.defaultAnimationDuration,
-                  child: IgnorePointer(
-                    ignoring: !toastsProvider.isShowing,
-                    child: BlockContainer(
-                      withShadow: true,
-                      // honor an explicit caller color; the dark theme maps
-                      // cardColor to appleDarkGrey - the old Colors.black
-                      // vanished on the black scaffold
-                      backgroundColor:
-                          toastsProvider.backgroundColor ?? theme.cardColor,
-                      child: Text(
-                        toastsProvider.message,
-                        style: theme.textTheme.bodyMedium?.copyWith(color: toastsProvider.foregroundColor),
-                      ),
+    return SafeArea(
+        child: Column(
+      children: [
+        Spacer(),
+        Container(
+          padding: extraPadding,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedOpacity(
+                opacity: toastsProvider.isShowing ? 1 : 0,
+                duration: ToastsProvider.defaultAnimationDuration,
+                child: IgnorePointer(
+                  ignoring: !toastsProvider.isShowing,
+                  child: BlockContainer(
+                    withShadow: true,
+                    // honor an explicit caller color; the dark theme maps
+                    // cardColor to appleDarkGrey - the old Colors.black
+                    // vanished on the black scaffold
+                    backgroundColor:
+                        toastsProvider.backgroundColor ?? theme.cardColor,
+                    child: Text(
+                      toastsProvider.message,
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: toastsProvider.foregroundColor),
                     ),
                   ),
-                )
-              ],
-            ),
+                ),
+              )
+            ],
           ),
-        ],
-      )
-    );
+        ),
+      ],
+    ));
   }
-
 }

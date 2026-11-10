@@ -28,9 +28,8 @@ void main() {
 
     final s2 = await mgr.fetchStage2_(s1);
     expect(s2, isNotNull, reason: 'stage2 returned null');
-    print("STAGE2 -> ${s2!.statusCode} relay=${s2.body
-        .toLowerCase()
-        .contains("relaystate")} len=${s2.body.length}");
+    print(
+        "STAGE2 -> ${s2!.statusCode} relay=${s2.body.toLowerCase().contains("relaystate")} len=${s2.body.length}");
 
     final boot = await mgr.bootCascampusSession();
     expect(boot, isTrue, reason: 'cascampus boot failed');
@@ -42,9 +41,7 @@ void main() {
     print("TIMETABLE len=${r.body.length} "
         "plan=${r.body.contains("Studienplan")} "
         "expired=${mgr.sessionExpired(r.body)}");
-    expect(
-        r.body.contains("Stundenplan") ||
-            r.body.contains("Veranstaltung"),
+    expect(r.body.contains("Stundenplan") || r.body.contains("Veranstaltung"),
         isTrue,
         reason: 'timetable page not rendered');
   }, timeout: const Timeout(Duration(minutes: 3)));

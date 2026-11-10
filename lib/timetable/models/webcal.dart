@@ -130,8 +130,7 @@ class WebcalFeed {
   /// clock): the weekly template scopes one-off events against it.
   final DateTime reference;
 
-  WebcalFeed(
-      {required this.occurrences, required this.raw, DateTime? now})
+  WebcalFeed({required this.occurrences, required this.raw, DateTime? now})
       : reference = now ?? DateTime.now();
 
   static final _dt = RegExp(r'^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$');
@@ -438,8 +437,8 @@ class WebcalFeed {
         day.year, day.month, day.day, end.hour, end.minute, end.second);
     return sameDay.isAfter(day)
         ? sameDay
-        : DateTime(day.year, day.month, day.day + 1, end.hour, end.minute,
-            end.second);
+        : DateTime(
+            day.year, day.month, day.day + 1, end.hour, end.minute, end.second);
   }
 
   /// RRULE expansion safety ceiling; parse() clamps with its own horizon.
@@ -510,10 +509,10 @@ class WebcalFeed {
     // lectures as one-shot chains (wc_now.ics "Nov-Dec chain") that the
     // cascampus HTML grid shows across the whole horizon - they are
     // recognisable by the cascampus URL every feed VEVENT carries.
-    final weekStart = DateTime(
-        reference.year, reference.month, reference.day - (reference.weekday - 1));
-    final weekEnd = DateTime(
-        reference.year, reference.month, reference.day - (reference.weekday - 1) + 7);
+    final weekStart = DateTime(reference.year, reference.month,
+        reference.day - (reference.weekday - 1));
+    final weekEnd = DateTime(reference.year, reference.month,
+        reference.day - (reference.weekday - 1) + 7);
 
     for (final occ in occurrences) {
       final weekdayIdx = occ.start.weekday - 1;
@@ -646,9 +645,7 @@ class WebcalFeed {
       // title included: a RENAMED lecture keeps its UID and time, so the
       // twin pairing above matches it - comparing room/end only let the
       // rename pass as "nothing happened"
-      if (twin.room != o.room ||
-          twin.end != o.end ||
-          twin.title != o.title) {
+      if (twin.room != o.room || twin.end != o.end || twin.title != o.title) {
         changes.add(IcsChange(
             kind: IcsChangeKind.changed,
             title: twin.title,
@@ -718,6 +715,21 @@ class IcsChange {
       required this.room,
       this.oldRoom,
       this.oldWhen});
+
+  /// Normalized title identity: strips the faculty number tail
+  /// ([IcsOccurrence.cleanTitle]) and the leading course-id prefix
+  /// (`"3161011 – Analysis I"`, the same [_idPrefix] the appointment
+  /// conversion and [_isFeedCloneOf] use), case-folded. Deltas and
+  /// occurrence rows must be matchable across either-side noise: the
+  /// agenda row-emphasis gate (and any future delta->row consumer) keys
+  /// on this so a parallel lecture that merely shares the start block
+  /// never wears another lecture's delta.
+  static String titleKey(String t) {
+    var s = IcsOccurrence.cleanTitle(t);
+    final m = WebcalFeed._idPrefix.firstMatch(s);
+    if (m != null) s = m.group(2)!;
+    return s.trim().toLowerCase();
+  }
 
   String describe() {
     final t = WebcalFeed.stamp(when);
@@ -822,8 +834,7 @@ extension IcsChangeIndex on List<IcsChange> {
             c.when.hour * 60 + c.when.minute,
       };
 
-  static String _dayKey(DateTime d) =>
-      "${d.year.toString().padLeft(4, "0")}-"
+  static String _dayKey(DateTime d) => "${d.year.toString().padLeft(4, "0")}-"
       "${d.month.toString().padLeft(2, "0")}-"
       "${d.day.toString().padLeft(2, "0")}";
 

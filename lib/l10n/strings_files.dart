@@ -39,11 +39,26 @@ const Map<String, String> de_files = {
   "module.examDaysAgo": "war vor {0} Tagen",
   "module.sessionExpired":
       "Die Sitzung ist abgelaufen. Das kann ein bisschen länger dauern...",
-  "module.addToTimetableFailed": "Fehler beim Hinzufügen von {0} zum Stundenplan",
+  "module.addToTimetableFailed":
+      "Fehler beim Hinzufügen von {0} zum Stundenplan",
   "module.addedToTimetable": "Wurde zum Stundenplan hinzugefügt!",
   "module.removedFromTimetable": "Wurde vom Stundenplan entfernt!",
   "module.loadError": "Modul konnte nicht geladen werden",
   "module.infoButton": "Modul-Details anzeigen",
+  // CampusKIT serves German-only captions ("Prüfungen (WS 26/27)",
+  // "Veranstaltungen") for the tables on the module detail page; they are
+  // mapped through L10n at render time (ModuleInfoTable.localisedCaption)
+  // so the English UI no longer shows German section headers.
+  "module.sectionExams": "Prüfungen",
+  "module.sectionExamsTerm": "Prüfungen ({0})",
+  "module.sectionCourses": "Veranstaltungen",
+  "module.sectionCoursesTerm": "Veranstaltungen ({0})",
+  "module.sectionMilestones": "Teilleistungen",
+  "module.sectionRequirements": "Leistungsnachweise",
+  "module.sectionModules": "Module",
+  // weekday-abbreviation tail of a scraped appointment label, the RRULE
+  // line of the "Veranstaltungen" table ("Do, wöchentlich 16:00 - 18:00")
+  "module.weekly": "wöchentlich",
 };
 
 const Map<String, String> en_files = {
@@ -89,4 +104,15 @@ const Map<String, String> en_files = {
   "module.removedFromTimetable": "Removed from the timetable!",
   "module.loadError": "Could not load the module",
   "module.infoButton": "Show module details",
+  // see de_files: scraped CampusKIT captions rendered through these keys
+  "module.sectionExams": "Exams",
+  "module.sectionExamsTerm": "Exams ({0})",
+  "module.sectionCourses": "Courses",
+  "module.sectionCoursesTerm": "Courses ({0})",
+  // KIT module-handbook wording for "Teilleistungen"
+  "module.sectionMilestones": "Component achievements",
+  // official English gloss of "Leistungsnachweise" at KIT
+  "module.sectionRequirements": "Module examinations",
+  "module.sectionModules": "Modules",
+  "module.weekly": "weekly",
 };

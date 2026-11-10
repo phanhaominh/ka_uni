@@ -52,15 +52,16 @@ extension IliasScraper on IliasManager {
 
   /// Enrolled courses of the current semester from "Meine Kurse und Gruppen".
   Future<List<IliasCourse>> fetchCourses() async {
-    final body = await _withSessionBody(() =>
-        _getResp("$_base/ilias.php?baseClass=ilmembershipoverviewgui"));
+    final body = await _withSessionBody(
+        () => _getResp("$_base/ilias.php?baseClass=ilmembershipoverviewgui"));
     final courses = await compute(coursesFrom, body);
     if (courses.isEmpty && body.contains("goto.php/crs/")) {
       // 200 + live session + enrolment anchors on the page, yet nothing
       // parsed: the "NNNNNNN - Title" shape drifted past the regex.
       // Shout it - "0 courses" must never look like an honest empty term.
       if (kDebugMode) {
-        print("ILIAS courses: anchors present but ZERO parsed - title regex drifted");
+        print(
+            "ILIAS courses: anchors present but ZERO parsed - title regex drifted");
       }
     }
     return courses;
@@ -73,15 +74,38 @@ extension IliasScraper on IliasManager {
     return compute(unreadFrom, body);
   }
 
-  /// Material files of a course: walks "Course Materials" and its
-  /// subfolders (depth ≤ 2) collecting non-folder container items.
+  /// Material files of a course: files posted directly in the course root
+  /// plus everything under "Course Materials" and its subfolders
+  /// (depth ≤ 2).
   Future<List<IliasFile>> fetchCourseFiles(IliasCourse course) async {
     final courseBody = await _withSessionBody(() => _getResp(
         "$_base/ilias.php?baseClass=ilrepositorygui&cmdClass=ilobjcoursegui&ref_id=${course.refId}"));
-    final rootFolders =
-        await compute(_childRefsFrom, (courseBody, "fold"));
+    // files uploaded straight into the course root (single scripts, no
+    // folder structure - the common shape in small courses) sit on the
+    // course page itself; parsing file rows ONLY on folder pages made
+    // them silently invisible
+    final rootRows = await compute(_fileRowsFrom, courseBody);
 
     final files = <IliasFile>[];
+    final seenUrls = <String>{};
+    void addRows(List<(String, String, String?)> rows) {
+      for (final row in rows) {
+        // a linked material can legitimately show up under two containers;
+        // collecting it twice would double every course's file list
+        if (!seenUrls.add(row.$2)) continue;
+        files.add(IliasFile(
+            courseRefId: course.refId,
+            courseTitle: course.title,
+            title: row.$1,
+            url: row.$2,
+            modified: _parseGermanDate(row.$3)));
+      }
+    }
+
+    addRows(rootRows);
+
+    final rootFolders = await compute(_childRefsFrom, (courseBody, "fold"));
+
     final queue = <MapEntry<int, String>>[...rootFolders];
     final visited = <int>{...rootFolders.map((e) => e.key)};
     for (var depth = 0; depth < 3 && queue.isNotEmpty; depth++) {
@@ -92,15 +116,7 @@ extension IliasScraper on IliasManager {
         // to yield login-HTML whose parse "succeeded" with 0 files
         final folderBody = await _withSessionBody(() => _getResp(
             "$_base/ilias.php?baseClass=ilrepositorygui&cmdClass=ilObjFolderGUI&ref_id=${folder.key}"));
-        final rows = await compute(_fileRowsFrom, folderBody);
-        for (final row in rows) {
-          files.add(IliasFile(
-              courseRefId: course.refId,
-              courseTitle: course.title,
-              title: row.$1,
-              url: row.$2,
-              modified: _parseGermanDate(row.$3)));
-        }
+        addRows(await compute(_fileRowsFrom, folderBody));
         final subs = await compute(_childRefsFrom, (folderBody, "fold"));
         for (final sub in subs) {
           if (visited.add(sub.key)) {
@@ -162,8 +178,9 @@ IliasUnread unreadFrom(String body) {
   final badge =
       RegExp(r'class="badge[^"]*"[^>]*>\s*(\d{1,4})').firstMatch(topBar);
   final mailRe = RegExp(r"(\d+)[^<]*neue[^<]*Mail");
-  final mails =
-      mailRe.hasMatch(body) ? int.parse(mailRe.firstMatch(body)!.group(1)!) : (body.contains("ungelesene Mail") ? 1 : 0);
+  final mails = mailRe.hasMatch(body)
+      ? int.parse(mailRe.firstMatch(body)!.group(1)!)
+      : (body.contains("ungelesene Mail") ? 1 : 0);
   return IliasUnread(
       notifications: badge == null ? 0 : int.parse(badge.group(1)!),
       mails: mails);
@@ -200,36 +217,46 @@ List<(String, String, String?)> _fileRowsFrom(String body) {
     if (RegExp(r"goto\.php/fold/").hasMatch(href)) continue; // subfolder
     final url = href.startsWith("http")
         ? href
-        : (href.startsWith("ilias.php") ? "https://ilias.studium.kit.edu/$href" : href);
+        : (href.startsWith("ilias.php")
+            ? "https://ilias.studium.kit.edu/$href"
+            : href);
     final rowText = h3.parent?.parent?.text ?? "";
-    final dm =
-        RegExp(r"(\d{1,2}\.\s*\d{1,2}\.\s*\d{2,4})").firstMatch(rowText);
+    final dm = RegExp(r"(\d{1,2}\.\s*\d{1,2}\.\s*\d{2,4})").firstMatch(rowText);
     rows.add((title, url, dm?.group(1)));
   }
   return rows;
 }
 
 const _months = {
-  "Jan": 1, "Feb": 2, "Mär": 3, "Apr": 4, "Mai": 5, "Jun": 6, "Jul": 7,
-  "Aug": 8, "Sep": 9, "Okt": 10, "Nov": 11, "Dez": 12,
+  "Jan": 1,
+  "Feb": 2,
+  "Mär": 3,
+  "Apr": 4,
+  "Mai": 5,
+  "Jun": 6,
+  "Jul": 7,
+  "Aug": 8,
+  "Sep": 9,
+  "Okt": 10,
+  "Nov": 11,
+  "Dez": 12,
 };
 
 /// "25.10.2026" and "25. Okt 2026, 11:48" both parse.
 DateTime? _parseGermanDate(String? s) {
   if (s == null) return null;
-  final full =
-      RegExp(r"(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})").firstMatch(s);
+  final full = RegExp(r"(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})").firstMatch(s);
   if (full != null) {
     return DateTime(int.parse(full.group(3)!), int.parse(full.group(2)!),
         int.parse(full.group(1)!));
   }
-  final month = RegExp(
-          r"(\d{1,2})\.\s*(Jan|Feb|Mär|Apr|Mai|Jun|Jul|Aug|Sep|Okt|Nov|Dez)"
-          r"\s*(\d{4})")
-      .firstMatch(s);
+  final month =
+      RegExp(r"(\d{1,2})\.\s*(Jan|Feb|Mär|Apr|Mai|Jun|Jul|Aug|Sep|Okt|Nov|Dez)"
+              r"\s*(\d{4})")
+          .firstMatch(s);
   if (month != null) {
-    return DateTime(int.parse(month.group(3)!),
-        _months[month.group(2)!]!, int.parse(month.group(1)!));
+    return DateTime(int.parse(month.group(3)!), _months[month.group(2)!]!,
+        int.parse(month.group(1)!));
   }
   return null;
 }
@@ -256,7 +283,9 @@ List<IliasAnnouncement> _announcementsFrom(String body) {
     final rm = RegExp(r"(?:ref_id=|goto\.php/\w+/)(\d+)").firstMatch(href);
     final url = href.startsWith("http")
         ? href
-        : (href.startsWith("ilias.php") ? "https://ilias.studium.kit.edu/$href" : href);
+        : (href.startsWith("ilias.php")
+            ? "https://ilias.studium.kit.edu/$href"
+            : href);
     items.add(IliasAnnouncement(
         courseRefId: rm == null ? 0 : int.parse(rm.group(1)!),
         courseTitle: "",

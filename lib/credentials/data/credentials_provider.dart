@@ -12,6 +12,17 @@ import '../../main.dart';
 import '../../notifications/mei_notifications.dart';
 import '../../tutorials/data/tutorial_manager.dart';
 
+/// Thrown by [logout] AFTER the local session was torn down (the UI is
+/// already on the login form): at least one vendor/prefs/network step
+/// failed, which is a shared-device residue warning - NOT a "logout
+/// failed, try again" state, because there is nothing left to retry here.
+class PartialLogoutException implements Exception {
+  final List<String> failures;
+  PartialLogoutException(this.failures);
+  @override
+  String toString() => "PartialLogoutException(${failures.join("; ")})";
+}
+
 class CredentialsProvider extends ChangeNotifier {
   final FlutterSecureStorage _storage = FlutterSecureStorage();
 
@@ -230,6 +241,7 @@ class CredentialsProvider extends ChangeNotifier {
     }
     vm.campusManager.wipeAccountMemory();
     tutorialManager.clearAll();
+    vm.dropInflightFetches(); // A's in-flight memos must not be joined
     vm.signMeUpManager.procedures = [];
     vm.signMeUpManager.mine = [];
     vm.signMeUpManager.termStart = null;
@@ -272,9 +284,14 @@ class CredentialsProvider extends ChangeNotifier {
     // schedule, pinned ILIAS files and change logs - none may survive a
     // logout on a shared device or bleed into the next account's session.
     try {
-      final prefs = await SharedPreferences.getInstance();
-      for (final key in prefs
-          .getKeys()
+      // enumerate + delete through the LIVE store: the legacy
+      // SharedPreferences.getInstance() snapshot is a per-isolate cache,
+      // and keys first created by the WorkManager poll isolate this
+      // session (DATA_webcalFeedSource = full token URL, fingerprint,
+      // changes, iliasWatchSeen) were invisible to its getKeys() - they
+      // survived logout on exactly such a shared device
+      final prefs = SharedPreferencesAsync();
+      for (final key in (await prefs.getKeys())
           .where((k) =>
               k.startsWith("DATA_") ||
               k.startsWith("RMR ") ||
@@ -312,9 +329,10 @@ class CredentialsProvider extends ChangeNotifier {
       if (kDebugMode) print("local logout reset failed: $e");
     }
     // never leak raw exception text into the toast (settings_page prints
-    // this in debug and shows its generic logoutFailed text)
+    // this in debug and shows its own text); a PARTIAL wipe is its own
+    // case: the user IS logged out, only the residue differs
     if (failures.isNotEmpty) {
-      throw StateError("logout completed with failures: ${failures.join("; ")}");
+      throw PartialLogoutException(failures);
     }
   }
 

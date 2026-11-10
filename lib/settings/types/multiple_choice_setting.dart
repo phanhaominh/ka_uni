@@ -1,7 +1,6 @@
 import 'package:kit_mobile/settings/types/setting.dart';
 
 class MultipleChoiceSetting<T> extends Setting<T> {
-
   final List<T> choices;
   final Set<T> choicesSet;
 
@@ -10,12 +9,13 @@ class MultipleChoiceSetting<T> extends Setting<T> {
     required this.choices,
     T? defaultValue,
     super.notifyCallback,
-  }) : choicesSet = choices.toSet(),
-        super(defaultValue: defaultValue ?? (choices.isEmpty ? "" : choices[0]));
+  })  : choicesSet = choices.toSet(),
+        super(
+            defaultValue: defaultValue ?? (choices.isEmpty ? "" : choices[0]));
 
   @override
   Future<void> set(T newValue) async {
-    assert (choicesSet.contains(newValue));
+    assert(choicesSet.contains(newValue));
     await super.set(newValue);
   }
 }

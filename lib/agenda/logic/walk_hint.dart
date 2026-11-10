@@ -86,8 +86,7 @@ class WalkHint {
 /// Walk feasibility for a back-to-back lecture pair. Returns null when a
 /// place is unknown, the buildings coincide, or the pair is not interesting
 /// (tiny or huge gaps - nobody plans a coffee dash across campus for those).
-WalkHint? computeWalkHint(
-    KITPlace? from, KITPlace? to, int gapMinutes) {
+WalkHint? computeWalkHint(KITPlace? from, KITPlace? to, int gapMinutes) {
   final a = from?.latLngFromList, b = to?.latLngFromList;
   if (a == null || b == null) return null;
   if (from!.id == to!.id) return null;

@@ -78,6 +78,32 @@ List<bool> dayColumnSeams(List<TimetableAppointment> rows) => [
         i < rows.length - 1 && (_isContent(rows[i]) || _isContent(rows[i + 1]))
     ];
 
+/// The now-line's view of the filtered day column: one NowBlock per row
+/// with the EXACT geometry the row stack paints. A GAP row covers the wall
+/// window [prevEnd, nextBegin) - its pixels start where the previous
+/// content row ENDS - so its band must claim that wall start, NOT the
+/// scaffold placeholder's nominal begin: fed with the placeholder's generic
+/// 9:45 the line walked a shifted window, painting through the NEXT
+/// lecture's first minutes while the gap still had time left (then jumping
+/// at the band's bogus end), which also made [_rowMin]'s "the now-line walk
+/// speaks about the REAL gap" contract false. After [TimetableDailyView
+/// .build]'s filter the row before a gap is always its previous CONTENT row
+/// (zero-minute placeholders never enter the column), so day[i-1]'s end is
+/// exactly the minute the gap band's top pixel shows.
+List<NowBlock> dayColumnBlocks(List<TimetableAppointment> day) {
+  final seams = dayColumnSeams(day);
+  return [
+    for (var i = 0; i < day.length; i++)
+      NowBlock(
+          beginMin: _isContent(day[i])
+              ? _beginMin(day[i])
+              : _beginMin(day[i - 1]) + _rowMin(day, i - 1),
+          durationMin: _rowMin(day, i),
+          border: seams[i],
+          content: _isContent(day[i]))
+  ];
+}
+
 class TimetableDailyView extends StatelessWidget {
   final TimetableDaily tt;
 
@@ -177,11 +203,10 @@ class TimetableDailyView extends StatelessWidget {
 
     final mins = [for (var i = 0; i < day.length; i++) _rowMin(day, i)];
     final seams = dayColumnSeams(day);
-    final blocks = [
-      for (var i = 0; i < day.length; i++)
-        NowBlock(
-            beginMin: _beginMin(day[i]), durationMin: mins[i], border: seams[i])
-    ];
+    // ONE feed (see dayColumnBlocks): the painted row stack and the
+    // now-line walk consume the same durations, borders and WALL starts,
+    // so painted and measured geometry can never disagree
+    final blocks = dayColumnBlocks(day);
 
     return LayoutBuilder(builder: (context, constraints) {
       // ONE factor drives every row height AND the now-line walk, so the
@@ -277,11 +302,21 @@ class TimetableDailyView extends StatelessWidget {
           i < rows.length - 1 &&
           _isContent(rows[i - 1]) &&
           _isContent(rows[i + 1]);
+      // SUPPRESS (not FittedBox): a 15-min gap measures 13.5 px at full
+      // scale - LESS than one bodySmall line - and Center does not clip, so
+      // the chip used to straddle the seam hairline, the one line the
+      // column's geometry contract says must stay readable. Scaling it
+      // down would keep a sub-pixel-height smudge on the seam instead; at
+      // under one line height the gap simply is not worth naming.
+      final gapBox = mins[i] * factor;
+      final gapLineH = MediaQuery.textScalerOf(context)
+              .scale(theme.textTheme.bodySmall?.fontSize ?? 12) *
+          1.45;
       return SizedBox(
         // A free block must read as empty: the placeholder dash and
         // its time badge used to render like a lecture called "-".
-        height: mins[i] * factor,
-        child: boxedIn
+        height: gapBox,
+        child: boxedIn && gapBox >= gapLineH
             ? Center(
                 child: Text(
                   L10n.t("timetable.freeGap", [_dur(mins[i])]),
@@ -492,12 +527,18 @@ class TimetableDailyView extends StatelessWidget {
 
   /// begin <= now < end on the WALL CLOCK only: appointment begin/end carry
   /// stale parse-time dates, so their absolute difference is meaningless -
-  /// compare hour+minute minutes-of-day.
+  /// compare hour+minute minutes-of-day. The END is the span the LAYOUT
+  /// committed to ([_spanMin]): a 22:00→02:00 personal row renders as a
+  /// 90-min block whose raw wall endMin (120) is below any evening minute,
+  /// so the raw `minute >= endMin` compare hid the chip for a block the row
+  /// visibly occupies.
   Widget _runningChip(
       int minute, TimetableAppointment appointment, ThemeData theme) {
     final beginMin = appointment.begin.hour * 60 + appointment.begin.minute;
     final endMin = appointment.end.hour * 60 + appointment.end.minute;
-    if (beginMin > minute || minute >= endMin) return const SizedBox.shrink();
+    if (beginMin > minute || minute >= beginMin + _spanMin(appointment)) {
+      return const SizedBox.shrink();
+    }
     return BlockContainer(
         padding: const EdgeInsets.only(left: spaceSm),
         innerPadding: const EdgeInsets.fromLTRB(6, 3, 6, 3),
@@ -544,31 +585,43 @@ class TimetableDailyView extends StatelessWidget {
   Widget _ghostCard(BuildContext context, TimetableAppointment block,
       IcsChange change, double factor, int min) {
     final theme = Theme.of(context);
+    // same recipe as the lecture row (ClipRect + FittedBox scaleDown +
+    // top-left + min-size Column): a real gap is routinely 15-30 min =
+    // 13.5-27 px while the struck title + "entfällt" line measure ~45 px,
+    // so unclipped the ghost painted RenderFlex stripes over BOTH
+    // neighbouring lectures' text
     return Opacity(
       opacity: deadContentOpacity,
-      child: SizedBox(
-        height: min * factor,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-              defaultPagePadding, spaceSm, defaultPagePadding, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                change.title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    decoration: TextDecoration.lineThrough),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+      child: ClipRect(
+        child: SizedBox(
+          height: min * factor,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  defaultPagePadding, spaceSm, defaultPagePadding, 0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    change.title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        decoration: TextDecoration.lineThrough),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    L10n.t("timetable.ghostCancelled"),
+                    style: theme.textTheme.bodySmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
-              Text(
-                L10n.t("timetable.ghostCancelled"),
-                style: theme.textTheme.bodySmall,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -647,35 +700,63 @@ class _NowLinePainter extends CustomPainter {
           ..strokeWidth = 1.5);
     canvas.drawCircle(Offset(6, y), 2, Paint()..color = color);
 
+    // inside a content row's top strip the row's own "running · until"
+    // chip owns the right end - two green texts may never overlap;
+    // deeper in the block the label returns
+    final (stripTop, stripBottom) = _stripOfMinute(minute);
+    if (_contentAt(minute) && y - stripTop < 40) return;
     final chip = TextPainter(textDirection: TextDirection.ltr)
       ..text = TextSpan(text: _hm(minute), style: textStyle)
       ..layout();
     // above the line, unless it would climb out of the block (or the line
-    // sits on a gap seam - distance 0) -> flip below
-    final below = y - _topOfMinute(minute) < 26;
+    // sits on a gap seam - distance 0) -> flip below, but ONLY while the
+    // flipped chip still fits inside the block: on a block shorter than
+    // chip + margins (anything under ~40 min) the old unconditional flip
+    // painted the HH:MM straight over the NEXT row's first text line, as
+    // canvas draws below here are not clipped; when it would not fit, the
+    // label stays above the line - grazing one's own top edge beats
+    // invading a neighbour (a zero-height gap seam likewise keeps the
+    // label above the seam, out of the next row's running-chip strip)
+    final below = y - stripTop < 26 && y + 6 + chip.height <= stripBottom;
     chip.paint(
         canvas,
         Offset(size.width - chip.width - defaultPagePadding,
             below ? y + 6 : y - chip.height - 6));
   }
 
-  /// y of the top edge of the block (or seam) the minute resolved into;
-  /// mirrors [nowLineY]'s walk. Only consulted for painted minutes.
-  double _topOfMinute(int minute) {
+  /// (top, bottom) y of the block strip (or seam) the minute resolved
+  /// into; mirrors [nowLineY]'s walk. [bottom] excludes the 1px border
+  /// strip, i.e. it is where the next row's text begins. Only consulted
+  /// for painted minutes.
+  (double, double) _stripOfMinute(int minute) {
     double top = 0;
     for (var i = 0; i < blocks.length; i++) {
       final b = blocks[i];
       final bottom = top + b.durationMin * pxPerMin;
       if (minute >= b.beginMin) {
-        if (minute < b.beginMin + b.durationMin) return top;
-        if (i + 1 >= blocks.length) return top;
+        if (minute < b.beginMin + b.durationMin) return (top, bottom);
+        if (i + 1 >= blocks.length) return (top, bottom);
         if (minute < blocks[i + 1].beginMin) {
-          return bottom + (b.border ? 1 : 0);
+          final seam = bottom + (b.border ? 1 : 0);
+          return (seam, seam);
         }
       }
       top = bottom + (b.border ? 1 : 0);
     }
-    return 0;
+    return (0, 0); // before the first block - paint() returns earlier
+  }
+
+  /// Whether the minute resolves INSIDE a content block (one that may
+  /// paint the running chip); dead-gap seam snaps do NOT count.
+  bool _contentAt(int minute) {
+    for (final b in blocks) {
+      if (b.content &&
+          minute >= b.beginMin &&
+          minute < b.beginMin + b.durationMin) {
+        return true;
+      }
+    }
+    return false;
   }
 
   @override

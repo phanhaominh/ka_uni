@@ -5,6 +5,25 @@ import 'package:kit_mobile/ilias/models/ilias_models.dart';
 import 'package:kit_mobile/notifications/mei_notifications.dart';
 import 'package:kit_mobile/state_management/ilias/ilias_watcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// The watcher reads/writes its seen key via the LIVE async API, so the
+// test store must back exactly that platform interface. Its in-memory
+// fake ships with the platform-interface package (transitive dep of
+// shared_preferences; importing it beats adding a pub dep for tests).
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
+
+/// Platform store whose writes die: proves the watcher never pushes before
+/// the seen-marking is durable.
+base class _WriteFailingStore extends InMemorySharedPreferencesAsync {
+  _WriteFailingStore.withData(Map<String, Object> data) : super.withData(data);
+
+  @override
+  Future<bool> setString(
+          String key, String value, SharedPreferencesOptions options) async =>
+      throw StateError("platform write died");
+}
 
 IliasAnnouncement _a(String title,
         {int ref = 4711, String course = "Analysis I", DateTime? when}) =>
@@ -18,16 +37,22 @@ IliasAnnouncement _a(String title,
 void main() {
   late List<(String, String)> pushed;
 
+  late InMemorySharedPreferencesAsync store;
+  const opts = SharedPreferencesOptions();
+
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    store = InMemorySharedPreferencesAsync.empty();
+    SharedPreferencesAsyncPlatform.instance = store;
     pushed = [];
     IliasWatcher.notify = (title, body) async => pushed.add((title, body));
   });
   tearDown(() => IliasWatcher.notify = MeiNotifications.notifyChange);
 
+  Future<void> seedRaw(String raw) =>
+      store.setString(IliasWatcher.seenKey, raw, opts);
+
   Future<List<String>> stored() async {
-    final raw = (await SharedPreferences.getInstance())
-        .getString(IliasWatcher.seenKey);
+    final raw = await store.getString(IliasWatcher.seenKey, opts);
     return raw == null ? [] : (jsonDecode(raw) as List).cast<String>();
   }
 
@@ -85,12 +110,9 @@ void main() {
   });
 
   test("seen list trims to the newest 300", () async {
-    SharedPreferences.setMockInitialValues({
-      IliasWatcher.seenKey:
-          jsonEncode([for (var i = 0; i < 299; i++) "9|alt$i"]),
-    });
-    await IliasWatcher
-        .diffAndNotify([for (var i = 0; i < 5; i++) _a("neu $i")]);
+    await seedRaw(jsonEncode([for (var i = 0; i < 299; i++) "9|alt$i"]));
+    await IliasWatcher.diffAndNotify(
+        [for (var i = 0; i < 5; i++) _a("neu $i")]);
     final s = await stored();
     expect(s.length, 300);
     expect(s.first, "9|alt4"); // four oldest dropped
@@ -100,10 +122,7 @@ void main() {
 
   test("cap trim keeps ids still on the board: no resurrection re-notify",
       () async {
-    SharedPreferences.setMockInitialValues({
-      IliasWatcher.seenKey:
-          jsonEncode([for (var i = 0; i < 299; i++) "9|alt$i"]),
-    });
+    await seedRaw(jsonEncode([for (var i = 0; i < 299; i++) "9|alt$i"]));
     // "9|alt0" is the oldest id AND still announced: a plain age-trim
     // drops it, and the next batch that still carries it re-notifies it
     final board = [
@@ -144,9 +163,8 @@ void main() {
     expect(pushed, isEmpty);
   });
 
-  test("corrupt store re-seeds silently instead of re-notifying all",
-      () async {
-    SharedPreferences.setMockInitialValues({IliasWatcher.seenKey: "{oops"});
+  test("corrupt store re-seeds silently instead of re-notifying all", () async {
+    await seedRaw("{oops");
     await IliasWatcher.diffAndNotify([_a("Alles beim alten")]);
     expect(pushed, isEmpty);
     expect(await stored(), ["4711|alles beim alten"]);
@@ -165,8 +183,8 @@ void main() {
   });
 
   test("first-run seed also caps at 300 ids", () async {
-    await IliasWatcher
-        .diffAndNotify([for (var i = 0; i < 500; i++) _a("Ankündigung $i")]);
+    await IliasWatcher.diffAndNotify(
+        [for (var i = 0; i < 500; i++) _a("Ankündigung $i")]);
     expect(pushed, isEmpty);
     final s = await stored();
     expect(s.length, 300);
@@ -174,8 +192,7 @@ void main() {
   });
 
   test("wrong-typed store counts as corrupt: re-seeds silently", () async {
-    SharedPreferences.setMockInitialValues(
-        {IliasWatcher.seenKey: jsonEncode([1, 2, 3])});
+    await seedRaw(jsonEncode([1, 2, 3]));
     await IliasWatcher.diffAndNotify([_a("Übung 7")]);
     // "[1,2,3]" coerced to ids "1","2","3" would diff against never-matching
     // junk and re-notify the whole board through the back door
@@ -200,15 +217,14 @@ void main() {
       IliasWatcher.diffAndNotify([_a("Rennen 1"), _a("Rennen 2")]),
       IliasWatcher.diffAndNotify([_a("Rennen 1"), _a("Rennen 2")]),
     ]);
-    expect(pushed.length, 2); // each exactly once, the second call re-pushed nothing
+    expect(pushed.length,
+        2); // each exactly once, the second call re-pushed nothing
   });
 
   test("logout mid-flight aborts before the remaining pushes", () async {
     final epoch = MeiNotifications.teardownEpoch;
     try {
-      SharedPreferences.setMockInitialValues({
-        IliasWatcher.seenKey: jsonEncode(["4711|basis"]),
-      });
+      await seedRaw(jsonEncode(["4711|basis"]));
       IliasWatcher.notify = (title, body) async {
         pushed.add((title, body));
         // emulate the logout landing mid-loop, like cancelAllScheduled does
@@ -244,5 +260,37 @@ void main() {
         stillOurs: () async => false);
     expect(pushed, isEmpty);
     expect(await stored(), isEmpty);
+  });
+
+  test("seen-marking is durable BEFORE the first push (cross-isolate dedupe)",
+      () async {
+    // the ~30-min poll diffs the SAME key in its own isolate while this
+    // run is mid-flight: at the instant a heads-up goes up, the ids must
+    // already be claimed, or both isolates push the same announcement
+    await seedRaw(jsonEncode(["4711|basis"]));
+    final claimsAtPush = <List<String>>[];
+    IliasWatcher.notify = (title, body) async {
+      // exactly what a concurrent poll isolate would diff against NOW
+      final raw = await store.getString(IliasWatcher.seenKey, opts);
+      claimsAtPush.add((jsonDecode(raw!) as List).cast<String>());
+      pushed.add((title, body));
+    };
+    await IliasWatcher.diffAndNotify([_a("basis"), _a("neu 1"), _a("neu 2")]);
+    expect(pushed.map((p) => p.$2), ["neu 1", "neu 2"]);
+    expect(claimsAtPush, hasLength(2));
+    for (final seen in claimsAtPush) {
+      expect(seen, containsAll(["4711|neu 1", "4711|neu 2"]));
+    }
+  });
+
+  test("a claim that does not persist pushes nothing, retries later", () async {
+    await seedRaw(jsonEncode([])); // past the first run, nothing seen
+    SharedPreferencesAsyncPlatform.instance =
+        _WriteFailingStore.withData({IliasWatcher.seenKey: "[]"});
+    await IliasWatcher.diffAndNotify([_a("zu früh")]);
+    expect(pushed, isEmpty); // show() only ever runs on a durable claim
+    SharedPreferencesAsyncPlatform.instance = store;
+    await IliasWatcher.diffAndNotify([_a("zu früh")]);
+    expect(pushed.map((p) => p.$2), ["zu früh"]); // delayed, never lost
   });
 }

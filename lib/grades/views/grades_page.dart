@@ -34,35 +34,46 @@ class GradesPage extends StatelessWidget {
           final toasts = context.read<ToastsProvider>();
           // moduleRows are produced by exactly this scrape; the whole
           // forceRefetchEverything cascade would be overkill for one page
+          //
+          // cm.ready can NOT report this pull's outcome: it is
+          // deliberately never cleared once the first schedule ever
+          // loaded, so the old `!cm.ready` toast could never fire and
+          // failures stayed silent forever. scheduleFetchFailed is set
+          // by _fetchScheduleInner's silent early-return failure paths
+          // and reset here before the fetch starts.
+          cm.scheduleFetchFailed = false;
           await cm.fetchSchedule(refreshSession: false);
-          if (!cm.ready) toasts.showTextToast(L10n.t("grades.loadError"));
+          if (cm.scheduleFetchFailed) {
+            toasts.showTextToast(L10n.t("grades.loadError"));
+          }
         },
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 130),
           children: [
-          if (book.modules.isEmpty)
-            // not logged in / tree not scraped yet: say so instead of an
-            // unexplained wall of empty cards
-            BlockContainer(
-              child: Text(L10n.t("grades.empty"),
-                  style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),
-            )
-          else ...[
-            _sopCard(context, book, scheme),
-            const SizedBox(height: 8),
-            _summaryCard(context, book, scheme),
-            // failed first: those are the attempts the student must act on
-            if (book.failed.isNotEmpty)
-              _section(context, L10n.t("grades.sectionFailed"), book.failed,
-                  danger: true),
-            if (book.passed.isNotEmpty)
-              _section(context, L10n.t("grades.sectionPassed"), book.passed),
-            if (book.pending.isNotEmpty)
-              _section(context, L10n.t("grades.sectionPending"), book.pending,
-                  pending: true),
+            if (book.modules.isEmpty)
+              // not logged in / tree not scraped yet: say so instead of an
+              // unexplained wall of empty cards
+              BlockContainer(
+                child: Text(L10n.t("grades.empty"),
+                    style: TextStyle(
+                        fontSize: 13, color: scheme.onSurfaceVariant)),
+              )
+            else ...[
+              _sopCard(context, book, scheme),
+              const SizedBox(height: 8),
+              _summaryCard(context, book, scheme),
+              // failed first: those are the attempts the student must act on
+              if (book.failed.isNotEmpty)
+                _section(context, L10n.t("grades.sectionFailed"), book.failed,
+                    danger: true),
+              if (book.passed.isNotEmpty)
+                _section(context, L10n.t("grades.sectionPassed"), book.passed),
+              if (book.pending.isNotEmpty)
+                _section(context, L10n.t("grades.sectionPending"), book.pending,
+                    pending: true),
+            ],
           ],
-        ],
         ),
       ),
     );
@@ -92,25 +103,29 @@ class GradesPage extends StatelessWidget {
               value: book.sopProgress,
               minHeight: 8,
               backgroundColor: scheme.surfaceContainerHighest,
-              valueColor:
-                  AlwaysStoppedAnimation(book.sopReached ? green : scheme.primary),
+              valueColor: AlwaysStoppedAnimation(
+                  book.sopReached ? green : scheme.primary),
             ),
           ),
           const SizedBox(height: 8),
           Text(
               L10n.t("grades.sopProgress",
                   [_deDecimal(book.totalEcts), _whole(GradeBook.sopTarget)]),
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              style:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
           const SizedBox(height: 2),
           Text(statusLabel,
               style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600, color: statusColor)),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: statusColor)),
         ],
       ),
     );
   }
 
-  Widget _summaryCard(BuildContext context, GradeBook book, ColorScheme scheme) {
+  Widget _summaryCard(
+      BuildContext context, GradeBook book, ColorScheme scheme) {
     final green =
         CupertinoDynamicColor.resolve(CupertinoColors.systemGreen, context);
     final average = book.average;
@@ -142,11 +157,9 @@ class GradesPage extends StatelessWidget {
               _chip(L10n.t("grades.countPassed", [book.passed.length]),
                   book.passed.isEmpty ? scheme.outline : green),
               // only real failures may shout red
-              _chip(
-                  L10n.t("grades.countFailed", [book.failed.length]),
+              _chip(L10n.t("grades.countFailed", [book.failed.length]),
                   book.failed.isEmpty ? scheme.outline : scheme.error),
-              _chip(
-                  L10n.t("grades.countPending", [book.pending.length]),
+              _chip(L10n.t("grades.countPending", [book.pending.length]),
                   book.pending.isEmpty ? scheme.outline : scheme.secondary),
             ],
           ),
@@ -162,7 +175,8 @@ class GradesPage extends StatelessWidget {
               style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
           const SizedBox(height: 2),
           Text(value,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
         ],
       );
 
@@ -173,7 +187,8 @@ class GradesPage extends StatelessWidget {
         ? scheme.error
         : pending
             ? scheme.outline
-            : CupertinoDynamicColor.resolve(CupertinoColors.systemGreen, context);
+            : CupertinoDynamicColor.resolve(
+                CupertinoColors.systemGreen, context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -217,8 +232,8 @@ class GradesPage extends StatelessWidget {
         children: [
           Expanded(
             child: Text(e.title,
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w500)),
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
           ),
           const SizedBox(width: 8),
           // Flexible: the grade cell is arbitrary unvalidated text from the
@@ -251,11 +266,9 @@ class GradesPage extends StatelessWidget {
 
   /// "30,0" — German one-decimal style (comma); the app renders grades
   /// German-first in both UI languages, so no locale lookup.
-  static String _deDecimal(num v) =>
-      v.toStringAsFixed(1).replaceAll(".", ",");
+  static String _deDecimal(num v) => v.toStringAsFixed(1).replaceAll(".", ",");
 
   /// ECTS are integral in the overwhelming majority of cases: "6 CP",
   /// "12 CP"; only real halves get the German-decimal form ("7,5 CP").
-  static String _whole(num v) =>
-      _deDecimal(v).replaceAll(RegExp(r",0$"), "");
+  static String _whole(num v) => _deDecimal(v).replaceAll(RegExp(r",0$"), "");
 }

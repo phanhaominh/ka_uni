@@ -35,6 +35,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   bool _loggingOut = false;
+
   /// lets the cache-size row re-walk after the cache manager pops:
   /// deletions there otherwise left a stale "12.3 MB" on screen
   final GlobalKey<_CacheSizeTextState> _cacheSizeKey =
@@ -60,247 +61,246 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
       body: MaxWidthBody(
         child: SingleChildScrollView(
-        child: Container(
-          // extra bottom room: the floating dock pill overlays the scroll
-          // view, and the last rows (Cache/Log out) must reach above it
-          padding: defaultPagePaddingEdgeInsetsAll.copyWith(bottom: 150),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              // SettingsSectionTitle(title: "Interface"),
-              //
-              // BlockContainer(
-              //   child: Column(
-              //     children: [
-              //       SettingRow(
-              //         title: "LiquidAss",
-              //         trailing: CupertinoSwitch(
-              //           value: settingsVM.liquidAssEverywhere.value,
-              //           onChanged: settingsVM.liquidAssEverywhere.set
-              //         )
-              //       )
-              //     ],
-              //   ),
-              // ),
-
-              SettingsSectionTitle(title: L10n.t("settings.sectionHomepage")),
-
-              BlockContainer(
-                child: Column(
-                  children: [
-                    SettingRow(
-                        title: L10n.t("settings.showProfile"),
-                        // tapping the card toggles the switch, as on the
-                        // platform's own settings rows
-                        onTap: () => settingsVM.showingProfile
-                            .set(!settingsVM.showingProfile.value),
-                        trailing: CupertinoSwitch(
-                            value: settingsVM.showingProfile.value,
-                            onChanged: settingsVM.showingProfile.set)),
-                    SettingRow(
-                        title: L10n.t("settings.showAvgGrade"),
-                        onTap: () => settingsVM.showingAvgMark
-                            .set(!settingsVM.showingAvgMark.value),
-                        trailing: CupertinoSwitch(
-                            value: settingsVM.showingAvgMark.value,
-                            onChanged: settingsVM.showingAvgMark.set)),
-                  ],
-                ),
-              ),
-
-              BlockContainer(
-                child: Column(
-                  children: [
-                    SettingRow(
-                        title: L10n.t("settings.language"),
-                        trailing: LanguageDropdown(
-                            languageSetting: settingsVM.language)),
-                    SettingRow(
-                        title: L10n.t("settings.appearance"),
-                        trailing: MultipleChoiceSettingDropdown(
-                            multipleChoiceSetting: settingsVM.theme,
-                            labels: {
-                              "system": L10n.t("settings.themeSystem"),
-                              "light": L10n.t("settings.themeLight"),
-                              "dark": L10n.t("settings.themeDark"),
-                            })),
-                  ],
-                ),
-              ),
-
-              SettingsSectionTitle(title: "ILIAS"),
-
-              BlockContainer(
-                child: Column(
-                  children: [
-                    SettingRow(
-                        title: L10n.t("settings.iliasStartPage"),
-                        trailing: MultipleChoiceSettingDropdown(
-                            multipleChoiceSetting: settingsVM.defaultIliasPage,
-                            labels: {
-                              "Dashboard": L10n.t("settings.iliasPageDashboard"),
-                              "Meine Kurse & Gruppen":
-                                  L10n.t("settings.iliasPageCourses"),
-                            })),
-                  ],
-                ),
-              ),
-
-              SettingsSectionTitle(
-                  title: L10n.t("settings.sectionOwnTimetable")),
-
-              BlockContainer(
-                child: const _OwnIcsSection(),
-              ),
-
-              SettingsSectionTitle(title: L10n.t("settings.sectionFileCache")),
-
-              BlockContainer(
-                // the whole card opens the cache manager: before, only the
-                // small "Manage" label responded; it stays as the visual
-                // affordance for the same action
-                child: Semantics(
-                  button: true,
-                  label: L10n.t("settings.sectionFileCache"),
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () async {
-                      await Navigator.of(context).push(MaterialPageRoute(
-                          builder: (BuildContext context) =>
-                              FilesCachePage()));
-                      _cacheSizeKey.currentState?.refresh();
-                    },
-                    child: ConstrainedBox(
-                    // >= 48 dp tap target
-                    constraints: const BoxConstraints(minHeight: 48),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        SettingRow(
-                          title: L10n.t("settings.cacheSize"),
-                          trailing: _CacheSizeText(key: _cacheSizeKey),
-                        ),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              L10n.t("settings.manage"),
-                              style: TextStyle(
-                                  color:
-                                      Theme.of(context).colorScheme.primary),
-                            ),
-                            Icon(CupertinoIcons.chevron_forward,
-                                size: 14,
-                                color:
-                                    Theme.of(context).colorScheme.primary),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                ),
-              ),
-
-              // internal fetch telemetry (full Studienverlauf tree with
-              // admission verdicts) must not ship in release builds
-              if (kDebugMode) ...[
-                SettingsSectionTitle(title: "Debug"),
+          child: Container(
+            // extra bottom room: the floating dock pill overlays the scroll
+            // view, and the last rows (Cache/Log out) must reach above it
+            padding: defaultPagePaddingEdgeInsetsAll.copyWith(bottom: 150),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                SettingsSectionTitle(title: L10n.t("settings.sectionHomepage")),
 
                 BlockContainer(
-                  // whole card (row and hint text) opens the debug page;
-                  // the chevron is decoration inheriting this action
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
+                  child: Column(
+                    children: [
+                      SettingRow(
+                          title: L10n.t("settings.showProfile"),
+                          // tapping the card toggles the switch, as on the
+                          // platform's own settings rows
+                          onTap: () => settingsVM.showingProfile
+                              .set(!settingsVM.showingProfile.value),
+                          trailing: CupertinoSwitch(
+                              value: settingsVM.showingProfile.value,
+                              onChanged: settingsVM.showingProfile.set)),
+                      SettingRow(
+                          title: L10n.t("settings.showAvgGrade"),
+                          onTap: () => settingsVM.showingAvgMark
+                              .set(!settingsVM.showingAvgMark.value),
+                          trailing: CupertinoSwitch(
+                              value: settingsVM.showingAvgMark.value,
+                              onChanged: settingsVM.showingAvgMark.set)),
+                    ],
+                  ),
+                ),
+
+                BlockContainer(
+                  child: Column(
+                    children: [
+                      SettingRow(
+                          title: L10n.t("settings.language"),
+                          trailing: LanguageDropdown(
+                              languageSetting: settingsVM.language)),
+                      SettingRow(
+                          title: L10n.t("settings.appearance"),
+                          trailing: MultipleChoiceSettingDropdown(
+                              multipleChoiceSetting: settingsVM.theme,
+                              labels: {
+                                "system": L10n.t("settings.themeSystem"),
+                                "light": L10n.t("settings.themeLight"),
+                                "dark": L10n.t("settings.themeDark"),
+                              })),
+                    ],
+                  ),
+                ),
+
+                SettingsSectionTitle(title: "ILIAS"),
+
+                BlockContainer(
+                  child: Column(
+                    children: [
+                      SettingRow(
+                          title: L10n.t("settings.iliasStartPage"),
+                          trailing: MultipleChoiceSettingDropdown(
+                              multipleChoiceSetting:
+                                  settingsVM.defaultIliasPage,
+                              labels: {
+                                "Dashboard":
+                                    L10n.t("settings.iliasPageDashboard"),
+                                "Meine Kurse & Gruppen":
+                                    L10n.t("settings.iliasPageCourses"),
+                              })),
+                    ],
+                  ),
+                ),
+
+                SettingsSectionTitle(
+                    title: L10n.t("settings.sectionOwnTimetable")),
+
+                BlockContainer(
+                  child: const _OwnIcsSection(),
+                ),
+
+                SettingsSectionTitle(
+                    title: L10n.t("settings.sectionFileCache")),
+
+                BlockContainer(
+                  // the whole card opens the cache manager: before, only the
+                  // small "Manage" label responded; it stays as the visual
+                  // affordance for the same action
+                  child: Semantics(
+                    button: true,
+                    label: L10n.t("settings.sectionFileCache"),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () async {
+                        await Navigator.of(context).push(MaterialPageRoute(
                             builder: (BuildContext context) =>
-                                ModuleTreeDebugPage(
-                                    campusManager: vm.campusManager))),
-                    child: ConstrainedBox(
-                      // >= 48 dp tap target
-                      constraints: const BoxConstraints(minHeight: 48),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SettingRow(
-                            title: L10n.t("settings.debugFetch"),
-                            trailing: const Icon(
-                                CupertinoIcons.chevron_forward),
-                          ),
-                          Text(
-                            L10n.t("settings.debugFetchHint"),
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .outline),
-                          ),
-                        ],
+                                FilesCachePage()));
+                        _cacheSizeKey.currentState?.refresh();
+                      },
+                      child: ConstrainedBox(
+                        // >= 48 dp tap target
+                        constraints: const BoxConstraints(minHeight: 48),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            SettingRow(
+                              title: L10n.t("settings.cacheSize"),
+                              trailing: _CacheSizeText(key: _cacheSizeKey),
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  L10n.t("settings.manage"),
+                                  style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary),
+                                ),
+                                Icon(CupertinoIcons.chevron_forward,
+                                    size: 14,
+                                    color:
+                                        Theme.of(context).colorScheme.primary),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ],
 
-              const SizedBox(height: 16),
-              OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.error,
-                    side:
-                        BorderSide(color: Theme.of(context).colorScheme.error),
+                // internal fetch telemetry (full Studienverlauf tree with
+                // admission verdicts) must not ship in release builds
+                if (kDebugMode) ...[
+                  SettingsSectionTitle(title: "Debug"),
+                  BlockContainer(
+                    // whole card (row and hint text) opens the debug page;
+                    // the chevron is decoration inheriting this action
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (BuildContext context) =>
+                              ModuleTreeDebugPage(
+                                  campusManager: vm.campusManager))),
+                      child: ConstrainedBox(
+                        // >= 48 dp tap target
+                        constraints: const BoxConstraints(minHeight: 48),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SettingRow(
+                              title: L10n.t("settings.debugFetch"),
+                              trailing:
+                                  const Icon(CupertinoIcons.chevron_forward),
+                            ),
+                            Text(
+                              L10n.t("settings.debugFetchHint"),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outline),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                  child: Text(L10n.t("settings.logout")),
-                  // logout is a 5-10 s multi-vendor wipe; a second tap
-                  // mid-flight would re-enter the wipe half-done
-                  onPressed: _loggingOut
-                      ? null
-                      : () async {
-                          // destructive action: never start the wipe
-                          // without an explicit confirmation (same dialog
-                          // pattern as the file deletion confirm)
-                          if (!await _confirmLogout(context)) return;
-                          // the dialog stays open for user latency; the
-                          // page may be gone when it closes
-                          if (!mounted) return;
-                          final toastsProvider = Provider.of<ToastsProvider>(
-                              context,
-                              listen: false);
-                          setState(() => _loggingOut = true);
-                          try {
-                            await credsVM.logout(
-                                vm, context.read<TutorialManager>());
-                            // logout is a 5-10 s multi-vendor wipe; without a
-                            // toast the button looks broken mid-flight
-                            if (context.mounted) {
-                              toastsProvider.showTextToast(
-                                  L10n.t("settings.loggedOut"));
+                ],
+
+                const SizedBox(height: 16),
+                OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.error,
+                      side: BorderSide(
+                          color: Theme.of(context).colorScheme.error),
+                    ),
+                    child: Text(L10n.t("settings.logout")),
+                    // logout is a 5-10 s multi-vendor wipe; a second tap
+                    // mid-flight would re-enter the wipe half-done
+                    onPressed: _loggingOut
+                        ? null
+                        : () async {
+                            // destructive action: never start the wipe
+                            // without an explicit confirmation (same dialog
+                            // pattern as the file deletion confirm)
+                            if (!await _confirmLogout(context)) return;
+                            // the dialog stays open for user latency; the
+                            // page may be gone when it closes
+                            if (!mounted) return;
+                            final toastsProvider = Provider.of<ToastsProvider>(
+                                context,
+                                listen: false);
+                            setState(() => _loggingOut = true);
+                            try {
+                              await credsVM.logout(
+                                  vm, context.read<TutorialManager>());
+                              // logout is a 5-10 s multi-vendor wipe; without a
+                              // toast the button looks broken mid-flight
+                              if (context.mounted) {
+                                toastsProvider.showTextToast(
+                                    L10n.t("settings.loggedOut"));
+                              }
+                            } on PartialLogoutException catch (e) {
+                              // the local wipe DID succeed - the user is on
+                              // the login form; "logout failed, try again"
+                              // would be a lie with no retry path. This is
+                              // the residue warning, kept distinct on
+                              // purpose (raw step names stay in the console)
+                              if (kDebugMode) {
+                                print("logout residue: ${e.failures}");
+                              }
+                              if (context.mounted) {
+                                toastsProvider.showTextToast(
+                                    L10n.t("settings.loggedOutPartial"));
+                              }
+                            } on Object catch (e) {
+                              // never leak raw exception text into a toast;
+                              // it is for the console, not the user
+                              if (kDebugMode) {
+                                print("Logout failed: $e");
+                              }
+                              if (context.mounted) {
+                                toastsProvider.showTextToast(
+                                    L10n.t("settings.logoutFailed"));
+                              }
+                            } finally {
+                              // on success logout navigates away: only touch
+                              // the element if this page is still alive
+                              if (mounted) {
+                                setState(() => _loggingOut = false);
+                              }
                             }
-                          } on Object catch (e) {
-                            // never leak raw exception text into a toast;
-                            // it is for the console, not the user
-                            if (kDebugMode) {
-                              print("Logout failed: $e");
-                            }
-                            if (context.mounted) {
-                              toastsProvider.showTextToast(
-                                  L10n.t("settings.logoutFailed"));
-                            }
-                          } finally {
-                            // on success logout navigates away: only touch
-                            // the element if this page is still alive
-                            if (mounted) {
-                              setState(() => _loggingOut = false);
-                            }
-                          }
-                        }),
-            ],
+                          }),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -367,10 +367,11 @@ class _OwnIcsSectionState extends State<_OwnIcsSection> {
   }
 
   String _loadedStatus(CampusManager cm) {
-    final n = RegExp("BEGIN:VEVENT", dotAll: true)
-        .allMatches(cm.personalIcs)
-        .length;
-    return n == 0 ? L10n.t("settings.ownIcsNone") : L10n.t("settings.ownIcsLoaded", [n]);
+    final n =
+        RegExp("BEGIN:VEVENT", dotAll: true).allMatches(cm.personalIcs).length;
+    return n == 0
+        ? L10n.t("settings.ownIcsNone")
+        : L10n.t("settings.ownIcsLoaded", [n]);
   }
 
   Future<void> _run(Future<String?> Function() op, {bool clear = false}) async {
@@ -399,7 +400,12 @@ class _OwnIcsSectionState extends State<_OwnIcsSection> {
       if (clear) _url.text = cm.personalIcsUrl;
     });
     if (clear) {
-      toasts.showTextToast(L10n.t("settings.ownIcsCleared"));
+      // honest branch: a throwing clearPersonalIcs (dead prefs, locked
+      // storage) must not hide behind the success toast while the import
+      // is still merged into every calendar on the device
+      toasts.showTextToast(err == null
+          ? L10n.t("settings.ownIcsCleared")
+          : L10n.t("settings.ownIcsErrorClear"));
     } else if (err == "bad") {
       toasts.showTextToast(L10n.t("settings.ownIcsErrorBad"));
     } else if (err == "fetch") {
@@ -431,14 +437,22 @@ class _OwnIcsSectionState extends State<_OwnIcsSection> {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
+          // German intrinsic widths of the three actions (~380-430 dp) blew
+          // the ~301 dp card budget at DEFAULT scale: "Entfernen" rendered
+          // past the card edge. Save/import share one Wrap (it wraps before
+          // anything clips); clear lives on its own right-aligned row, so
+          // the destructive action also no longer sits flush against
+          // "Datei importieren…". TextButton keeps its >=44 dp tap height.
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               FilledButton(
                   onPressed: _busy
                       ? null
-                      : () => _run(() => cm(context).setPersonalIcsFromUrl(_url.text)),
+                      : () => _run(
+                          () => cm(context).setPersonalIcsFromUrl(_url.text)),
                   child: Text(L10n.t("settings.ownIcsSave"))),
-              const SizedBox(width: 8),
               OutlinedButton(
                   onPressed: _busy
                       ? null
@@ -450,16 +464,18 @@ class _OwnIcsSectionState extends State<_OwnIcsSection> {
                             );
                             final bytes = picked?.files.single.bytes;
                             if (bytes == null) return "cancelled";
-                            return cm(context)
-                                .setPersonalIcsFromRaw(
-                                    utf8.decode(bytes, allowMalformed: true));
+                            return cm(context).setPersonalIcsFromRaw(
+                                utf8.decode(bytes, allowMalformed: true));
                           }),
                   child: Text(L10n.t("settings.ownIcsFile"))),
-              const Spacer(),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
               TextButton(
-                  onPressed: _busy
-                      ? null
-                      : () => _run(() async => null, clear: true),
+                  onPressed:
+                      _busy ? null : () => _run(() async => null, clear: true),
                   child: Text(L10n.t("settings.ownIcsClear"))),
             ],
           ),
@@ -546,9 +562,17 @@ class SettingRow extends StatelessWidget {
     final row = Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          title,
-          style: theme.textTheme.bodyMedium,
+        // the bare title + 20 gap + fixed CupertinoSwitch overflowed at
+        // large font scales ("Durchschnittsnote anzeigen"…); Flexible with
+        // a one-line ellipsis shrinks the title instead of pushing the
+        // switch off the card (same rule profile_view documents)
+        Flexible(
+          child: Text(
+            title,
+            style: theme.textTheme.bodyMedium,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         SizedBox(
           width: 20,
@@ -601,13 +625,11 @@ class SettingsSectionTitle extends StatelessWidget {
 
 /// Popup-menu row for dropdowns: a leading check marks the active value,
 /// because while the menu is open it covers the row that shows it.
-Widget _dropdownItemLabel(
-    BuildContext context, {required String label, required bool selected}) {
+Widget _dropdownItemLabel(BuildContext context,
+    {required String label, required bool selected}) {
   return Row(
     children: [
-      selected
-          ? const Icon(Icons.check, size: 18)
-          : const SizedBox(width: 18),
+      selected ? const Icon(Icons.check, size: 18) : const SizedBox(width: 18),
       const SizedBox(width: 6),
       Expanded(
         child: Text(

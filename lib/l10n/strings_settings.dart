@@ -27,6 +27,9 @@ const Map<String, String> de_settings = {
   "settings.logout": "Ausloggen",
   "settings.loggedOut": "Ausgeloggt, alle Daten gelöscht",
   "settings.logoutFailed": "Ausloggen fehlgeschlagen – bitte erneut versuchen",
+  "settings.loggedOutPartial":
+      "Ausgeloggt – einige Daten konnten nicht vollständig gelöscht werden (erneut versuchen)",
+  "settings.ownIcsErrorClear": "Kalender konnte nicht entfernt werden",
   "settings.cancel": "Abbrechen",
   "settings.logoutConfirmTitle": "Ausloggen?",
   "settings.logoutConfirmBody":
@@ -35,10 +38,12 @@ const Map<String, String> de_settings = {
   "settings.debugFetch": "Modul-Baum (Debug)",
   "settings.debugFetchHint":
       "Zeigt jeden Modul-Eintrag des CampusKIT-Baums: Level, Treffer auf dem Stundenplan, geladene Seite. Lange drücken kopiert den Titel.",
-  "settings.debugTreeCopyHint": "Lange auf einen Titel drücken, um ihn zu kopieren.",
+  "settings.debugTreeCopyHint":
+      "Lange auf einen Titel drücken, um ihn zu kopieren.",
   "settings.debugTreeCopied": "„{0}“ kopiert",
   "settings.debugTreeNoPage": "(noch keine Seite geladen)",
-  "settings.debugTreeEmpty": "Noch kein Modul-Baum gelaufen – auf der Startseite ziehen",
+  "settings.debugTreeEmpty":
+      "Noch kein Modul-Baum gelaufen – auf der Startseite ziehen",
   "settings.debugTreeShown": "auf der Karte",
   "settings.debugTreeFeedMiss": "nicht auf dem Stundenplan",
   "settings.debugTreeClash": "Dublette - schon auf der Karte",
@@ -114,6 +119,9 @@ const Map<String, String> en_settings = {
   "settings.logoutFailed": "Logout failed - please try again",
   "settings.cancel": "Cancel",
   "settings.logoutConfirmTitle": "Log out?",
+  "settings.loggedOutPartial":
+      "Signed out - some data could not be erased fully (try again)",
+  "settings.ownIcsErrorClear": "Could not remove own calendar",
   "settings.logoutConfirmBody":
       "All locally stored data and files will be deleted from this device. You can log in again at any time.",
   // module-tree diagnostic (settings > Debug)

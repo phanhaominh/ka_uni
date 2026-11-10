@@ -1,6 +1,8 @@
 import 'package:html/dom.dart';
 import 'package:kit_mobile/parsing/util/remove_html_children.dart';
 
+import '../../l10n/l10n.dart';
+
 class ModuleInfoTableCell {
   String body = "";
   String link = "";
@@ -20,11 +22,11 @@ class ModuleInfoTableCell {
 
   static ModuleInfoTableCell parseFromHtml(Element node) {
     ModuleInfoTableCell cell = ModuleInfoTableCell(node: node.clone(true));
-    
+
     final spans = node.getElementsByTagName("span");
     final links = node.getElementsByTagName("a");
     final buttons = node.getElementsByTagName("button");
-    
+
     for (final spanElement in spans) {
       if (spanElement.classes.contains("date")) {
         removeHtmlChildren(spanElement);
@@ -36,7 +38,10 @@ class ModuleInfoTableCell {
     }
 
     for (final buttonNode in buttons) {
-      if (buttonNode.attributes.containsKey("name") && buttonNode.attributes["name"]!.toLowerCase().contains("eventfavorite")) {
+      if (buttonNode.attributes.containsKey("name") &&
+          buttonNode.attributes["name"]!
+              .toLowerCase()
+              .contains("eventfavorite")) {
         cell.markMeAsAddToFavorites();
       }
     }
@@ -93,6 +98,37 @@ class ModuleInfoTableCell {
     return dateStr.isNotEmpty && timeStr.isNotEmpty;
   }
 
+  static const _weekdayCodes = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+  static final _weekdayPrefix = RegExp(r"^\s*(Mo|Di|Mi|Do|Fr|Sa|So)\b[, ]*");
+
+  /// CampusKIT prepends the German weekday to every appointment label;
+  /// this is 1=Mo..7=So, or null when the label does not start with one.
+  int? get appointmentWeekday {
+    final match = _weekdayPrefix.firstMatch(dateStr);
+    return match == null ? null : _weekdayCodes.indexOf(match.group(1)!) + 1;
+  }
+
+  /// The appointment label behind the weekday prefix: a date
+  /// ("05.11.2026") or, for the rule line, "wöchentlich".
+  String get appointmentRest => dateStr.replaceFirst(_weekdayPrefix, "").trim();
+
+  /// CampusKIT's RRULE line ("Do, wöchentlich 16:00 - 18:00") versus the
+  /// expanded single dates it lists alongside. Unlike the webcal feed's
+  /// IcsOccurrence (tagged via its RRULE), the scraped appointment span
+  /// carries no machine tag - the literal word inside the date span IS
+  /// the data, so this is the one sanctioned place that reads it.
+  bool get isWeeklyRule => dateStr.contains("wöchentlich");
+
+  /// English UI: translate the two German words a label can consist of
+  /// ("Do, wöchentlich" -> "Thu, weekly"); the numeric date and the
+  /// "Uhr c.t." jargon stay exactly as served. German UI renders verbatim.
+  String get localisedDateLabel {
+    final weekday = appointmentWeekday;
+    if (!L10n.isEnglish || weekday == null) return dateStr;
+    return "${L10n.weekday(weekday)}, "
+        "${isWeeklyRule ? L10n.t("module.weekly") : appointmentRest}";
+  }
+
   /// Only a real https ILIAS URL may be hoisted as the course's ILIAS
   /// link: mirrors the host gate of CampusManager's manual-attach
   /// validator (_requireIliasUrl is private, so the check is duplicated
@@ -112,5 +148,4 @@ class ModuleInfoTableCell {
   static ModuleInfoTableCell get empty {
     return ModuleInfoTableCell();
   }
-
 }

@@ -13,6 +13,7 @@ import 'package:provider/provider.dart';
 
 import '../../module/models/module.dart';
 import '../notification_deep_links.dart';
+
 class KITNavContainer extends StatefulWidget {
   const KITNavContainer({super.key});
 
@@ -31,6 +32,13 @@ class _KITNavContainerState extends State<KITNavContainer> {
   /// paperclip, mirroring NotificationDeepLinkRouter.drain
   Route<dynamic>? _iliasRoute;
 
+  /// the router appearance token of THIS shell instance, taken when it
+  /// reports in; dispose hands it back so a superseded shell (fast
+  /// false→true profileReady flap: the new shell's first frame can beat
+  /// this one's AnimatedSwitcher exit) cannot kill the live shell's
+  /// ready flag and strand the deep-link queue forever
+  int? _shellToken;
+
   @override
   void initState() {
     super.initState();
@@ -39,15 +47,23 @@ class _KITNavContainerState extends State<KITNavContainer> {
     // screen IS the lifecycle signal to consume them (post-frame, because
     // the Navigator must have its first attached frame before pushes)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) NotificationDeepLinkRouter.instance.shellAppeared();
+      if (mounted)
+        _shellToken = NotificationDeepLinkRouter.instance.shellAppeared();
     });
   }
 
   @override
   void dispose() {
     // logout tears this scaffold down: later taps must queue again instead
-    // of pushing onto a Navigator that drops back to the login form
-    NotificationDeepLinkRouter.instance.shellGone();
+    // of pushing onto a Navigator that drops back to the login form, and
+    // session-dead pages get popped off (router-side, idempotent). A shell
+    // that never reported in has nothing to revoke — skip, a token-less
+    // shellGone would be the always-runs flavor and could kill a live
+    // sibling's flag during a flap.
+    final token = _shellToken;
+    if (token != null) {
+      NotificationDeepLinkRouter.instance.shellGone(appearedToken: token);
+    }
     super.dispose();
   }
 
@@ -76,37 +92,36 @@ class _KITNavContainerState extends State<KITNavContainer> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Flexible(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: ClipRRect(
-                borderRadius: bottomNavigationBorderRadius,
-                child: BackdropFilter(
-                  // sigma 14 was too weak under the pill: menu text behind
-                  // the dock stayed readable and read as ghosting
-                  filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: theme.isLightMode
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : Colors.black.withValues(alpha: 0.55),
-                      border: Border.all(
-                        color: Colors.grey.withValues(alpha: 0.15),
-                      ),
-                      borderRadius: bottomNavigationBorderRadius,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        customBottomNavBarButton(0, CupertinoIcons.settings,
-                            title: L10n.t("nav.settings")),
-                        customBottomNavBarButton(1, CupertinoIcons.home,
-                            title: L10n.t("nav.dashboard")),
-                        customBottomNavBarButton(2, null,
-                            // the real ILIAS brand tile: a generic glyph
-                            // (first a paperclip) never read as "ILIAS"
-                            assetIcon: "assets/images/ilias_icon.png",
-                            title: "ILIAS",
-                            customAction: () {
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: ClipRRect(
+                    borderRadius: bottomNavigationBorderRadius,
+                    child: BackdropFilter(
+                      // sigma 14 was too weak under the pill: menu text behind
+                      // the dock stayed readable and read as ghosting
+                      filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: theme.isLightMode
+                              ? Colors.white.withValues(alpha: 0.8)
+                              : Colors.black.withValues(alpha: 0.55),
+                          border: Border.all(
+                            color: Colors.grey.withValues(alpha: 0.15),
+                          ),
+                          borderRadius: bottomNavigationBorderRadius,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            customBottomNavBarButton(0, CupertinoIcons.settings,
+                                title: L10n.t("nav.settings")),
+                            customBottomNavBarButton(1, CupertinoIcons.home,
+                                title: L10n.t("nav.dashboard")),
+                            customBottomNavBarButton(2, null,
+                                // the real ILIAS brand tile: a generic glyph
+                                // (first a paperclip) never read as "ILIAS"
+                                assetIcon: "assets/images/ilias_icon.png",
+                                title: "ILIAS", customAction: () {
                               // one-page rule: ILIAS is a heavy SSO page
                               // holding its own WebView - burst clip taps
                               // must not stack copies of it; a tap while one
@@ -121,8 +136,8 @@ class _KITNavContainerState extends State<KITNavContainer> {
                                       name: IliasPageView.routeName),
                                   builder: (BuildContext context) =>
                                       IliasPageView(KITModule(),
-                                          PHPSESSID_Future: vm.iliasManager
-                                              .getPHPSESSID()));
+                                          PHPSESSID_Future:
+                                              vm.iliasManager.getPHPSESSID()));
                               Navigator.of(context).push(route);
                               _iliasRoute = route;
                               // popping frees the slot: the next tap pushes fresh
@@ -130,12 +145,12 @@ class _KITNavContainerState extends State<KITNavContainer> {
                                 if (_iliasRoute == route) _iliasRoute = null;
                               });
                             })
-                      ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
               ),
             ],
           ),
@@ -165,40 +180,40 @@ class _KITNavContainerState extends State<KITNavContainer> {
       // alone never announced ILIAS
       message: title,
       child: CupertinoButton(
-        padding: EdgeInsets.zero,
-        // dock icons are bare glyphs; without a label a screen reader
-        // announces nothing on the app's primary navigation
-        child: Semantics(
-          button: true,
-          label: title,
-          // TalkBack: announce which tab is active, not just that there is one
-          selected: targetIdx == _selectedPage,
-          child: assetIcon.isNotEmpty
-              // brand tiles keep their own colors: the grey "unselected"
-              // treatment only applies to template glyphs
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: Image.asset(assetIcon, height: 26, width: 26),
-                )
-              : Row(
-                  children: [
-                    Icon(
-                      icon,
-                      color: targetIdx == _selectedPage ? null : Colors.grey,
-                    ),
-                  ],
-                ),
-        ),
-        onPressed: () {
-          if (customAction != null) {
-            customAction();
-            return;
-          }
+          padding: EdgeInsets.zero,
+          // dock icons are bare glyphs; without a label a screen reader
+          // announces nothing on the app's primary navigation
+          child: Semantics(
+            button: true,
+            label: title,
+            // TalkBack: announce which tab is active, not just that there is one
+            selected: targetIdx == _selectedPage,
+            child: assetIcon.isNotEmpty
+                // brand tiles keep their own colors: the grey "unselected"
+                // treatment only applies to template glyphs
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Image.asset(assetIcon, height: 26, width: 26),
+                  )
+                : Row(
+                    children: [
+                      Icon(
+                        icon,
+                        color: targetIdx == _selectedPage ? null : Colors.grey,
+                      ),
+                    ],
+                  ),
+          ),
+          onPressed: () {
+            if (customAction != null) {
+              customAction();
+              return;
+            }
 
-          setState(() {
-            _selectedPage = targetIdx;
-          });
-        }),
+            setState(() {
+              _selectedPage = targetIdx;
+            });
+          }),
     );
   }
 }

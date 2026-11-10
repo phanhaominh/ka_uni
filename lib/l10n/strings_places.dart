@@ -41,8 +41,7 @@ const Map<String, String> en_places = {
   "places.distanceFrom": "≈ {0} from {1}",
   "places.website": "Open KIT website",
   "places.noResults": "No matches",
-  "places.noResultsHint":
-      "Tip: try just the building number, e.g. \"20.30\"",
+  "places.noResultsHint": "Tip: try just the building number, e.g. \"20.30\"",
   "places.categoryBuilding": "Building",
   "places.categoryInstitute": "Institute",
   "places.categoryFacility": "Facility",

@@ -20,8 +20,7 @@ const Map<String, String> de_grades = {
   "grades.sectionPending": "Ohne Note",
   "grades.pendingState": "offen",
   "grades.cp": "{0} CP",
-  "grades.empty":
-      "Noch keine Noten vorhanden.\n"
+  "grades.empty": "Noch keine Noten vorhanden.\n"
       "(Nicht angemeldet oder Studienverlauf noch nicht geladen.)",
 };
 
@@ -47,7 +46,6 @@ const Map<String, String> en_grades = {
   "grades.sectionPending": "In progress",
   "grades.pendingState": "open",
   "grades.cp": "{0} CP",
-  "grades.empty":
-      "No grades yet.\n"
+  "grades.empty": "No grades yet.\n"
       "(Not signed in, or the study record has not loaded yet.)",
 };

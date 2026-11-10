@@ -11,22 +11,22 @@ class CupertinoBorderedButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CupertinoButton(
-        padding: const EdgeInsets.symmetric(horizontal: 5),
-        sizeStyle: CupertinoButtonSize.small,
-        onPressed: () {
-          if (onPressed != null) {
-            onPressed!();
-          }
-        },
-        child: Row(
-          children: [
-            Text(title),
-            SizedBox(
-              width: 5,
-            ),
-            Icon(icon)
-          ],
-        ),
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      sizeStyle: CupertinoButtonSize.small,
+      onPressed: () {
+        if (onPressed != null) {
+          onPressed!();
+        }
+      },
+      child: Row(
+        children: [
+          Text(title),
+          SizedBox(
+            width: 5,
+          ),
+          Icon(icon)
+        ],
+      ),
     );
   }
 }

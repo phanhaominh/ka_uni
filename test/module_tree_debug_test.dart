@@ -35,7 +35,8 @@ HierarchicTableRow _row(String title, {int level = 4, int year = 0}) =>
 CampusManager _seededManager() {
   final cm = CampusManager(Student.empty, () {});
   cm.enrolledLectureTitles = {
-    CampusManager.lectureTitleKey("Advanced Mathematics I (Tutorial - Group 1)"),
+    CampusManager.lectureTitleKey(
+        "Advanced Mathematics I (Tutorial - Group 1)"),
     CampusManager.lectureTitleKey("Thermodynamics of Mechanical Engineers"),
   };
 
@@ -103,8 +104,8 @@ void main() {
     });
     addTearDown(() => tester.binding.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, null));
-    await tester.pumpWidget(
-        MaterialApp(home: ModuleTreeDebugPage(campusManager: _seededManager())));
+    await tester.pumpWidget(MaterialApp(
+        home: ModuleTreeDebugPage(campusManager: _seededManager())));
 
     expect(find.text("Modul-Baum (Debug)"), findsOneWidget);
 
@@ -121,10 +122,10 @@ void main() {
         isNot(outline));
 
     // admitted rows carry the check, the rest their rejection cause
-    expect(find.byIcon(CupertinoIcons.check_mark_circled_solid),
-        findsNWidgets(2));
-    expect(find.text("Thermodynamics of Mechanical Engineers"),
-        findsNWidgets(2));
+    expect(
+        find.byIcon(CupertinoIcons.check_mark_circled_solid), findsNWidgets(2));
+    expect(
+        find.text("Thermodynamics of Mechanical Engineers"), findsNWidgets(2));
     expect(find.text("nicht auf dem Stundenplan"), findsNWidgets(3));
     expect(find.text("Platzhalter - geladene Karte vorhanden"), findsOneWidget);
     expect(find.text("Dublette - schon auf der Karte"), findsOneWidget);
@@ -146,8 +147,8 @@ void main() {
     for (var i = 0; i < 400; i++) {
       cm.moduleRows.add(_row("Bulk Module $i"));
     }
-    await tester.pumpWidget(
-        MaterialApp(home: ModuleTreeDebugPage(campusManager: cm)));
+    await tester
+        .pumpWidget(MaterialApp(home: ModuleTreeDebugPage(campusManager: cm)));
 
     expect(find.text("Advanced Mathematics I"), findsNWidgets(2));
     expect(find.byType(GestureDetector).evaluate().length, lessThan(100));
@@ -156,8 +157,8 @@ void main() {
   testWidgets("the list is one snapshot taken when the page opened",
       (tester) async {
     final cm = _seededManager();
-    await tester.pumpWidget(
-        MaterialApp(home: ModuleTreeDebugPage(campusManager: cm)));
+    await tester
+        .pumpWidget(MaterialApp(home: ModuleTreeDebugPage(campusManager: cm)));
 
     // reopening the page re-reads; re-rendering the open page must not
     // re-run the per-row fuzzy feed matching for thousands of rows
@@ -184,8 +185,8 @@ void main() {
     await L10n.reload(prefOverride: "en");
     addTearDown(() => L10n.reload(prefOverride: "de"));
 
-    await tester.pumpWidget(
-        MaterialApp(home: ModuleTreeDebugPage(campusManager: _seededManager())));
+    await tester.pumpWidget(MaterialApp(
+        home: ModuleTreeDebugPage(campusManager: _seededManager())));
 
     expect(find.text("Module tree (debug)"), findsOneWidget);
     expect(find.text("(not a module)"), findsOneWidget);

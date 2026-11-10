@@ -19,8 +19,8 @@ void main() {
 
   group("new field parsing", () {
     test('live fixture: rank null, canConfirm false, firstDrawDate null', () {
-      final decoded = jsonDecode(
-          File('test/fixtures/myregs.json').readAsStringSync());
+      final decoded =
+          jsonDecode(File('test/fixtures/myregs.json').readAsStringSync());
       final mine = (decoded['registrations'] as List)
           .map((e) => SignMeUpRegistration.fromJson(e as Map<String, dynamic>))
           .toList();
@@ -45,17 +45,14 @@ void main() {
       final r = reg({"firstDrawDate": "2026-12-04T14:00:00.4388606Z"});
       expect(r.firstDrawDate, isNotNull);
       // Dart keeps microsecond precision and drops the 7th digit
-      expect(
-          r.firstDrawDate!.toUtc().difference(DateTime.utc(2026, 12, 4, 14)),
+      expect(r.firstDrawDate!.toUtc().difference(DateTime.utc(2026, 12, 4, 14)),
           const Duration(microseconds: 438860));
     });
 
     test('firstDrawDate tolerates epoch seconds, millis and strings', () {
-      final instant =
-          DateTime.fromMillisecondsSinceEpoch(1793416802000);
+      final instant = DateTime.fromMillisecondsSinceEpoch(1793416802000);
       for (final v in [1793416802, 1793416802000, "1793416802"]) {
-        expect(reg({"firstDrawDate": v}).firstDrawDate,
-            instant.toLocal(),
+        expect(reg({"firstDrawDate": v}).firstDrawDate, instant.toLocal(),
             reason: "$v");
       }
     });
@@ -73,29 +70,25 @@ void main() {
 
   group("outcome mapping", () {
     test('fixture labels and their German variants map', () {
-      expect(reg({"stateLabel": "accepted"}).outcome,
-          SignMeUpOutcome.accepted);
+      expect(reg({"stateLabel": "accepted"}).outcome, SignMeUpOutcome.accepted);
       expect(reg({"stateLabel": "Open"}).outcome, SignMeUpOutcome.open);
-      expect(reg({"stateLabel": "ABGELEHNT"}).outcome,
-          SignMeUpOutcome.rejected);
-      expect(reg({"stateLabel": "angenommen"}).outcome,
-          SignMeUpOutcome.accepted);
+      expect(
+          reg({"stateLabel": "ABGELEHNT"}).outcome, SignMeUpOutcome.rejected);
+      expect(
+          reg({"stateLabel": "angenommen"}).outcome, SignMeUpOutcome.accepted);
       expect(reg({"stateLabel": "nicht zugelassen"}).outcome,
           SignMeUpOutcome.rejected);
-      expect(reg({"stateLabel": "Warteliste"}).outcome,
-          SignMeUpOutcome.open);
+      expect(reg({"stateLabel": "Warteliste"}).outcome, SignMeUpOutcome.open);
     });
 
     test('unknown label stays unknown for the raw fallback chip', () {
-      expect(reg({"stateLabel": "Gewonnen"}).outcome,
-          SignMeUpOutcome.unknown);
+      expect(reg({"stateLabel": "Gewonnen"}).outcome, SignMeUpOutcome.unknown);
     });
 
     test('empty label falls back to the state code', () {
       expect(reg({"stateLabel": "", "state": 3}).outcome,
           SignMeUpOutcome.accepted);
-      expect(reg({"stateLabel": "", "state": 0}).outcome,
-          SignMeUpOutcome.open);
+      expect(reg({"stateLabel": "", "state": 0}).outcome, SignMeUpOutcome.open);
     });
   });
 
@@ -118,7 +111,8 @@ void main() {
       expect(r.nextMilestone(now), isNull);
     });
 
-    test('a row drops once every known expiry is past; registrationEnd '
+    test(
+        'a row drops once every known expiry is past; registrationEnd '
         'bounds rows without confirmationDeadline', () {
       final dead = reg({
         "confirmationDeadline": "2026-11-01T10:00:00",
@@ -140,12 +134,10 @@ void main() {
         "stateLabel": "open",
         "registrationEnd": "2026-11-02T23:59:00",
       });
-      expect(
-          SignMeUpMineCard.activeRows([endAhead, endPast], now), [endAhead]);
+      expect(SignMeUpMineCard.activeRows([endAhead, endPast], now), [endAhead]);
     });
 
-    test('confirm-pending first, then nearest milestone, dateless last',
-        () {
+    test('confirm-pending first, then nearest milestone, dateless last', () {
       final plain = reg({
         "name": "plain",
         "stateLabel": "accepted",
@@ -199,8 +191,8 @@ void main() {
   group("countdown wording", () {
     test('calendar days, not 24-h windows', () {
       // tomorrow 08:00 seen at 23:00 today: one calendar day
-      expect(L10n.daysFromNow(DateTime(2026, 11, 3, 8),
-              DateTime(2026, 11, 2, 23)),
+      expect(
+          L10n.daysFromNow(DateTime(2026, 11, 3, 8), DateTime(2026, 11, 2, 23)),
           1);
     });
 
@@ -232,8 +224,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: SingleChildScrollView(
-            child: SignMeUpMineCard(
-                rows: rows, now: DateTime(2026, 11, 8, 8)),
+            child: SignMeUpMineCard(rows: rows, now: DateTime(2026, 11, 8, 8)),
           ),
         ),
       ));
@@ -253,8 +244,7 @@ void main() {
       expect(find.text("in 2 Tagen"), findsOneWidget);
     });
 
-    testWidgets('only a positive rank shows a Platz chip text',
-        (tester) async {
+    testWidgets('only a positive rank shows a Platz chip text', (tester) async {
       await pumpCard(tester, [
         reg({"name": "Mit Rang", "stateLabel": "open", "rank": 3}),
         reg({"name": "Ohne Rang", "stateLabel": "accepted", "rank": 0}),
@@ -285,7 +275,8 @@ void main() {
       expect(find.textContaining("mehr"), findsNothing);
     });
 
-    testWidgets('accepted/rejected tint the Cupertino semantics, open '
+    testWidgets(
+        'accepted/rejected tint the Cupertino semantics, open '
         'and unknown stay neutral', (tester) async {
       await pumpCard(tester, [
         reg({"stateLabel": "accepted"}),
@@ -295,18 +286,17 @@ void main() {
       ]);
       final scheme =
           Theme.of(tester.element(find.byType(SignMeUpMineCard))).colorScheme;
-      BoxDecoration chip(String label) => tester.widget<Container>(find
-              .ancestor(
-                  of: find.text(label), matching: find.byType(Container))
+      BoxDecoration chip(String label) => tester
+          .widget<Container>(find
+              .ancestor(of: find.text(label), matching: find.byType(Container))
               .first)
           .decoration! as BoxDecoration;
       Color fg(String label) =>
           tester.widget<Text>(find.text(label)).style!.color!;
       final green = CupertinoDynamicColor.resolve(
-          CupertinoColors.systemGreen,
-          tester.element(find.text("angenommen")));
-      final red = CupertinoDynamicColor.resolve(CupertinoColors.systemRed,
-          tester.element(find.text("abgelehnt")));
+          CupertinoColors.systemGreen, tester.element(find.text("angenommen")));
+      final red = CupertinoDynamicColor.resolve(
+          CupertinoColors.systemRed, tester.element(find.text("abgelehnt")));
       expect(chip("angenommen").color, green.withValues(alpha: 0.15));
       expect(fg("angenommen"), green);
       expect(chip("abgelehnt").color, red.withValues(alpha: 0.15));

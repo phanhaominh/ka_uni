@@ -17,26 +17,27 @@ class KITLogo extends StatelessWidget {
     final toastsProvider = Provider.of<ToastsProvider>(context);
 
     return SizedBox(
-      // width: width,
-      // height: 28,
-      child: GestureDetector(
-        onLongPress: () async {
-          toastsProvider.showTextToast(L10n.t("easter.currywerk"));
-        },
-        child: Row(
-          children: [
-
-            Text("KA", style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.primary),),
-            const Text(".Uni"),
-
-            const SizedBox(width: 2,),
-
-            !isAlpha ? const Text("") : const AlphaBadge()
-          ],
-        )
-        // child: SvgPicture.asset("assets/images/KIT.svg"),
-      )
-    );
+        // width: width,
+        // height: 28,
+        child: GestureDetector(
+            onLongPress: () async {
+              toastsProvider.showTextToast(L10n.t("easter.currywerk"));
+            },
+            child: Row(
+              children: [
+                Text(
+                  "KA",
+                  style: theme.textTheme.titleLarge
+                      ?.copyWith(color: theme.colorScheme.primary),
+                ),
+                const Text(".Uni"),
+                const SizedBox(
+                  width: 2,
+                ),
+                !isAlpha ? const Text("") : const AlphaBadge()
+              ],
+            )
+            // child: SvgPicture.asset("assets/images/KIT.svg"),
+            ));
   }
-
 }

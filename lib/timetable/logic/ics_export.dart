@@ -114,9 +114,8 @@ bool _isSentinel(String line) =>
 String _propName(String line) {
   final semi = line.indexOf(";");
   final colon = line.indexOf(":");
-  final cut = semi < 0
-      ? colon
-      : (colon < 0 ? semi : (semi < colon ? semi : colon));
+  final cut =
+      semi < 0 ? colon : (colon < 0 ? semi : (semi < colon ? semi : colon));
   return (cut < 0 ? line : line.substring(0, cut)).toUpperCase();
 }
 
@@ -139,8 +138,7 @@ String _foldLine(String line) {
   var start = 0;
   var limit = _maxLineOctets;
   while (start < bytes.length) {
-    var end =
-        start + limit > bytes.length ? bytes.length : start + limit;
+    var end = start + limit > bytes.length ? bytes.length : start + limit;
     while (end < bytes.length && (bytes[end] & 0xC0) == 0x80) {
       end--; // step back to the start of this codepoint
     }

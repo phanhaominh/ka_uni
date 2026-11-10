@@ -73,8 +73,8 @@ class NowClock {
 
   static void _scheduleBoundaryTick() {
     final now = timeSource();
-    final toBoundary = Duration(
-        milliseconds: (60 - now.second) * 1000 - now.millisecond);
+    final toBoundary =
+        Duration(milliseconds: (60 - now.second) * 1000 - now.millisecond);
     _timer?.cancel();
     _timer = Timer(toBoundary, () {
       _timer = null;

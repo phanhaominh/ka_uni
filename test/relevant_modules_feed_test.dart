@@ -165,7 +165,8 @@ void main() {
 
     test("roman numerals never match across course numbers", () {
       final keys = {
-        CampusManager.lectureTitleKey("3161010 - Engineering Mechanics I (V), Fidlin")
+        CampusManager.lectureTitleKey(
+            "3161010 - Engineering Mechanics I (V), Fidlin")
       };
       expect(
           CampusManager.moduleKeyMatchesLectureKey(
@@ -173,8 +174,7 @@ void main() {
           isTrue);
       expect(
           CampusManager.moduleKeyMatchesLectureKey(
-              CampusManager.lectureTitleKey("Engineering Mechanics III"),
-              keys),
+              CampusManager.lectureTitleKey("Engineering Mechanics III"), keys),
           isFalse);
     });
 
@@ -245,8 +245,7 @@ void main() {
       expect(prefs.getStringList(rmrKey()), [am1.id]);
     });
 
-    test("legacy stored ids self-heal on load against the feed keys",
-        () async {
+    test("legacy stored ids self-heal on load against the feed keys", () async {
       SharedPreferences.setMockInitialValues({
         rmrKey(): [
           "4_Engineering Mechanics III_0",
@@ -296,8 +295,7 @@ void main() {
       expect(prefs.getStringList(rmrKey()), [_mdaPlain]);
     });
 
-    test("the ILIAS copy of a duplicate wins, whoever arrives first",
-        () async {
+    test("the ILIAS copy of a duplicate wins, whoever arrives first", () async {
       for (final linkedFirst in [true, false]) {
         final mgr = await _duplicateCardManager(linkedFirst: linkedFirst);
         expect(mgr.relevantModuleRowIDs, [_mdaLinked],
@@ -331,8 +329,7 @@ void main() {
 
       // one module, two spellings of it
       expect(
-          CampusManager.moduleKeysDenoteSameModule(
-              k("Mechanical Design A"),
+          CampusManager.moduleKeysDenoteSameModule(k("Mechanical Design A"),
               k("Mechanical Design  A (Lecture) - 0123456")),
           isTrue);
       // one character apart are two real modules
@@ -349,8 +346,7 @@ void main() {
               k("Engineering Mechanics I"), k("Engineering Mechanics III")),
           isFalse);
       // nothing known -> nothing merged
-      expect(
-          CampusManager.moduleKeysDenoteSameModule("", k("Analysis 1")),
+      expect(CampusManager.moduleKeysDenoteSameModule("", k("Analysis 1")),
           isFalse);
     });
 
@@ -446,8 +442,7 @@ void main() {
       expect(cm.isPlaceholderGhost(linked.id), isFalse);
     });
 
-    test("a single fetched module with no duplicate keeps its card",
-        () async {
+    test("a single fetched module with no duplicate keeps its card", () async {
       final mgr = _StubTreeManager({});
       await mgr.rememberEnrolledTitles(
           _feed(["Advanced Mathematics I (Tutorial - Group 1)"]));
@@ -525,8 +520,7 @@ void main() {
           isTrue);
       // the intended on-device merge: equal ({i}) number sets
       expect(
-          CampusManager.moduleKeysDenoteSameModule(
-              k("Advanced Mathematics I"),
+          CampusManager.moduleKeysDenoteSameModule(k("Advanced Mathematics I"),
               k("Advanced Mathematics I Prerequisite")),
           isTrue);
       // group labels are stripped in lectureTitleKey -> exact keys
@@ -542,8 +536,7 @@ void main() {
           isFalse);
       // unequal number sets never collapse into one card
       expect(
-          CampusManager.moduleKeysDenoteSameModule(
-              k("Engineering Mechanics I"),
+          CampusManager.moduleKeysDenoteSameModule(k("Engineering Mechanics I"),
               k("Engineering Mechanics I and II")),
           isFalse);
     });
@@ -556,8 +549,7 @@ void main() {
               k("Fertigungstechnik"), {k("Grundlagen der Fertigungstechnik")}),
           isFalse);
       expect(
-          CampusManager.moduleKeyMatchesLectureKey(
-              k("Advanced Mathematics I"),
+          CampusManager.moduleKeyMatchesLectureKey(k("Advanced Mathematics I"),
               {k("Advanced Mathematics I Prerequisite")}),
           isTrue);
     });
@@ -585,8 +577,7 @@ void main() {
       expect(mgr.requested!.host, "127.0.0.1");
       expect(mgr.personalIcsUrl, "http://127.0.0.1:8080/f.ima");
 
-      expect(
-          await mgr.setPersonalIcsFromUrl("https://cal.anywhere.org/f.ima"),
+      expect(await mgr.setPersonalIcsFromUrl("https://cal.anywhere.org/f.ima"),
           isNull);
       expect(mgr.personalIcs, contains("Advanced Mathematics I"));
     });

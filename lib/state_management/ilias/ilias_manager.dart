@@ -23,6 +23,7 @@ class IliasManager extends KITLoginManager {
       return utf8.decode(response.bodyBytes);
     }
   }
+
   Future<String> getPHPSESSID() async {
     // bounded wait: one wedged SSO must not recurse on a 500ms timer forever
     for (var i = 0; i < 120 && isBusy; i++) {
@@ -69,8 +70,8 @@ class IliasManager extends KITLoginManager {
       refreshSession = true}) {
     final inFlight = _authInFlight;
     if (inFlight != null) return inFlight;
-    final future =
-        _authorize(retryIfFailed: retryIfFailed, refreshSession: refreshSession);
+    final future = _authorize(
+        retryIfFailed: retryIfFailed, refreshSession: refreshSession);
     _authInFlight = future;
     return future.whenComplete(() => _authInFlight = null);
   }
@@ -180,6 +181,100 @@ class IliasManager extends KITLoginManager {
     return response;
   }
 
+  /// Content-Type → file extension for proved-session, non-PDF ILIAS
+  /// downloads: the lecture-material formats KIT lecturers actually upload
+  /// (Office 97-2003 + OOXML + ODF + archives + media). Deliberately
+  /// contains no html/xml/executable entries, and generic octet-stream is
+  /// NOT mapped - unknown types fall back to the Content-Disposition
+  /// filename extension in [extensionForDownloadBody] instead.
+  static const _contentTypeExtensions = <String, String>{
+    // no "application/pdf" entry: PDFs are decided by magic bytes alone,
+    // a non-PDF body must never receive a ".pdf" name back from this gate
+    "application/zip": ".zip",
+    "application/x-zip-compressed": ".zip",
+    "application/x-7z-compressed": ".7z",
+    "application/x-rar-compressed": ".rar",
+    "application/vnd.rar": ".rar",
+    "application/gzip": ".gz",
+    "application/x-gzip": ".gz",
+    "application/x-tar": ".tar",
+    "application/epub+zip": ".epub",
+    "application/msword": ".doc",
+    "application/vnd.ms-powerpoint": ".ppt",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        ".docx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+        ".pptx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+        ".xlsx",
+    "application/vnd.oasis.opendocument.text": ".odt",
+    "application/vnd.oasis.opendocument.presentation": ".odp",
+    "application/vnd.oasis.opendocument.spreadsheet": ".ods",
+    "application/rtf": ".rtf",
+    "text/rtf": ".rtf",
+    "text/plain": ".txt",
+    "text/csv": ".csv",
+    "text/markdown": ".md",
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "video/mp4": ".mp4",
+    "video/quicktime": ".mov",
+    "video/webm": ".webm",
+    "audio/mpeg": ".mp3",
+    "audio/mp4": ".m4a",
+    "audio/x-wav": ".wav",
+    "audio/wav": ".wav",
+  };
+
+  /// The download gate, pure so it is unit-testable. Magic bytes decide
+  /// PDFs; a PROVED session (withSessionResponse has already re-authorized
+  /// past any wall before this runs) that yields a genuine non-PDF body
+  /// gets the extension its Content-Type proves - or, for unmapped types
+  /// like generic octet-stream, the extension of the original filename in
+  /// Content-Disposition. Naming every body ".pdf" and rejecting the rest
+  /// made real zip/pptx/docx course material an undownloadable dead end.
+  /// Null means "never save this": non-200, or an HTML/unidentifiable body
+  /// - a login wall or interstitial must not be cached as course material.
+  @visibleForTesting
+  static String? extensionForDownloadBody(
+      {required bool isPdf,
+      required int statusCode,
+      String? contentType,
+      String? contentDisposition}) {
+    if (statusCode != 200) return null;
+    if (isPdf) return ".pdf";
+    final type = (contentType ?? "").split(";").first.trim().toLowerCase();
+    // a dead session lands on a 200 login page after the redirect chain;
+    // caching HTML under ANY extension would recreate the login-form-
+    // cached-as-a-lecture-file bug the original PDF gate existed to stop
+    if (type.contains("html")) return null;
+    final mapped = _contentTypeExtensions[type];
+    if (mapped != null) return mapped;
+    // unknown non-HTML type: the attachment disposition still carries the
+    // real filename - keep its extension when it is a plain one; web-page
+    // name extensions stay refused (server-configured .html attachments
+    // are walls in disguise)
+    final m =
+        RegExp("filename\\*?=(?:UTF-8'')?\"?([^\";]+)\"?", caseSensitive: false)
+            .firstMatch(contentDisposition ?? "");
+    final name = m?.group(1)?.trim();
+    final dot = name?.lastIndexOf(".") ?? -1;
+    if (name != null && dot > 0 && dot < name.length - 1) {
+      final ext = name.substring(dot + 1).toLowerCase();
+      if (RegExp(r"^[a-z0-9]{1,8}$").hasMatch(ext) &&
+          // "pdf" included: a real PDF was already certified by the magic
+          // bytes above, so a ".pdf" name on anything else is a lie
+          !const {"pdf", "html", "htm", "xhtml", "php", "jsp", "asp", "aspx"}
+              .contains(ext)) {
+        return ".$ext";
+      }
+    }
+    return null;
+  }
+
   Future<PinnedFile> downloadFile(String srcUrl, File targetFile) async {
     if (kDebugMode) {
       print("Downloading file to ${targetFile.path} from $srcUrl");
@@ -189,28 +284,40 @@ class IliasManager extends KITLoginManager {
     //
     // routed through the same dead-session wrapper every scraper call uses:
     // a session that died between page load and tap silently re-authorizes
-    // instead of 302-ing the login page into the magic-byte gate below
+    // instead of 302-ing the login page into the gate below
     // (which only knows how to fail, not to recover)
-    final response = await withSessionResponse(() => netGet(Uri.parse(srcUrl),
-        timeout: const Duration(minutes: 2)));
+    final response = await withSessionResponse(
+        () => netGet(Uri.parse(srcUrl), timeout: const Duration(minutes: 2)));
     var bytes = response.bodyBytes;
 
     // a dead PHPSESSID makes ILIAS 302 to force_login which resolves to a
-    // 200 HTML page; without this gate the login form got cached as a
-    // permanently broken ".pdf" (downloads are only retried when the file
-    // is absent)
+    // 200 HTML page; the gate refuses HTML bodies and non-200s, so the
+    // login form can never again be cached as a permanently broken file
+    // (downloads are only retried when the file is absent)
     final isPdf = bytes.length > 4 &&
         bytes[0] == 0x25 &&
         bytes[1] == 0x50 &&
         bytes[2] == 0x44 &&
         bytes[3] == 0x46; // "%PDF"
-    if (response.statusCode != 200 || !isPdf) {
-      throw Exception(
-          "ILIAS download not a PDF (status ${response.statusCode}, "
+    final extension = extensionForDownloadBody(
+        isPdf: isPdf,
+        statusCode: response.statusCode,
+        contentType: response.headers["content-type"],
+        contentDisposition: response.headers["content-disposition"]);
+    if (extension == null) {
+      throw Exception("ILIAS download refused (status ${response.statusCode}, "
           "${bytes.lengthInBytes} bytes) - session likely expired");
     }
 
-    await targetFile.writeAsBytes(bytes);
+    // PDFs land on the caller-suggested path; a proved-session non-PDF body
+    // swaps the guessed ".pdf" for the extension its headers proved
+    var path = targetFile.path;
+    if (extension != ".pdf") {
+      final stem =
+          path.endsWith(".pdf") ? path.substring(0, path.length - 4) : path;
+      path = "$stem$extension";
+    }
+    await File(path).writeAsBytes(bytes);
 
     return PinnedFile(
         semesterString: KITProvider.currentSemesterString,
@@ -218,7 +325,7 @@ class IliasManager extends KITLoginManager {
         moduleTitle: "",
         addedAt: DateTime.now().toUtc(),
         customName: "",
-        fileSystemPath: targetFile.path);
+        fileSystemPath: path);
   }
 
   Future<void> logout() async {

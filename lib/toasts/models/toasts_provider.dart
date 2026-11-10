@@ -22,10 +22,10 @@ class ToastsProvider extends ChangeNotifier {
   /// can never wipe a newer one
   Timer? _resetTimer;
 
-  Future<void> showTextToast(String message, {
-    Duration duration = _defaultDuration,
-    Color? backgroundColor,
-    Color? foregroundColor}) async {
+  Future<void> showTextToast(String message,
+      {Duration duration = _defaultDuration,
+      Color? backgroundColor,
+      Color? foregroundColor}) async {
     // replace-latest instead of reject-while-showing: dropping the incoming
     // toast hid e.g. "refresh failed" behind the older "reloading..." toast
     // that fired microseconds earlier

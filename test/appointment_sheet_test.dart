@@ -13,18 +13,16 @@ import 'package:kit_mobile/tutorials/data/tutorial_manager.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-TimetableAppointment _lecture() =>
-    TimetableAppointment(
-        begin: DateTime(2026, 11, 2, 9, 45),
-        end: DateTime(2026, 11, 2, 11, 15))
-      ..title = "Engineering Mechanics I (Lecture) (V), Langhoff"
-      ..id = "3161010"
-      ..place = (KITPlace()..title = "10.91 Franz-Grashof-Hörsaal");
+TimetableAppointment _lecture() => TimetableAppointment(
+    begin: DateTime(2026, 11, 2, 9, 45), end: DateTime(2026, 11, 2, 11, 15))
+  ..title = "Engineering Mechanics I (Lecture) (V), Langhoff"
+  ..id = "3161010"
+  ..place = (KITPlace()..title = "10.91 Franz-Grashof-Hörsaal");
 
 TimetableAppointment _lunch() => TimetableAppointment(
-        type: TimetableAppointmentType.lunchBreak,
-        begin: DateTime(2026, 11, 2, 13, 0),
-        end: DateTime(2026, 11, 2, 14, 0));
+    type: TimetableAppointmentType.lunchBreak,
+    begin: DateTime(2026, 11, 2, 13, 0),
+    end: DateTime(2026, 11, 2, 14, 0));
 
 Future<void> _pump(WidgetTester tester, TimetableAppointment ap) async {
   tester.view.physicalSize = const Size(600, 900);

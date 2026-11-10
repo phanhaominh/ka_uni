@@ -28,8 +28,7 @@ Future<void> exportMergedTimetableIcs(BuildContext context) {
     toasts.showTextToast(L10n.t("export.inFlight"));
     return running;
   }
-  return _inFlight =
-      _exportOnce(toasts).whenComplete(() => _inFlight = null);
+  return _inFlight = _exportOnce(toasts).whenComplete(() => _inFlight = null);
 }
 
 Future<void> _exportOnce(ToastsProvider toasts) async {

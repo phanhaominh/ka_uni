@@ -71,8 +71,7 @@ class GradeBook {
           _pending.add(m);
       }
     }
-    passedEcts =
-        _passed.fold<double>(0, (sum, m) => sum + (m.moduleEcts ?? 0));
+    passedEcts = _passed.fold<double>(0, (sum, m) => sum + (m.moduleEcts ?? 0));
     // CasCAMPUS reports the official total; "0,0"/unparseable means none yet.
     // Trust it as 0 EXCEPT when modules with real ECTS are already passed -
     // a first-semester tree legitimately has earned credits before the total
@@ -173,8 +172,7 @@ class GradeBook {
   /// only after a comma - one of them vanishes from the ledger along with
   /// its CP. The feed/timetable matchers need that loose key; the ledger
   /// only ever compares tree titles against tree titles.
-  static String _ledgerTitleKey(String raw) =>
-      _cleanCell(raw).toLowerCase();
+  static String _ledgerTitleKey(String raw) => _cleanCell(raw).toLowerCase();
 
   /// Mirrors campus_manager cleanCell (layout entities + squeezed
   /// whitespace); its "0,0" fallback is intentionally NOT mirrored: an empty

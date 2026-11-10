@@ -29,8 +29,7 @@ const _html = '''
 </table>''';
 
 void main() {
-  test("same deadline + same title sorts by exam number, not source order",
-      () {
+  test("same deadline + same title sorts by exam number, not source order", () {
     final exams = [
       _e("20.21 Pool A"),
       _e("20.21 Pool E"),
@@ -39,15 +38,13 @@ void main() {
       _e("20.21 Pool C")
     ];
     exams.sort(ExamsPage.byWindowEnd);
-    expect(
-        exams.map((e) => e.examNumber).toList(),
-        [
-          "20.21 Pool A",
-          "20.21 Pool B",
-          "20.21 Pool C",
-          "20.21 Pool D",
-          "20.21 Pool E"
-        ]);
+    expect(exams.map((e) => e.examNumber).toList(), [
+      "20.21 Pool A",
+      "20.21 Pool B",
+      "20.21 Pool C",
+      "20.21 Pool D",
+      "20.21 Pool E"
+    ]);
   });
 
   test("different deadlines still dominate", () {

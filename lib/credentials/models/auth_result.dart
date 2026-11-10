@@ -1,5 +1,1 @@
-enum AuthResult {
-  ok,
-  wrongUsernameFormat,
-  fail
-}
+enum AuthResult { ok, wrongUsernameFormat, fail }

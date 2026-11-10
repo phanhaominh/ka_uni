@@ -99,8 +99,8 @@ class ModuleTreeDebugPage extends StatefulWidget {
             reason = ModuleTreeDebugReason.feedMiss;
           } else if (cm.isPlaceholderGhost(row.id)) {
             reason = ModuleTreeDebugReason.placeholderGhost;
-          } else if (admittedKeys.entries.any((other) => CampusManager
-              .moduleKeysDenoteSameModule(key, other.value))) {
+          } else if (admittedKeys.entries.any((other) =>
+              CampusManager.moduleKeysDenoteSameModule(key, other.value))) {
             reason = ModuleTreeDebugReason.duplicateClash;
           } else {
             reason = ModuleTreeDebugReason.unexplained;
@@ -230,10 +230,9 @@ class _ModuleTreeDebugPageState extends State<ModuleTreeDebugPage> {
                 ),
                 if (!isModule) ...[
                   const SizedBox(width: 8),
-                  Text(L10n.t("settings.debugTreeNoModule"),
-                      style: hintStyle),
+                  Text(L10n.t("settings.debugTreeNoModule"), style: hintStyle),
                 ],
-                  const SizedBox(width: 8),
+                const SizedBox(width: 8),
                 Text("L${entry.level}", style: hintStyle),
                 const SizedBox(width: 8),
                 if (!entry.pageLoaded)
@@ -260,10 +259,8 @@ class _ModuleTreeDebugPageState extends State<ModuleTreeDebugPage> {
   }
 
   static String _reasonLabel(ModuleTreeDebugReason reason) => switch (reason) {
-        ModuleTreeDebugReason.shown =>
-          L10n.t("settings.debugTreeShown"),
-        ModuleTreeDebugReason.feedMiss =>
-          L10n.t("settings.debugTreeFeedMiss"),
+        ModuleTreeDebugReason.shown => L10n.t("settings.debugTreeShown"),
+        ModuleTreeDebugReason.feedMiss => L10n.t("settings.debugTreeFeedMiss"),
         ModuleTreeDebugReason.duplicateClash =>
           L10n.t("settings.debugTreeClash"),
         ModuleTreeDebugReason.placeholderGhost =>

@@ -9,8 +9,20 @@ class NowBlock {
   final int durationMin;
   final bool border;
 
+  /// The row is CONTENT (lecture/tutorial/lunch), i.e. it may paint a
+  /// "running · until" chip in its time line right now (the chip itself
+  /// is minute-live; this flag is not). The now-line skips its HH:MM
+  /// label while it sits inside such a row's TOP strip - both texts
+  /// share the column's right end there (measured: "08:04" painted
+  /// straight onto "running · until 09:00"). Deeper in the block the
+  /// label returns; free-gap rows keep it always.
+  final bool content;
+
   const NowBlock(
-      {required this.beginMin, required this.durationMin, this.border = false});
+      {required this.beginMin,
+      required this.durationMin,
+      this.border = false,
+      this.content = false});
 }
 
 /// y of the now-line inside the painted day Column, or null when the wall

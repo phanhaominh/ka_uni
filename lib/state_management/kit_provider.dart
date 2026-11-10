@@ -44,6 +44,13 @@ class KITProvider extends ChangeNotifier {
 
   bool _signMeUpColdRetryDone = false;
 
+  /// bumped whenever a SignMeUp refresh COMPLETED (success or failure):
+  /// [signMeUpDone] alone goes null on completion, so a consumer that only
+  /// reads it after an ILIAS round-trip cannot tell "never ran" from "ran
+  /// and wrote the synthetic block" - the agenda's follow-up re-render
+  /// compares this generation against a captured start value
+  int signMeUpGen = 0;
+
   /// SignMeUp needs the campus session, so it runs after login; one failing
   /// fetch must not veto the other refreshes.
   Future<void> fetchSignMeUp() {
@@ -53,48 +60,53 @@ class KITProvider extends ChangeNotifier {
     }
     final future = _doFetchSignMeUp();
     _signMeUpInFlight = future;
-    return future;
+    // identity-bound clear: a logout may already have DROPPED this memo
+    // (dropInflightFetches) while the chain still sleeps/retries, and the
+    // next account's chain may have installed itself in its place - the
+    // orphaned OLD chain settling must not null the NEW memo, and must not
+    // bump signMeUpGen either (the agenda's follow-up re-render compares
+    // generations and would fire for a refresh of the dead account)
+    return future.whenComplete(() {
+      if (identical(_signMeUpInFlight, future)) {
+        _signMeUpInFlight = null;
+        signMeUpGen++;
+      }
+    });
   }
 
   Future<void> _doFetchSignMeUp() async {
-    try {
-      final offer = await signMeUpManager.fetch(campusManager);
-      // the campus session is cookie-only and dies with the process: on the
-      // FIRST refresh after a cold start the login stages may still be in
-      // flight (or the token simply expired). Retry once with a delay - but
-      // only once per process: fetchMine returns false for perfectly normal
-      // steady states (semester break) and an unconditional 20 s sleep
-      // made every pull-to-refresh hang that long. A PROVEN missing plus
-      // account is a definite miss, not a session race - skip the sleep.
-      var mine = await signMeUpManager.fetchMine(campusManager);
-      if (!mine &&
-          !_signMeUpColdRetryDone &&
-          !campusManager.plusAccountMissing) {
-        _signMeUpColdRetryDone = true;
-        await Future.delayed(const Duration(seconds: 20));
-        mine = await signMeUpManager.fetchMine(campusManager);
-      }
-      if (mine) {
-        await campusManager
-            .reapplySignMeUpSynth(signMeUpManager.buildSynthBlock());
-      }
-      // deadline nags only with PROVEN registration state: on a failed
-      // fetchMine the registered set is stale/empty and every open
-      // procedure would fire a false "noch nicht angemeldet" alarm
-      if (mine) {
-        unawaited(MeiNotifications.scheduleSignMeUpReminders(
-            signMeUpManager.procedures,
-            registered: signMeUpManager.registeredProcedureIds));
-      } else {
-        unawaited(MeiNotifications.cancelSignMeUpReminders());
-      }
-      if (offer || mine) notifyListeners();
-    } finally {
-      _signMeUpInFlight = null;
+    final offer = await signMeUpManager.fetch(campusManager);
+    // the campus session is cookie-only and dies with the process: on the
+    // FIRST refresh after a cold start the login stages may still be in
+    // flight (or the token simply expired). Retry once with a delay - but
+    // only once per process: fetchMine returns false for perfectly normal
+    // steady states (semester break) and an unconditional 20 s sleep
+    // made every pull-to-refresh hang that long. A PROVEN missing plus
+    // account is a definite miss, not a session race - skip the sleep.
+    var mine = await signMeUpManager.fetchMine(campusManager);
+    if (!mine && !_signMeUpColdRetryDone && !campusManager.plusAccountMissing) {
+      _signMeUpColdRetryDone = true;
+      await Future.delayed(const Duration(seconds: 20));
+      mine = await signMeUpManager.fetchMine(campusManager);
     }
+    if (mine) {
+      await campusManager
+          .reapplySignMeUpSynth(signMeUpManager.buildSynthBlock());
+    }
+    // deadline nags only with PROVEN registration state: on a failed
+    // fetchMine the registered set is stale/empty and every open
+    // procedure would fire a false "noch nicht angemeldet" alarm
+    if (mine) {
+      unawaited(MeiNotifications.scheduleSignMeUpReminders(
+          signMeUpManager.procedures,
+          registered: signMeUpManager.registeredProcedureIds));
+    } else {
+      unawaited(MeiNotifications.cancelSignMeUpReminders());
+    }
+    if (offer || mine) notifyListeners();
   }
 
-  Future<void>? _examsInFlight;
+  Future<bool>? _examsInFlight;
 
   /// Resolves once the last started exam-list fetch (incl. the synthetic
   /// exam-sitting injection into the ICS cache) has finished; the agenda
@@ -104,23 +116,38 @@ class KITProvider extends ChangeNotifier {
 
   /// Single-flight exam-list fetch through the provider, mirroring
   /// [fetchSignMeUp]: while one is in flight, callers join it instead of
-  /// stacking fetches.
-  Future<void> fetchExams() {
+  /// stacking fetches. UI (exams page pull) MUST go through here, not the
+  /// raw manager, so [examsDone] actually represents the running chain
+  /// and the agenda's synthetic-exam re-render joins it too.
+  Future<bool> fetchExams() {
     final existing = _examsInFlight;
     if (existing != null) {
       return existing;
     }
-    final future = _doFetchExams();
+    final future = campusManager.fetchExams();
     _examsInFlight = future;
-    return future;
+    // identity-bound clear: the orphaned OLD-account chain must not null
+    // the memo the NEW account's fetch has just installed
+    return future.whenComplete(() {
+      if (identical(_examsInFlight, future)) _examsInFlight = null;
+    });
   }
 
-  Future<void> _doFetchExams() async {
-    try {
-      await campusManager.fetchExams();
-    } finally {
-      _examsInFlight = null;
-    }
+  /// Logout: the memoized chains belong to the DEAD account. Their own
+  /// finally-clearing runs only when the sockets settle - until then a
+  /// next-account caller would JOIN account A's doomed fetch (and the
+  /// agenda would await A's refresh as if it were its own).
+  void dropInflightFetches() {
+    _examsInFlight = null;
+    _signMeUpInFlight = null;
+    // the refetch cascade is account-bound too: joining A's still-running
+    // forceRefetchEverything would wipe B's fresh cookies mid-cascade
+    _refetchInFlight = null;
+    // one-shot: A's orphan chain may have burned the cold-retry slot, so
+    // B's first SignMeUp refresh would skip the session-race retry
+    _signMeUpColdRetryDone = false;
+    // schedule + per-row module memos live on the campus side
+    campusManager.dropInFlightFetches();
   }
 
   bool get profileReady => campusManager.ready;
@@ -186,7 +213,11 @@ class KITProvider extends ChangeNotifier {
       await fetchSignMeUp();
     })();
     _refetchInFlight = future;
-    return future.whenComplete(() => _refetchInFlight = null);
+    // identity-bound clear: an orphaned cascade from the previous account
+    // must not null the memo its successor just installed
+    return future.whenComplete(() {
+      if (identical(_refetchInFlight, future)) _refetchInFlight = null;
+    });
   }
 
   HierarchicTableRow? fuzzyFindHierarchicTableRowSimilarTo(
@@ -198,10 +229,25 @@ class KITProvider extends ChangeNotifier {
       final currentMatch = ratio(row.title, exampleRow.title) +
           ratio(row.id, exampleRow.id) +
           ratio(row.type, exampleRow.type);
-      if (currentMatch >= bestMatch) {
+      // strict `>` (parity with toggleIsFavoriteFuzzy below): ratio() is 0
+      // for unrelated strings, so with `>=` the FIRST candidate auto-won
+      // with score 0 whenever nothing matched - returning a random
+      // unrelated Studienverlauf row for the caller to refetch + re-toggle
+      if (currentMatch > bestMatch) {
         bestMatch = currentMatch;
         bestMatchRow = row;
       }
+    }
+
+    // the score sums three ratios, so the single-ratio acceptance threshold
+    // scales by 3: below this it is "some other lecture", and re-toggling a
+    // wrong row on the server is exactly what this path must never do
+    if (bestMatchRow == null || bestMatch < 3 * _minFuzzyAcceptScore) {
+      if (kDebugMode) {
+        print(
+            "Could not find a row similar to ${exampleRow.title}, best score: $bestMatch");
+      }
+      return null;
     }
 
     return bestMatchRow;

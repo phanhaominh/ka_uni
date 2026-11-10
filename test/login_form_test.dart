@@ -85,9 +85,11 @@ void main() {
     expect(got[1], isEmpty); // but the stored secret never enters the field
   });
 
-  testWidgets('logging-in overlay stays readable in light theme', (tester) async {
+  testWidgets('logging-in overlay stays readable in light theme',
+      (tester) async {
     final creds = ProbeProvider((u, p) {})
-      ..credentials = KITCredentials(username: "uxfake", password: "stored-secret")
+      ..credentials =
+          KITCredentials(username: "uxfake", password: "stored-secret")
       ..credentialsLoaded = true
       ..displayName = "Testo"
       ..loggingIn = true;
@@ -105,10 +107,10 @@ void main() {
     // hardcoded white: invisible in light mode
     final greeting = tester.widget<Text>(find.text("Hallo, Testo"));
     expect(greeting.style?.color, isNot(Colors.white));
-    final spinner = tester.widgetList<KITProgressIndicator>(
-            find.descendant(
-                of: find.byType(LoginPage),
-                matching: find.byType(KITProgressIndicator)))
+    final spinner = tester
+        .widgetList<KITProgressIndicator>(find.descendant(
+            of: find.byType(LoginPage),
+            matching: find.byType(KITProgressIndicator)))
         .last;
     expect(spinner.color, isNot(Colors.white));
   });

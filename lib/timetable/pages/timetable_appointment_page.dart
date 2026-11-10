@@ -93,9 +93,7 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
   Future<void> _openDirections() async {
     final place = widget.appointment.place;
     final exact = place.latLngFromList ??
-        (place.dataUrl.isNotEmpty
-            ? await widget.appointment.placeData
-            : null);
+        (place.dataUrl.isNotEmpty ? await widget.appointment.placeData : null);
     final url = exact != null
         ? mapsDirectionsUrl(exact)
         : mapsSearchUrl(
@@ -174,8 +172,8 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                 // code for the chip above the pin; fall back to the full
                 // place string (ellipsis-capped) when it holds no code
                 final placeText = widget.appointment.displayPlace;
-                final roomLabel = _roomPattern.firstMatch(placeText)?.group(0) ??
-                    placeText;
+                final roomLabel =
+                    _roomPattern.firstMatch(placeText)?.group(0) ?? placeText;
 
                 return FlutterMap(
                   options: MapOptions(
@@ -230,8 +228,7 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: theme.textTheme.labelMedium
-                                        ?.copyWith(
-                                            fontWeight: FontWeight.bold),
+                                        ?.copyWith(fontWeight: FontWeight.bold),
                                   ),
                                 ),
                               SizedBox(height: 2),
@@ -293,245 +290,275 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                     return false;
                   },
                   child: Padding(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: 15 * max(0, 1 - _draggableSheetOffset / 100)),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(20) *
-                            max(0, 1 - _draggableSheetOffset / 100),
-                        topRight: Radius.circular(20) *
-                            max(0, 1 - _draggableSheetOffset / 100)),
-                    child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        child: Container(
-                          // padding: EdgeInsets.all(15),
-                          color:
-                              theme.colorScheme.surface.withValues(alpha: 0.5),
-                          child: Column(
-                            children: [
-                              // visible grab bar: the rounded top corner was
-                              // the entire drag affordance before
-                              Align(
-                                alignment: Alignment.topCenter,
-                                child: Container(
-                                  width: 36,
-                                  height: 4,
-                                  margin: const EdgeInsets.only(top: 10),
-                                  decoration: BoxDecoration(
-                                    color: theme.colorScheme.outlineVariant,
-                                    borderRadius: BorderRadius.circular(2),
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                child: ListView(
-                                  controller: controller,
-                            // last row must never sit flush on the panel
-                            // edge - and the system bar is below it
-                            padding: EdgeInsets.only(
-                                bottom: spaceXl +
-                                    MediaQuery.paddingOf(context).bottom),
-                            children: [
-                              // Text("data"),
-                              Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 15),
-                                  child: Align(
-                                    // on landscape tablets the full-width
-                                    // frosted panel read as a stretched
-                                    // column over dead blur; cap the content
-                                    alignment: Alignment.topCenter,
-                                    child: ConstrainedBox(
-                                      constraints:
-                                          const BoxConstraints(maxWidth: 560),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          SizedBox(height: 12),
-                                          Row(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Expanded(
-                                                child: Hero(
-                                                    tag:
-                                                        "appointmentTitle_${widget.appointment.title}_${widget.appointment.id}${widget.heroSuffix}",
-                                                    child: Text(
-                                                      widget.appointment
-                                                          .displayTitle,
-                                                      style: theme
-                                                          .textTheme
-                                                          .titleLarge
-                                                          ?.copyWith(
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold),
-                                                      maxLines: 2,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    )),
-                                              ),
-                                              IconButton(
-                                                onPressed: _toggleSheet,
-                                                tooltip: L10n.t(_expanded
-                                                    ? "timetable.collapseDetails"
-                                                    : "timetable.expandDetails"),
-                                                icon: Icon(_expanded
-                                                    ? Icons.expand_more
-                                                    : Icons.expand_less),
-                                              ),
-                                            ],
-                                          ),
-                                      SizedBox(height: spaceLg),
-                                    // WHERE first: the room and the way
-                                    // there sit above the collapsed peek,
-                                    // so "hide details" never hides them
-                                    if (widget
-                                        .appointment
-                                        .displayPlace
-                                        .isNotEmpty) ...[
-                                      placeDetail(
-                                          L10n.t("timetable.placeLabel"),
-                                          widget.appointment.displayPlace,
-                                          theme),
-                                      SizedBox(height: spaceMd),
-                                      // the CTA attaches to the room it
-                                      // routes to; the old FAB at endFloat
-                                      // ate the sheet's title instead
-                                      FilledButton.icon(
-                                        onPressed: _openDirections,
-                                        style: FilledButton.styleFrom(
-                                          minimumSize:
-                                              const Size.fromHeight(48),
-                                        ),
-                                        icon: const Icon(Icons.directions),
-                                        label: Text(L10n.t(
-                                            "timetable.directions")),
-                                      ),
-                                      SizedBox(height: spaceLg),
-                                    ],
-                                    // empty values (lunch has no room, feed
-                                    // rows often no id) would leave orphan
-                                    // labels eating the column's rhythm
-                                    ...(() {
-                                      final details = <(String, String)>[
-                                        (L10n.t("timetable.idLabel"),
-                                            widget.appointment.id),
-                                        (L10n.t("timetable.timeLabel"),
-                                            _timeRangeLabel()),
-                                        if (widget.appointment.place.aliasList
-                                            .isNotEmpty)
-                                          (L10n.t("timetable.aliasesLabel"),
-                                              widget
-                                                  .appointment.place.aliasList
-                                                  .join(", ")),
-                                      ];
-                                      final widgets = <Widget>[];
-                                      for (final (label, value) in details) {
-                                        if (value.isEmpty) continue;
-                                        if (widgets.isNotEmpty) {
-                                          widgets.add(
-                                              const SizedBox(height: spaceSm));
-                                        }
-                                        widgets.add(
-                                            placeDetail(label, value, theme));
-                                      }
-                                      return widgets;
-                                    })(),
-                                    // secondary payload, below the peek's
-                                    // fold: campus-map page + course page
-                                    if (_placePageUrl != null)
-                                      InkWell(
-                                        onTap: _openPlacePage,
-                                        borderRadius: const BorderRadius.all(
-                                            Radius.circular(12)),
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                              vertical: spaceMd),
-                                          child: Row(
-                                            children: [
-                                              Icon(
-                                                Icons.map_outlined,
-                                                color:
-                                                    theme.colorScheme.primary,
-                                              ),
-                                              SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  L10n.t(
-                                                      "timetable.openCampusMap"),
-                                                  style: theme
-                                                      .textTheme
-                                                      .bodyMedium
-                                                      ?.copyWith(
-                                                          color: theme
-                                                              .colorScheme
-                                                              .primary),
-                                                ),
-                                              ),
-                                              Icon(
-                                                Icons.chevron_right,
-                                                color: theme
-                                                    .colorScheme
-                                                    .outline,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    if (_coursePageUri != null)
-                                      InkWell(
-                                        onTap: _openCoursePage,
-                                        borderRadius: const BorderRadius.all(
-                                            Radius.circular(12)),
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                              vertical: 10),
-                                          child: Row(
-                                            children: [
-                                              Icon(
-                                                Icons.school_outlined,
-                                                color:
-                                                    theme.colorScheme.primary,
-                                              ),
-                                              SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  L10n.t(
-                                                      "timetable.openCoursePage"),
-                                                  style: theme
-                                                      .textTheme
-                                                      .bodyMedium
-                                                      ?.copyWith(
-                                                          color: theme
-                                                              .colorScheme
-                                                              .primary),
-                                                ),
-                                              ),
-                                              Icon(
-                                                Icons.chevron_right,
-                                                color: theme
-                                                    .colorScheme
-                                                    .outline,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    SizedBox(height: 20),
-                                  ],
-                                      ),
+                    padding: EdgeInsets.symmetric(
+                        horizontal:
+                            15 * max(0, 1 - _draggableSheetOffset / 100)),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(20) *
+                              max(0, 1 - _draggableSheetOffset / 100),
+                          topRight: Radius.circular(20) *
+                              max(0, 1 - _draggableSheetOffset / 100)),
+                      child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: Container(
+                            // padding: EdgeInsets.all(15),
+                            color: theme.colorScheme.surface
+                                .withValues(alpha: 0.5),
+                            child: Column(
+                              children: [
+                                // visible grab bar: the rounded top corner was
+                                // the entire drag affordance before
+                                Align(
+                                  alignment: Alignment.topCenter,
+                                  child: Container(
+                                    width: 36,
+                                    height: 4,
+                                    margin: const EdgeInsets.only(top: 10),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.outlineVariant,
+                                      borderRadius: BorderRadius.circular(2),
                                     ),
                                   ),
                                 ),
+                                Expanded(
+                                  child: ListView(
+                                    controller: controller,
+                                    // last row must never sit flush on the panel
+                                    // edge - and the system bar is below it
+                                    padding: EdgeInsets.only(
+                                        bottom: spaceXl +
+                                            MediaQuery.paddingOf(context)
+                                                .bottom),
+                                    children: [
+                                      // Text("data"),
+                                      Padding(
+                                        padding: EdgeInsets.symmetric(
+                                            horizontal: 15),
+                                        child: Align(
+                                          // on landscape tablets the full-width
+                                          // frosted panel read as a stretched
+                                          // column over dead blur; cap the content
+                                          alignment: Alignment.topCenter,
+                                          child: ConstrainedBox(
+                                            constraints: const BoxConstraints(
+                                                maxWidth: 560),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                SizedBox(height: 12),
+                                                Row(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Expanded(
+                                                      child: Hero(
+                                                          tag:
+                                                              "appointmentTitle_${widget.appointment.title}_${widget.appointment.id}${widget.heroSuffix}",
+                                                          child: Text(
+                                                            widget.appointment
+                                                                .displayTitle,
+                                                            style: theme
+                                                                .textTheme
+                                                                .titleLarge
+                                                                ?.copyWith(
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .bold),
+                                                            maxLines: 2,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          )),
+                                                    ),
+                                                    IconButton(
+                                                      onPressed: _toggleSheet,
+                                                      tooltip: L10n.t(_expanded
+                                                          ? "timetable.collapseDetails"
+                                                          : "timetable.expandDetails"),
+                                                      icon: Icon(_expanded
+                                                          ? Icons.expand_more
+                                                          : Icons.expand_less),
+                                                    ),
+                                                  ],
+                                                ),
+                                                SizedBox(height: spaceLg),
+                                                // WHERE first: the room and the way
+                                                // there sit above the collapsed peek,
+                                                // so "hide details" never hides them
+                                                if (widget
+                                                    .appointment
+                                                    .displayPlace
+                                                    .isNotEmpty) ...[
+                                                  placeDetail(
+                                                      L10n.t(
+                                                          "timetable.placeLabel"),
+                                                      widget.appointment
+                                                          .displayPlace,
+                                                      theme),
+                                                  SizedBox(height: spaceMd),
+                                                  // the CTA attaches to the room it
+                                                  // routes to; the old FAB at endFloat
+                                                  // ate the sheet's title instead
+                                                  FilledButton.icon(
+                                                    onPressed: _openDirections,
+                                                    style:
+                                                        FilledButton.styleFrom(
+                                                      minimumSize:
+                                                          const Size.fromHeight(
+                                                              48),
+                                                    ),
+                                                    icon: const Icon(
+                                                        Icons.directions),
+                                                    label: Text(L10n.t(
+                                                        "timetable.directions")),
+                                                  ),
+                                                  SizedBox(height: spaceLg),
+                                                ],
+                                                // empty values (lunch has no room, feed
+                                                // rows often no id) would leave orphan
+                                                // labels eating the column's rhythm
+                                                ...(() {
+                                                  final details =
+                                                      <(String, String)>[
+                                                    (
+                                                      L10n.t(
+                                                          "timetable.idLabel"),
+                                                      widget.appointment.id
+                                                    ),
+                                                    (
+                                                      L10n.t(
+                                                          "timetable.timeLabel"),
+                                                      _timeRangeLabel()
+                                                    ),
+                                                    if (widget.appointment.place
+                                                        .aliasList.isNotEmpty)
+                                                      (
+                                                        L10n.t(
+                                                            "timetable.aliasesLabel"),
+                                                        widget.appointment.place
+                                                            .aliasList
+                                                            .join(", ")
+                                                      ),
+                                                  ];
+                                                  final widgets = <Widget>[];
+                                                  for (final (label, value)
+                                                      in details) {
+                                                    if (value.isEmpty) continue;
+                                                    if (widgets.isNotEmpty) {
+                                                      widgets.add(
+                                                          const SizedBox(
+                                                              height: spaceSm));
+                                                    }
+                                                    widgets.add(placeDetail(
+                                                        label, value, theme));
+                                                  }
+                                                  return widgets;
+                                                })(),
+                                                // secondary payload, below the peek's
+                                                // fold: campus-map page + course page
+                                                if (_placePageUrl != null)
+                                                  InkWell(
+                                                    onTap: _openPlacePage,
+                                                    borderRadius:
+                                                        const BorderRadius.all(
+                                                            Radius.circular(
+                                                                12)),
+                                                    child: Padding(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          vertical: spaceMd),
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons.map_outlined,
+                                                            color: theme
+                                                                .colorScheme
+                                                                .primary,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Expanded(
+                                                            child: Text(
+                                                              L10n.t(
+                                                                  "timetable.openCampusMap"),
+                                                              style: theme
+                                                                  .textTheme
+                                                                  .bodyMedium
+                                                                  ?.copyWith(
+                                                                      color: theme
+                                                                          .colorScheme
+                                                                          .primary),
+                                                            ),
+                                                          ),
+                                                          Icon(
+                                                            Icons.chevron_right,
+                                                            color: theme
+                                                                .colorScheme
+                                                                .outline,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ),
+                                                if (_coursePageUri != null)
+                                                  InkWell(
+                                                    onTap: _openCoursePage,
+                                                    borderRadius:
+                                                        const BorderRadius.all(
+                                                            Radius.circular(
+                                                                12)),
+                                                    child: Padding(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          vertical: 10),
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(
+                                                            Icons
+                                                                .school_outlined,
+                                                            color: theme
+                                                                .colorScheme
+                                                                .primary,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Expanded(
+                                                            child: Text(
+                                                              L10n.t(
+                                                                  "timetable.openCoursePage"),
+                                                              style: theme
+                                                                  .textTheme
+                                                                  .bodyMedium
+                                                                  ?.copyWith(
+                                                                      color: theme
+                                                                          .colorScheme
+                                                                          .primary),
+                                                            ),
+                                                          ),
+                                                          Icon(
+                                                            Icons.chevron_right,
+                                                            color: theme
+                                                                .colorScheme
+                                                                .outline,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ),
+                                                SizedBox(height: 20),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        )),
+                            ),
+                          )),
+                    ),
                   ),
-                                ),
                 );
               }),
         ],

@@ -8,8 +8,11 @@ void main() {
     final raw = File('test/fixtures/wc_now.ics').readAsStringSync();
     final feed = WebcalFeed.parse(raw, now: DateTime(2026, 10, 30, 18, 0));
     expect(feed, isNotNull);
-    // 30 VEVENTs: weekly series expanded + break singles within horizon
-    expect(feed!.occurrences.length, greaterThan(30));
+    // exact occurrence count of the fixture (30 VEVENTs: weekly series
+    // expanded + break singles within the horizon) — the expansion is
+    // fully clamped by parse()'s reference-based horizon, so this number
+    // is wall-clock-independent and drift here means a parse regression
+    expect(feed!.occurrences.length, 94);
 
     // no occurrence outside the horizon
     final horizon = DateTime(2026, 10, 30).add(const Duration(days: 57));
@@ -41,16 +44,15 @@ void main() {
         reason: 'duplicate occurrences on same day: $mathDays');
 
     // rooms preserved
-    expect(
-        feed.occurrences.any((o) => o.room.contains('Carl-Benz-Hörsaal')),
+    expect(feed.occurrences.any((o) => o.room.contains('Carl-Benz-Hörsaal')),
         isTrue);
 
     // weekly template: Monday has MD Tutorial 11:30 in its block
     final weekly = feed.toWeeklyTemplate();
     final monday = weekly.days.first;
     expect(
-        monday.appointments
-            .any((a) => a.title.contains('Mechanical Design A') && a.begin.hour == 11),
+        monday.appointments.any((a) =>
+            a.title.contains('Mechanical Design A') && a.begin.hour == 11),
         isTrue,
         reason: 'monday: ${monday.appointments.map((a) => a.title)}');
 
@@ -58,35 +60,44 @@ void main() {
     // real-clock day window empties once the wall date passes the fixture
     final fp1 = feed.fingerprint(at: DateTime(2026, 10, 30, 18, 0));
     expect(fp1, feed.fingerprint(at: DateTime(2026, 10, 30, 18, 0)));
-    expect(fp1 == WebcalFeed.parse(raw.replaceFirst('Carl-Benz', 'Other-Room'),
-            now: DateTime(2026, 10, 30, 18, 0))!
-        .fingerprint(at: DateTime(2026, 10, 30, 18, 0)), isFalse);
+    expect(
+        fp1 ==
+            WebcalFeed.parse(raw.replaceFirst('Carl-Benz', 'Other-Room'),
+                    now: DateTime(2026, 10, 30, 18, 0))!
+                .fingerprint(at: DateTime(2026, 10, 30, 18, 0)),
+        isFalse);
   });
 
   String ics(List<String> events) =>
       "BEGIN:VCALENDAR\nVERSION:2.0\n${events.join()}"
       "END:VCALENDAR\n";
 
-  String ev(String uid, String start, String end, String summary,
-          String room) =>
+  String ev(
+          String uid, String start, String end, String summary, String room) =>
       "BEGIN:VEVENT\nUID:$uid\nDTSTART:$start\nDTEND:$end\n"
       "SUMMARY:$summary\nLOCATION:$room\nEND:VEVENT\n";
 
   test('changesSince classifies added/removed/moved/room-change', () {
     final now = DateTime(2026, 11, 2, 8);
-    final before = WebcalFeed.parse(ics([
-      ev("1@kit", "20261102T160000", "20261102T180000", "AdM V", "HS1"),
-      ev("2@kit", "20261103T080000", "20261103T100000", "MEI V", "HS31.47"),
-      ev("3@kit", "20261104T140000", "20261104T160000", "MSE Ü", "Bldc.10.30"),
-    ]), now: now);
-    final after = WebcalFeed.parse(ics([
-      // moved: 16:00 -> 18:00
-      ev("1@kit", "20261102T180000", "20261102T200000", "AdM V", "HS1"),
-      // room changed in place
-      ev("2@kit", "20261103T080000", "20261103T100000", "MEI V", "HS31.48"),
-      // series 3 dropped -> removed
-      ev("4@kit", "20261105T100000", "20261105T120000", "Übung Design A", "HS50.31"),
-    ]), now: now);
+    final before = WebcalFeed.parse(
+        ics([
+          ev("1@kit", "20261102T160000", "20261102T180000", "AdM V", "HS1"),
+          ev("2@kit", "20261103T080000", "20261103T100000", "MEI V", "HS31.47"),
+          ev("3@kit", "20261104T140000", "20261104T160000", "MSE Ü",
+              "Bldc.10.30"),
+        ]),
+        now: now);
+    final after = WebcalFeed.parse(
+        ics([
+          // moved: 16:00 -> 18:00
+          ev("1@kit", "20261102T180000", "20261102T200000", "AdM V", "HS1"),
+          // room changed in place
+          ev("2@kit", "20261103T080000", "20261103T100000", "MEI V", "HS31.48"),
+          // series 3 dropped -> removed
+          ev("4@kit", "20261105T100000", "20261105T120000", "Übung Design A",
+              "HS50.31"),
+        ]),
+        now: now);
     expect(before, isNotNull);
     expect(after, isNotNull);
 
@@ -141,8 +152,7 @@ void main() {
         .toList();
 
     // the weekly instance after the dead series' end must be present...
-    expect(
-        am.where((o) => o.start == DateTime(2026, 11, 6, 8, 0)), isNotEmpty,
+    expect(am.where((o) => o.start == DateTime(2026, 11, 6, 8, 0)), isNotEmpty,
         reason: 'live series dropped behind dead clone');
     // ...and the weekly rhythm must continue well past it
     expect(am.where((o) => !o.start.isBefore(DateTime(2026, 11, 6))).length,
@@ -158,7 +168,6 @@ void main() {
         reason: 'dead series occurrence leaked');
   });
 
-
   String rruleEv(String uid, String dtstart, String until, String summary) =>
       "BEGIN:VEVENT\nUID:$uid\nDTSTART:$dtstart\nRRULE:FREQ=WEEKLY;UNTIL=$until"
       "235959\nSUMMARY:$summary\nLOCATION:HS1\nEND:VEVENT\n";
@@ -167,7 +176,8 @@ void main() {
     // it used to flip the fingerprint alone -> "timetable changed" alert
     // with an empty real diff
     final raw = ics([
-      ev("1@kit", "20261031T230000", "20261101T010000", "Yesterday lecture", "HS1"),
+      ev("1@kit", "20261031T230000", "20261101T010000", "Yesterday lecture",
+          "HS1"),
       ev("2@kit", "20261105T080000", "20261105T100000", "Next week", "HS2"),
     ]);
     final day1 = WebcalFeed.parse(raw, now: DateTime(2026, 11, 1, 12))!;
@@ -212,13 +222,14 @@ void main() {
     // winter-semester Klausuren sit months out; the +56 d clamp exists to
     // bound RRULE expansion - one-off VEVENTs are fully enumerated and the
     // raw-cache export ships them, so parse must not disagree
-    final feed = WebcalFeed.parse(ics([
-      ev("klausur1", "20270301T173000", "20270301T190000",
-          "Klausur: EM II", "AVI 105"), // +120 d
-      rruleEv("lec1", "20261102T080000", "20270215", "Lecture long"),
-    ]), now: DateTime(2026, 11, 1));
-    expect(
-        feed!.occurrences.where((o) => o.uid == "klausur1"), hasLength(1));
+    final feed = WebcalFeed.parse(
+        ics([
+          ev("klausur1", "20270301T173000", "20270301T190000", "Klausur: EM II",
+              "AVI 105"), // +120 d
+          rruleEv("lec1", "20261102T080000", "20270215", "Lecture long"),
+        ]),
+        now: DateTime(2026, 11, 1));
+    expect(feed!.occurrences.where((o) => o.uid == "klausur1"), hasLength(1));
     final lec = feed.occurrences.where((o) => o.uid == "lec1").toList();
     final horizon = DateTime(2026, 11, 1).add(const Duration(days: 56));
     expect(lec, isNotEmpty);
@@ -229,9 +240,10 @@ void main() {
   });
 
   test('occurrences without DTEND carry endGuessed, with +90 default', () {
-    final feed = WebcalFeed.parse("BEGIN:VCALENDAR\r\n"
-            "BEGIN:VEVENT\r\nUID:noend\r\nDTSTART:20261103T080000\r\n"
-            "SUMMARY:Guess me\r\nEND:VEVENT\r\n" +
+    final feed = WebcalFeed.parse(
+        "BEGIN:VCALENDAR\r\n"
+                "BEGIN:VEVENT\r\nUID:noend\r\nDTSTART:20261103T080000\r\n"
+                "SUMMARY:Guess me\r\nEND:VEVENT\r\n" +
             ev("realend", "20261103T100000", "20261103T120000", "Real", "HS1")
                 .replaceAll("\n", "\r\n") +
             "END:VCALENDAR\r\n",
@@ -247,13 +259,17 @@ void main() {
     // C73: renamed lecture keeps UID and time - the twin pairing matches
     // it, and the comparison must not stay blind to the title
     final now = DateTime(2026, 11, 2, 8);
-    final before = WebcalFeed.parse(ics([
-      ev("1@kit", "20261103T080000", "20261103T100000", "AdM V", "HS1"),
-    ]), now: now);
-    final after = WebcalFeed.parse(ics([
-      ev("1@kit", "20261103T080000", "20261103T100000",
-          "Advanced Mathematics V", "HS1"),
-    ]), now: now);
+    final before = WebcalFeed.parse(
+        ics([
+          ev("1@kit", "20261103T080000", "20261103T100000", "AdM V", "HS1"),
+        ]),
+        now: now);
+    final after = WebcalFeed.parse(
+        ics([
+          ev("1@kit", "20261103T080000", "20261103T100000",
+              "Advanced Mathematics V", "HS1"),
+        ]),
+        now: now);
     final changes = after!.changesSince(before);
     expect(changes.length, 1);
     expect(changes.single.kind, IcsChangeKind.changed);
@@ -264,27 +280,23 @@ void main() {
     // C75: tolerant _dtOf - hand-written personal ICS variants used to
     // shift silently or drop their VEVENT entirely
     final now = DateTime(2026, 11, 2, 8);
-    final feed = WebcalFeed.parse(ics([
-      "BEGIN:VEVENT\nUID:9@kit\nDTSTART:20261103T080000Z\n"
-          "DTEND:20261103T100000Z\nSUMMARY:UTC Lab\nLOCATION:HS9\n"
-          "END:VEVENT\n",
-      "BEGIN:VEVENT\nUID:12@kit\nDTSTART:20261104T100000+0200\n"
-          "DTEND:20261104T120000+0200\nSUMMARY:Offset\nLOCATION:HS8\n"
-          "END:VEVENT\n",
-      "BEGIN:VEVENT\nUID:10@kit\nDTSTART;VALUE=DATE:20261105\n"
-          "SUMMARY:Abgabe\nEND:VEVENT\n",
-      "BEGIN:VEVENT\nUID:11@kit\nDTSTART:tBD\nSUMMARY:Ghost\nEND:VEVENT\n",
-    ]), now: now);
+    final feed = WebcalFeed.parse(
+        ics([
+          "BEGIN:VEVENT\nUID:9@kit\nDTSTART:20261103T080000Z\n"
+              "DTEND:20261103T100000Z\nSUMMARY:UTC Lab\nLOCATION:HS9\n"
+              "END:VEVENT\n",
+          "BEGIN:VEVENT\nUID:12@kit\nDTSTART:20261104T100000+0200\n"
+              "DTEND:20261104T120000+0200\nSUMMARY:Offset\nLOCATION:HS8\n"
+              "END:VEVENT\n",
+          "BEGIN:VEVENT\nUID:10@kit\nDTSTART;VALUE=DATE:20261105\n"
+              "SUMMARY:Abgabe\nEND:VEVENT\n",
+          "BEGIN:VEVENT\nUID:11@kit\nDTSTART:tBD\nSUMMARY:Ghost\nEND:VEVENT\n",
+        ]),
+        now: now);
     expect(feed, isNotNull);
-    expect(
-        feed!.occurrences
-            .firstWhere((o) => o.title == "UTC Lab")
-            .start,
+    expect(feed!.occurrences.firstWhere((o) => o.title == "UTC Lab").start,
         DateTime.utc(2026, 11, 3, 8).toLocal());
-    expect(
-        feed.occurrences
-            .firstWhere((o) => o.title == "Offset")
-            .start,
+    expect(feed.occurrences.firstWhere((o) => o.title == "Offset").start,
         DateTime.utc(2026, 11, 4, 8).toLocal());
     final allDay = feed.occurrences.firstWhere((o) => o.title == "Abgabe");
     expect(allDay.start, DateTime(2026, 11, 5));
@@ -292,7 +304,8 @@ void main() {
     expect(feed.occurrences.any((o) => o.title == "Ghost"), isFalse);
   });
 
-  test('URL parses onto occurrences but stays out of fingerprint/dedupeKey', () {
+  test('URL parses onto occurrences but stays out of fingerprint/dedupeKey',
+      () {
     const plain = "BEGIN:VCALENDAR\nVERSION:2.0\n"
         "BEGIN:VEVENT\nUID:u1@x\nDTSTART:20261102T113000\n"
         "DTEND:20261102T130000\nSUMMARY:T\nLOCATION:HS1\n"
@@ -315,13 +328,13 @@ void main() {
     expect(b.fingerprint(at: now), a.fingerprint(at: now));
     expect(b.occurrences.single.dedupeKey, a.occurrences.single.dedupeKey);
     // ...while the fingerprint keeps its byte-exact title rule
-    final c =
-        WebcalFeed.parse(withUrl.replaceFirst("SUMMARY:T", "SUMMARY:T2"),
-            now: now)!;
+    final c = WebcalFeed.parse(withUrl.replaceFirst("SUMMARY:T", "SUMMARY:T2"),
+        now: now)!;
     expect(c.fingerprint(at: now), isNot(b.fingerprint(at: now)));
   });
 
-  test('fixture: URL is the stable course token across clones and '
+  test(
+      'fixture: URL is the stable course token across clones and '
       're-publications', () {
     final raw = File('test/fixtures/wc_now.ics').readAsStringSync();
     final feed = WebcalFeed.parse(raw, now: DateTime(2026, 10, 30, 18))!;
@@ -342,8 +355,7 @@ void main() {
     // re-publication (:200) of the MatSci lecture carry the same token
     final matSci1130 = feed.occurrences
         .where((o) =>
-            o.title
-                .contains('Materials Science and Engineering I (Lecture)') &&
+            o.title.contains('Materials Science and Engineering I (Lecture)') &&
             o.start.hour == 11)
         .toList();
     expect(matSci1130, isNotEmpty);
@@ -351,7 +363,8 @@ void main() {
         {"https://campus.studium.kit.edu/ev/Z8LCOQf8RRm5qIWP-G30tg"});
   });
 
-  test('roomVaries: alternating feed rooms flag the block, stable rooms '
+  test(
+      'roomVaries: alternating feed rooms flag the block, stable rooms '
       'stay quiet', () {
     final raw = File('test/fixtures/wc_now.ics').readAsStringSync();
     final feed = WebcalFeed.parse(raw, now: DateTime(2026, 10, 30, 18))!;
@@ -432,7 +445,19 @@ void main() {
     expect(changes.removedOrMovedBlocks(DateTime(2026, 11, 4)), isEmpty);
   });
 
-  test('template: imported one-shots only in their real week, feed '
+  test('titleKey folds export noise so delta and row titles match', () {
+    // faculty number tail, leading course-id prefix, case and spacing:
+    // the agenda row-emphasis gate matches deltas on this key
+    expect(IcsChange.titleKey('Analysis I - 3161011'),
+        IcsChange.titleKey('analysis i'));
+    expect(IcsChange.titleKey('3161011 - Analysis I'),
+        IcsChange.titleKey(' Analysis I '));
+    expect(IcsChange.titleKey('Analysis I'),
+        isNot(IcsChange.titleKey('Linear Algebra')));
+  });
+
+  test(
+      'template: imported one-shots only in their real week, feed '
       'one-shot chains kept', () {
     String ev(String uid, String start, String end, String title,
             [String url = ""]) =>
@@ -448,15 +473,16 @@ void main() {
         ev('feed-far', '20261126T113000', '20261126T130000', 'MatSci Late',
             "URL:https://campus.studium.kit.edu/ev/Tok9\n") +
         "END:VCALENDAR\n";
-    final feed =
-        WebcalFeed.parse(raw, now: DateTime(2026, 11, 2, 8))!;
+    final feed = WebcalFeed.parse(raw, now: DateTime(2026, 11, 2, 8))!;
     final weekly = feed.toWeeklyTemplate();
     final tuesday = weekly.days[DateTime.tuesday - 1].appointments;
     final thursday = weekly.days[DateTime.thursday - 1].appointments;
     expect(tuesday.where((a) => a.title == 'Clinic Slot'), hasLength(1),
         reason: 'in-week imported one-shot belongs on its weekday');
-    expect(weekly.days.expand((d) => d.appointments).where((a) =>
-            a.title.contains('KLAUSUR')),
+    expect(
+        weekly.days
+            .expand((d) => d.appointments)
+            .where((a) => a.title.contains('KLAUSUR')),
         isEmpty,
         reason: 'a February Klausur must not haunt every Tuesday');
     final late1130 = thursday.firstWhere((a) => a.title == 'MatSci Late');
@@ -477,10 +503,9 @@ void main() {
         "DTEND:20261019T100000\n"
         "RRULE:FREQ=WEEKLY;UNTIL=20261110T000000\n"
         "SUMMARY:DST Lecture\nEND:VEVENT\nEND:VCALENDAR\n";
-    final feed =
-        WebcalFeed.parse(raw, now: DateTime(2026, 11, 2, 8))!;
-    final nov2 = feed.occurrences
-        .firstWhere((o) => o.start == DateTime(2026, 11, 2, 8));
+    final feed = WebcalFeed.parse(raw, now: DateTime(2026, 11, 2, 8))!;
+    final nov2 =
+        feed.occurrences.firstWhere((o) => o.start == DateTime(2026, 11, 2, 8));
     // the pre-flip instance was 08:00-10:00 CEST (2 absolute hours);
     // re-adding THAT to the post-flip Monday printed 09:00 CET as the end
     // while geometry still spanned to 10:00. Trivially true on hosts

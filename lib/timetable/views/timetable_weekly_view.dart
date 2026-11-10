@@ -36,7 +36,8 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
   }
 
   final _weekdayHeight = 90 * 7 * 0.7 + 200;
-  final CarouselSliderController _carouselSliderController = CarouselSliderController();
+  final CarouselSliderController _carouselSliderController =
+      CarouselSliderController();
 
   /// Fixed height of the date-heading band painted above the carousel
   /// viewport (top padding + titleLarge row + gap to the card).
@@ -128,7 +129,8 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
     final todayWeekdayIdx = now.weekday - 1;
     // calendar-day arithmetic: Duration(days:) is absolute time and lands a
     // wall-clock hour off across DST, mis-dating every page near midnight
-    return DateTime(now.year, now.month, now.day + (weekdayIdx - todayWeekdayIdx));
+    return DateTime(
+        now.year, now.month, now.day + (weekdayIdx - todayWeekdayIdx));
   }
 
   /// Deltas whose ghost lands on [day] (built by IcsChangeIndex.byGhostDayKey:
@@ -332,15 +334,16 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
     return SizedBox(
       height: bandHeight,
       child: Padding(
-        padding: const EdgeInsets.only(
-            left: pageGutter, right: pageGutter, top: 10),
+        padding:
+            const EdgeInsets.only(left: pageGutter, right: pageGutter, top: 10),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
               weekdayShortStr,
-              style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.outline),
+              style: theme.textTheme.titleLarge
+                  ?.copyWith(color: theme.colorScheme.outline),
             ),
 
             Padding(padding: EdgeInsets.all(5)),
@@ -356,7 +359,8 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
             // horizontal seat while the short weekday name changes width
             Text(
               weekdayShortStr,
-              style: theme.textTheme.titleLarge?.copyWith(color: Colors.transparent),
+              style: theme.textTheme.titleLarge
+                  ?.copyWith(color: Colors.transparent),
             ),
 
             Spacer(),
@@ -364,7 +368,6 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
             ShowTodayButton(
                 relativeOffset: _currentRealPage - _todayRealPage,
                 onPressed: () => _showToday(_currentRealPage)),
-
           ],
         ),
       ),

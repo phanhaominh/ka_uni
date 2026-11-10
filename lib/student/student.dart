@@ -7,7 +7,12 @@ class Student {
   String avgMark;
   String ectsAcquired;
 
-  Student({required this.name, required this.matriculationNumber, required this.degreeProgram, required this.avgMark, required this.ectsAcquired});
+  Student(
+      {required this.name,
+      required this.matriculationNumber,
+      required this.degreeProgram,
+      required this.avgMark,
+      required this.ectsAcquired});
 
   void set({name, matriculationNumber, degreeProgram, avgMark, ectsAcquired}) {
     this.name = name;
@@ -25,7 +30,12 @@ class Student {
     ectsAcquired = otherStudent.ectsAcquired;
   }
 
-  static Student get empty => Student(name: Name.empty, matriculationNumber: "", degreeProgram: "", avgMark: "0,0", ectsAcquired: "0,0");
+  static Student get empty => Student(
+      name: Name.empty,
+      matriculationNumber: "",
+      degreeProgram: "",
+      avgMark: "0,0",
+      ectsAcquired: "0,0");
 
   String get repr => "${name.repr} ($matriculationNumber)";
 

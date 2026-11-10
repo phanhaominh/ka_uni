@@ -57,10 +57,8 @@ void main() {
         cm.isTakingThisSemester(_entry("Basics of Manufacturing Technology")),
         isTrue);
     expect(cm.isTakingThisSemester(_entry("AMINM")), isTrue);
-    expect(
-        cm.isTakingThisSemester(_entry("Tutorial: AMINM")), isTrue);
-    expect(
-        cm.isTakingThisSemester(_entry("Analysis I für Maschinenbauer")),
+    expect(cm.isTakingThisSemester(_entry("Tutorial: AMINM")), isTrue);
+    expect(cm.isTakingThisSemester(_entry("Analysis I für Maschinenbauer")),
         isTrue);
   });
 
@@ -80,25 +78,24 @@ void main() {
     cm.rememberEnrolledTitles(
         WebcalFeed.parse(_ics(["Engineering Mechanics I (V), Fidlin"])));
 
-    expect(cm.isTakingThisSemester(_entry("Engineering Mechanics I")),
-        isTrue);
-    expect(cm.isTakingThisSemester(_entry("Engineering Mechanics III")),
-        isFalse);
+    expect(cm.isTakingThisSemester(_entry("Engineering Mechanics I")), isTrue);
+    expect(
+        cm.isTakingThisSemester(_entry("Engineering Mechanics III")), isFalse);
   });
 
-    // "Materials Science I and II" is the catalogue's joined form of the
-    // ICS-taken "Materials Science and Engineering I"; the number-set
-    // difference must not bury the exam in the later-semester section.
-    test("joined 'I and II' catalogue entry covers the taken part", () {
-      cm.rememberEnrolledTitles(WebcalFeed.parse(_ics(
-          ["Materials Science and Engineering I (Lecture) - 3173008"])));
+  // "Materials Science I and II" is the catalogue's joined form of the
+  // ICS-taken "Materials Science and Engineering I"; the number-set
+  // difference must not bury the exam in the later-semester section.
+  test("joined 'I and II' catalogue entry covers the taken part", () {
+    cm.rememberEnrolledTitles(WebcalFeed.parse(
+        _ics(["Materials Science and Engineering I (Lecture) - 3173008"])));
 
-      expect(cm.isTakingThisSemester(
-          _entry("Materials Science I and II")), isTrue);
-      // proper-subset numbers still need the noun words to agree
-      expect(cm.isTakingThisSemester(
-          _entry("Mechanical Design I and II")), isFalse);
-    });
+    expect(
+        cm.isTakingThisSemester(_entry("Materials Science I and II")), isTrue);
+    // proper-subset numbers still need the noun words to agree
+    expect(
+        cm.isTakingThisSemester(_entry("Mechanical Design I and II")), isFalse);
+  });
 
   test("empty or broken feed keeps relevance unknown, not wrongly false", () {
     cm.rememberEnrolledTitles(WebcalFeed.parse(_ics([])));
@@ -114,15 +111,13 @@ void main() {
     // now-1d, so the fixed Nov-6 seeds silently aged out of the enrolled
     // title set and the import stopped gating exams
     String two(int n) => n.toString().padLeft(2, "0");
-    String stamp(DateTime d) =>
-        "${d.year}${two(d.month)}${two(d.day)}"
+    String stamp(DateTime d) => "${d.year}${two(d.month)}${two(d.day)}"
         "T${two(d.hour)}${two(d.minute)}${two(d.second)}";
     final d1 = DateTime.now().add(const Duration(days: 2));
     final d2 = DateTime.now().add(const Duration(days: 3));
     final u = DateTime.now().add(const Duration(days: 120));
     final until = "${u.year}${two(u.month)}${two(u.day)}T235959Z";
-    final facultyIcs =
-        '''BEGIN:VCALENDAR
+    final facultyIcs = '''BEGIN:VCALENDAR
 PRODID:-//Fakultät für Maschinenbau//de
 VERSION:2.0
 BEGIN:VEVENT
@@ -148,7 +143,8 @@ DTEND:${stamp(DateTime(d1.year, d1.month, d1.day, 17, 30))}
 LOCATION:Fachschaft Mathematik am KIT
 END:VEVENT
 END:VCALENDAR
-'''.replaceAll("\n", "\r\n");
+'''
+        .replaceAll("\n", "\r\n");
 
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -162,7 +158,9 @@ END:VCALENDAR
       expect(cache, contains("BEGIN:VCALENDAR"));
       expect(cache, contains("X-PERSONAL-ICS-BEGIN"));
       // agenda rebuilt from the merged stub cache
-      expect(CampusManager.lectureTitleKey("Advanced Mathematics I (Lecture) - 0140000"),
+      expect(
+          CampusManager.lectureTitleKey(
+              "Advanced Mathematics I (Lecture) - 0140000"),
           "advanced mathematics i");
       expect(
           CampusManager.lectureTitleKey(
@@ -174,26 +172,26 @@ END:VCALENDAR
       await cm.setPersonalIcsFromRaw(facultyIcs);
       // orientation exam of the imported AM lecture must be flagged urgent
       expect(cm.isTakingThisSemester(_entry("Advanced Mathematics I")), isTrue);
-      expect(cm.isTakingThisSemester(_entry("Engineering Mechanics I")),
-          isTrue);
+      expect(
+          cm.isTakingThisSemester(_entry("Engineering Mechanics I")), isTrue);
       // the group digit must NOT block the match, but must also not let a
       // different roman numeral through
       expect(cm.isTakingThisSemester(_entry("Engineering Mechanics III")),
           isFalse);
-      expect(
-          cm.isTakingThisSemester(_entry("IT and Data Science")), isFalse);
+      expect(cm.isTakingThisSemester(_entry("IT and Data Science")), isFalse);
     });
 
     test("sentinels round-trip: extract, strip, re-inject stays idempotent",
         () {
       final merged = CampusManager.injectPersonalIcs(
-          "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", "BEGIN:VEVENT\r\nEND:VEVENT\r\n");
+          "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+          "BEGIN:VEVENT\r\nEND:VEVENT\r\n");
       expect(CampusManager.extractPersonalIcs(merged),
           "BEGIN:VEVENT\r\nEND:VEVENT\r\n");
       expect(CampusManager.stripPersonalIcs(merged),
           "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n");
-      final twice =
-          CampusManager.injectPersonalIcs(merged, "BEGIN:VEVENT\r\nEND:VEVENT\r\n");
+      final twice = CampusManager.injectPersonalIcs(
+          merged, "BEGIN:VEVENT\r\nEND:VEVENT\r\n");
       expect(twice, merged);
     });
 
@@ -213,14 +211,13 @@ END:VCALENDAR
         "DTEND;TZID=Europe/Berlin:20270323T190000\r\n"
         "SUMMARY:Klausur: Engineering Mechanics II\r\nEND:VEVENT\r\n";
 
-    WebcalFeed? parse(String body) => WebcalFeed.parse(
-        "BEGIN:VCALENDAR\r\n$body END:VCALENDAR\r\n",
-        now: DateTime(2026, 11, 1));
+    WebcalFeed? parse(String body) =>
+        WebcalFeed.parse("BEGIN:VCALENDAR\r\n$body END:VCALENDAR\r\n",
+            now: DateTime(2026, 11, 1));
 
     test("Klausur event alone yields an empty key set", () {
       final feed = parse(examEvent)!;
-      expect(
-        feed.occurrences.single.uid, startsWith("kauni-exam-"));
+      expect(feed.occurrences.single.uid, startsWith("kauni-exam-"));
       expect(CampusManager.enrolledTitleKeys(feed), isEmpty);
       cm.rememberEnrolledTitles(feed);
       // unknown, not true: the gate must stay silent, not self-certify

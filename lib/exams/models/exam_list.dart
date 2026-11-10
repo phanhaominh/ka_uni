@@ -80,7 +80,6 @@ class ExamEntry {
     this.windowEnd,
   });
 
-
   bool windowIsOpen(DateTime now) {
     switch (windowStatus) {
       case ExamWindowStatus.impossible:
@@ -156,8 +155,7 @@ class ExamListParser {
 
       final statusText =
           tds[6].querySelector(".regstatus")?.text.trim() ?? tds[6].text.trim();
-      final registerText =
-          tds[6].querySelector(".reginfo")?.text.trim() ?? "";
+      final registerText = tds[6].querySelector(".reginfo")?.text.trim() ?? "";
 
       ExamWindowStatus status = ExamWindowStatus.unknown;
       DateTime? start, end;
@@ -166,8 +164,11 @@ class ExamListParser {
       } else {
         final m = _deDateTime.firstMatch(registerText);
         if (m != null) {
-          final date = DateTime(int.parse(m.group(3)!), int.parse(m.group(2)!),
-              int.parse(m.group(1)!), int.tryParse(m.group(4) ?? "0") ?? 0,
+          final date = DateTime(
+              int.parse(m.group(3)!),
+              int.parse(m.group(2)!),
+              int.parse(m.group(1)!),
+              int.tryParse(m.group(4) ?? "0") ?? 0,
               int.tryParse(m.group(5) ?? "0") ?? 0);
           if (registerText.contains("Anmeldung ab")) {
             status = ExamWindowStatus.closed;
@@ -207,16 +208,21 @@ class ExamListParser {
     return result;
   }
 
-  /// True when the #EXAMLIST table carries data-shaped rows (a <tr> with
-  /// at least two <td>s; header rows are pure <th>, "no records" notices a
-  /// single colspan cell). The fetch gate uses this to tell a genuinely
-  /// empty list from a markup reflow that [parse] reads as ZERO rows while
-  /// the table is still full of data.
+  /// True when the page must NOT be certified as a definitively empty
+  /// exam list. Two ways to earn that: the #EXAMLIST table carries
+  /// data-shaped rows (a <tr> with at least two <td>s; header rows are
+  /// pure <th>, "no records" notices a single colspan cell), OR the table
+  /// element cannot be found at all - an id reflow (header anchors keep
+  /// <a name="EXAMLIST"> alive, the table loses the id) makes [parse]
+  /// read zero rows out of a still-full table, and missing evidence must
+  /// never certify the empty state (examsLoaded=true + dead seal badge on
+  /// a page that had data). Only a table that EXISTS with zero data rows
+  /// is the valid empty state.
   static bool examListHasRows(String html) {
     final document = htmlparser.parse(html);
     final table = document.getElementById("EXAMLIST");
     if (table == null) {
-      return false;
+      return true; // cannot prove emptiness -> the gate must not accept it
     }
     for (final tr in table.getElementsByTagName("tr")) {
       if (tr.getElementsByTagName("td").length >= 2) {
@@ -231,8 +237,8 @@ class ExamListParser {
   static DateTime _date(String dayLabel) {
     final m = RegExp(r"(\d{2})\.(\d{2})\.(\d{4})").firstMatch(dayLabel);
     if (m == null) return DateTime(2100);
-    return DateTime(int.parse(m.group(3)!), int.parse(m.group(2)!),
-        int.parse(m.group(1)!));
+    return DateTime(
+        int.parse(m.group(3)!), int.parse(m.group(2)!), int.parse(m.group(1)!));
   }
 
   static String? semesterCaption(String html) {

@@ -7,7 +7,9 @@ void main() {
   test('parses real possibleexams fixture', () {
     final raw = File('test/fixtures/possibleexams.html').readAsStringSync();
     final exams = ExamListParser.parse(raw);
-    expect(exams.length, greaterThanOrEqualTo(20));
+    // exact fixture count (was a `>= 20` floor that let parse regressions
+    // inside the slack pass silently)
+    expect(exams.length, 23);
 
     final em1 = exams.firstWhere((e) => e.title == "Engineering Mechanics I");
     expect(em1.registered, isFalse);
@@ -15,16 +17,16 @@ void main() {
     expect(em1.needsAction(DateTime(2026, 10, 30)), isFalse);
 
     // "Anmeld ung ab 15.11.2026" -> closed before, open after the start
-    final mcs = exams.firstWhere(
-        (e) => e.title == "Measurement and Control Systems");
+    final mcs =
+        exams.firstWhere((e) => e.title == "Measurement and Control Systems");
     expect(mcs.windowStatus, ExamWindowStatus.closed);
     expect(mcs.windowStart, DateTime(2026, 11, 15, 0, 0));
     expect(mcs.needsAction(DateTime(2026, 11, 14)), isFalse);
     expect(mcs.needsAction(DateTime(2026, 11, 16)), isTrue);
 
     // "Anmelden bis 07.12.2026 23:59" -> open until end
-    final tut = exams.firstWhere(
-        (e) => e.title == "Tutorial Engineering Mechanics III");
+    final tut = exams
+        .firstWhere((e) => e.title == "Tutorial Engineering Mechanics III");
     expect(tut.windowStatus, ExamWindowStatus.open);
     expect(tut.windowEnd, DateTime(2026, 12, 7, 23, 59));
     expect(tut.needsAction(DateTime(2026, 12, 1)), isTrue);
@@ -75,13 +77,14 @@ void main() {
     // "27.02.2027 – 06.03.2027" (dash not glued to a fragment) and a
     // full-date-token count would miss "27.02.-06.03.2027" (its first
     // fragment has no year, so firstMatch resolves to the range END).
-    ExamTerm t(String dayLabel) => ExamTerm(dayLabel, "10:00 - 12:00", "AVI 105");
+    ExamTerm t(String dayLabel) =>
+        ExamTerm(dayLabel, "10:00 - 12:00", "AVI 105");
     expect(t("27.02.-06.03.2027").startAt, isNull);
     expect(t("27.02.2027 – 06.03.2027").startAt, isNull);
     expect(t("12.04 - 30.04.2027").startAt, isNull);
     expect(t("23.03.2027").startAt, DateTime(2027, 3, 23, 10, 0));
-    expect(t("Fr, 16.04.2027, 2. Termin").startAt,
-        DateTime(2027, 4, 16, 10, 0));
+    expect(
+        t("Fr, 16.04.2027, 2. Termin").startAt, DateTime(2027, 4, 16, 10, 0));
   });
 
   test('examListHasRows separates the empty state from a cell reflow', () {
@@ -98,10 +101,17 @@ void main() {
             '<td colspan="8">Keine Einträge</td></tr></tbody></table>'),
         isFalse);
 
-    // no table at all (login bounce): no rows - the gate's marker check
-    // alone decides there
+    // no table at all (login bounce OR a table-id reflow that leaves only
+    // the <a name="EXAMLIST"> anchor): absence of the table CANNOT certify
+    // the empty state - hasRows must report "there might be data" so the
+    // fetch gate falls through to the surface-broken funnel
+    expect(ExamListParser.examListHasRows('<html><body>nope</body></html>'),
+        isTrue);
     expect(
-        ExamListParser.examListHasRows('<html><body>nope</body></html>'),
-        isFalse);
+        ExamListParser.examListHasRows(
+            '<a name="EXAMLIST"></a><table id="SOMETHING_ELSE">'
+            '<tbody class="tablecontent"><tr><td>a</td><td>b</td></tr>'
+            '</tbody></table>'),
+        isTrue);
   });
 }

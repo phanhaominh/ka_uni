@@ -1,4 +1,3 @@
-
 class KITCredentials {
   String username;
   String password;
