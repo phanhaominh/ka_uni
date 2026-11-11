@@ -224,6 +224,19 @@ class _MensaTodayCardState extends State<MensaTodayCard> {
   }
 
   Widget _menuCard(ThemeData theme, MensaManager mensa, MensaDay day) {
+    // EN UI only: queue every not-yet-seen name (lines + dishes). The
+    // translator never notifies synchronously (prefs read + HTTP are
+    // both awaited), so calling this from build cannot re-enter build.
+    if (L10n.isEnglish) {
+      mensa.translate.request([
+        for (final l in day.lines) ...[l.name, if (l.sub != null) l.sub!],
+        for (final l in day.lines)
+          for (final m in l.meals) m.name,
+      ]);
+    }
+    String tr(String s) =>
+        L10n.isEnglish ? (mensa.translate.en(s) ?? s) : s;
+
     final List<MensaLine> withMeals =
         day.lines.where((MensaLine l) => l.meals.isNotEmpty).toList();
     final int total =
@@ -246,12 +259,12 @@ class _MensaTodayCardState extends State<MensaTodayCard> {
         padding: const EdgeInsets.only(top: spaceXs, bottom: 2),
         child: Text.rich(TextSpan(children: [
           TextSpan(
-              text: line.name,
+              text: tr(line.name),
               style: theme.textTheme.labelLarge
                   ?.copyWith(color: theme.colorScheme.primary)),
           if (line.sub != null)
             TextSpan(
-                text: "  ${line.sub}",
+                text: "  ${tr(line.sub!)}",
                 style: theme.textTheme.labelSmall
                     ?.copyWith(color: theme.colorScheme.outline)),
         ])),
@@ -259,7 +272,7 @@ class _MensaTodayCardState extends State<MensaTodayCard> {
       for (final MensaMeal meal in line.meals) {
         if (cut && seen >= _collapsedMax) break;
         seen++;
-        rows.add(_mealRow(theme, meal));
+        rows.add(_mealRow(theme, meal, tr));
       }
     }
     if (cut) {
@@ -318,13 +331,26 @@ class _MensaTodayCardState extends State<MensaTodayCard> {
   /// large text scale (>=1.4x): name keeps the FULL width on its own
   /// lines, badge+price share a compact second line - at 2.0x the
   /// one-line variant shrank the name to ~4 readable characters
-  Widget _mealRow(ThemeData theme, MensaMeal meal) {
+  Widget _mealRow(ThemeData theme, MensaMeal meal,
+      String Function(String) tr) {
     final double scale =
         MediaQuery.textScalerOf(context).scale(14) / 14;
     final Widget badge = _badge(theme, meal);
     final Widget price = Text(meal.priceText,
         style: theme.textTheme.bodyMedium
             ?.copyWith(fontWeight: FontWeight.w600));
+    final String shownName = tr(meal.name);
+    Widget nameText(int maxLines) {
+      final Text text = Text(shownName,
+          maxLines: maxLines,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodyMedium);
+      // an English name never loses the German original - the printed
+      // board, the lunch crew and the SW app all speak German
+      return shownName == meal.name
+          ? text
+          : Tooltip(message: meal.name, child: text);
+    }
 
     if (scale < 1.4) {
       return Padding(
@@ -335,10 +361,7 @@ class _MensaTodayCardState extends State<MensaTodayCard> {
             badge,
             const SizedBox(width: spaceSm),
             Expanded(
-              child: Text(meal.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium),
+              child: nameText(2),
             ),
             const SizedBox(width: spaceSm),
             price,
@@ -351,10 +374,7 @@ class _MensaTodayCardState extends State<MensaTodayCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(meal.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium),
+          nameText(2),
           const SizedBox(height: 2),
           Row(children: [badge, const SizedBox(width: spaceSm), price]),
         ],

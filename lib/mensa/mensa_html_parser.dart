@@ -34,26 +34,46 @@ class MensaHtmlParser {
   /// was fetched; undated stamps are anchored to it. A day whose table
   /// cannot be interpreted is SKIPPED, never guessed, so a site layout
   /// change degrades to "no data" instead of wrong data.
+  ///
+  /// Pairing is a strict document-order walk over h1/table: a day stamp
+  /// claims the FIRST table that follows it before any newer stamp opens.
+  /// A stamp without a table (weekend/break stamps are printed without
+  /// one) therefore claims nothing - letting it reach further would
+  /// silently pair Thursday's dishes under Wednesday's stamp (measured
+  /// live in the midnight window, when stamps roll off the page). Two
+  /// tables under one stamp (lunch + dinner headers repeating the date)
+  /// merge into one day entry - dayFor must never see duplicates.
   List<MensaDay> parseWeek(String html, DateTime ref) {
     final dom.Document doc = html_parser.parse(html);
-    final List<dom.Element> h1s = doc.querySelectorAll('h1');
     final List<MensaDay> days = [];
-    for (int i = 1; i < h1s.length; i++) {
-      // h1[0] is the canteen title; day stamps may mix with other
-      // headings, so every later h1 matching the stamp opens a day
-      final RegExpMatch? stamp = _dayStamp.firstMatch(h1s[i].text.trim());
-      if (stamp == null) continue;
-      final dom.Element? table = _nextElement(h1s[i], 'table');
-      if (table == null) continue;
-      final List<MensaLine> lines = _parseLines(table);
+    RegExpMatch? pending;
+    for (final dom.Element el in doc.querySelectorAll('h1, table')) {
+      if (el.localName == 'h1') {
+        final RegExpMatch? stamp = _dayStamp.firstMatch(el.text.trim());
+        if (stamp != null) pending = stamp;
+        continue;
+      }
+      if (pending == null) continue; // table before any stamp (other blocks)
+      final List<MensaLine> lines = _parseLines(el);
+      final RegExpMatch stamp = pending;
+      pending = null;
       if (lines.isEmpty) continue;
-      days.add(MensaDay(
-          date: _resolveDate(
-              int.parse(stamp.group(1)!), int.parse(stamp.group(2)!), ref),
-          lines: lines));
+      final DateTime date = _resolveDate(
+          int.parse(stamp.group(1)!), int.parse(stamp.group(2)!), ref);
+      final int at =
+          days.indexWhere((MensaDay d) => _sameDate(d.date, date));
+      if (at == -1) {
+        days.add(MensaDay(date: date, lines: lines));
+      } else {
+        days[at] = MensaDay(
+            date: date, lines: [...days[at].lines, ...lines]);
+      }
     }
     return days;
   }
+
+  static bool _sameDate(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   /// Direct <tr> children of [table] (package:html builds the real tree
   /// including implied tbody wrappers - rows can sit one level deeper).
@@ -152,26 +172,6 @@ class MensaHtmlParser {
     final RegExpMatch? m = _price.firstMatch(s);
     if (m == null) return null;
     return int.parse(m.group(1)!) * 100 + int.parse(m.group(2)!);
-  }
-
-  /// The next element sibling named [tag]; pure-text siblings are
-  /// skipped, any OTHER element means the layout changed under us.
-  /// (package:html Nodes have no nextSibling - walk the parent's kids.)
-  dom.Element? _nextElement(dom.Element from, String tag) {
-    final dom.Element? parent = from.parent;
-    if (parent == null) return null;
-    final List<dom.Node> kids = parent.nodes;
-    final int i = kids.indexOf(from);
-    if (i < 0) return null;
-    for (int k = i + 1; k < kids.length; k++) {
-      final dom.Node n = kids[k];
-      if (n is dom.Element) {
-        final bool hit = n.localName == tag;
-        return hit ? n : null;
-      }
-      if ((n is dom.Text ? n.data : "").trim().isNotEmpty) return null;
-    }
-    return null;
   }
 
   /// The feed stamps no year: the candidate (previous/current/next

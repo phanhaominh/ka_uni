@@ -1,11 +1,14 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/mensa/mensa_html_parser.dart';
 import 'package:kit_mobile/mensa/mensa_manager.dart';
+import 'package:kit_mobile/mensa/mensa_translate.dart';
 import 'package:kit_mobile/mensa/models/mensa_models.dart';
 import 'package:kit_mobile/mensa/views/mensa_today_card.dart';
 import 'package:kit_mobile/settings/providers/settings_provider.dart'
@@ -106,6 +109,39 @@ void main() {
         "</tr></table></td></tr></table></body></html>";
     final days = MensaHtmlParser().parseWeek(h, DateTime(2027, 1, 1, 12));
     expect(days.single.date, DateTime(2026, 12, 28));
+  });
+
+  test("a stamp without a table must not steal the next day's table", () {
+    // measured live in the midnight window: stamps roll off the served
+    // page, and a stamp whose own table is gone must pair with NOTHING -
+    // pairing it forward filed Thursday's dishes under Wednesday
+    const h = "<html><body><h1>Mensa</h1><h1>Mi 11.11.</h1>"
+        "<h1>Do 12.11.</h1>"
+        "<table><tr><td>Linie 1</td><td><table><tr><td>[VG]</td>"
+        "<td><span>Testgericht</span></td><td><span>1,00 €</span></td>"
+        "</tr></table></td></tr></table></body></html>";
+    final days = MensaHtmlParser().parseWeek(h, DateTime(2026, 11, 12, 12));
+    expect(days.length, 1,
+        reason: "Mi has no table of its own; it must not claim Do's");
+    expect(days.single.date, DateTime(2026, 11, 12));
+    expect(days.single.mealCount, 1);
+  });
+
+  test("two tables under the same stamp merge into one day entry", () {
+    // lunch and dinner headers can repeat the date stamp; dayFor and the
+    // week fence must never face two entries for one calendar day
+    const h = "<html><body><h1>Mensa</h1><h1>Mi 11.11.</h1>"
+        "<table><tr><td>Linie 1</td><td><table><tr><td></td>"
+        "<td><span>Mittag</span></td><td><span>1,00 €</span></td>"
+        "</tr></table></td></tr></table>"
+        "<h1>Mi 11.11.</h1>"
+        "<table><tr><td>Abendessen</td><td><table><tr><td></td>"
+        "<td><span>Abendbrot</span></td><td><span>2,00 €</span></td>"
+        "</tr></table></td></tr></table></body></html>";
+    final days = MensaHtmlParser().parseWeek(h, DateTime(2026, 11, 12, 12));
+    expect(days.length, 1);
+    expect(days.single.lines.length, 2);
+    expect(days.single.mealCount, 2);
   });
 
   group("manager", () {
@@ -267,12 +303,16 @@ void main() {
     // pumps the REAL card against a provider whose manager holds a
     // restored week - the same state an offline boot paints
     Future<void> pumpCard(WidgetTester tester,
-        {Duration? age, withData = true}) async {
-      SharedPreferences.setMockInitialValues({});
+        {Duration? age,
+        withData = true,
+        Map<String, Object> extraPrefs = const {}}) async {
+      SharedPreferences.setMockInitialValues(extraPrefs);
       final now = DateTime.now();
       final vm = KITProvider();
       vm.mensa.transport =
           (u) async => http.Response("", 403); // card kick must stay offline
+      vm.mensa.translate.transport =
+          (u) async => http.Response("[]", 503); // no translate traffic either
       if (withData) {
         vm.mensa.days = [
           MensaDay(date: DateTime(now.year, now.month, now.day), lines: [
@@ -320,6 +360,30 @@ void main() {
       // a fresh snapshot must NOT shout staleness
       expect(find.textContaining("evtl. veraltet"), findsNothing);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets("EN UI shows translated names with the German a tap away",
+        (tester) async {
+      await L10n.reload(prefOverride: "en");
+      try {
+        await pumpCard(tester, extraPrefs: {
+          MensaTranslate.cacheKey: jsonEncode({
+            "Spaghetti Aglio e Olio": "Spaghetti with garlic and oil",
+            "Seelachsfilet": "Haddock fillet",
+            "Linie 1": "Line 1",
+          }),
+        });
+        await tester.pump(); // translation cache restore (async prefs)
+        expect(find.text("Spaghetti with garlic and oil"), findsOneWidget);
+        expect(find.text("Haddock fillet"), findsOneWidget);
+        expect(find.textContaining("Line 1"), findsOneWidget);
+        final tips = tester.widgetList<Tooltip>(find.byType(Tooltip));
+        expect(tips.map((t) => t.message),
+            containsAll(["Spaghetti Aglio e Olio", "Seelachsfilet"]),
+            reason: "long-press must still reveal the German original");
+      } finally {
+        await L10n.reload(prefOverride: "de");
+      }
     });
 
     testWidgets("a >6 h old cache says so in the footer", (tester) async {

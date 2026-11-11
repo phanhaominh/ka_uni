@@ -186,7 +186,11 @@ class KITProvider extends ChangeNotifier {
     // its failures NEVER touch campusManager's surface/offline flags.
     // Not under the test harness though: 8+ suites construct a
     // KITProvider and the Studierendenwerk must not eat one GET each
-    mensa = MensaManager();
+    mensa = MensaManager()
+      // relay: menu AND translation arrivals repaint the card the moment
+      // they land (boot below only fires once; late translate results
+      // would otherwise wait for the next unrelated rebuild)
+      ..addListener(notifyListeners);
     if (!Platform.environment.containsKey('FLUTTER_TEST')) {
       unawaited(mensa.restore().then((_) => mensa.fetchWeek()).then((_) =>
           notifyListeners())); // flip the card from pending once settled

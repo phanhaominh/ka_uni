@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:kit_mobile/mensa/mensa_html_parser.dart';
+import 'package:kit_mobile/mensa/mensa_translate.dart';
 import 'package:kit_mobile/mensa/models/mensa_models.dart';
 import 'package:kit_mobile/settings/providers/settings_provider.dart'
     show showingMensaKey;
@@ -50,6 +51,15 @@ class MensaManager extends ChangeNotifier {
   static const _ttl = Duration(hours: 3);
 
   final MensaHtmlParser _parser = MensaHtmlParser();
+
+  /// DE→EN dish-name translation (EN UI only; persisted, offline after
+  /// first sight). Its cache updates flow through this manager's own
+  /// change signal - the card already listens here.
+  final MensaTranslate translate = MensaTranslate();
+
+  MensaManager() {
+    translate.onChanged = notifyListeners;
+  }
 
   /// test seam - stubbed by unit tests, mirrors the netGet-override
   /// discipline of the campus feed tests
