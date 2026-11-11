@@ -219,11 +219,16 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
       _weekPxPerMin = timetableIdealPxPerMin;
       _cardHeight = _minCardHeight;
     } else {
+      // the px budget is the card's CONTENT area: BlockContainer wraps
+      // every page in 4px gutters, and a column that eats the full strip
+      // used to have its last minutes (the 17:15 basics bottom) clipped
+      // by the rounded frame (11.20 report)
+      final contentCap = cap - 2 * cardGutter;
       _weekPxPerMin =
-          axisPxPerMin(capPx: cap, rangeMin: axis.rangeMin);
+          axisPxPerMin(capPx: contentCap, rangeMin: axis.rangeMin);
       final columnH = axis.rangeMin * _weekPxPerMin;
-      _cardHeight =
-          columnH < _minCardHeight ? _minCardHeight : columnH;
+      _cardHeight = (columnH < _minCardHeight ? _minCardHeight : columnH) +
+          2 * cardGutter;
     }
     return Column(
       children: [

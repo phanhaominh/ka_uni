@@ -146,4 +146,80 @@ void main() {
       expect(packLanes([blocks[0]]), [0]);
     });
   });
+
+  group("placeCluster rails", () {
+    // Friday 20.11 data: tutorials 8:00/9:45, the 09:00-17:00 block
+    // seminar, lunch, and a 3¼h afternoon lecture (195 min: long, but
+    // under the 240 rail threshold - long lectures keep wide boxes).
+    // The block seminar may not gut-cut the normal rows: it lives in a
+    // right rail, the rest keeps the left region.
+    final friday = [
+      NowBlock(beginMin: 8 * 60, durationMin: 90, content: true),
+      NowBlock(beginMin: 9 * 60, durationMin: 480, content: true),
+      NowBlock(beginMin: 9 * 60 + 45, durationMin: 90, content: true),
+      NowBlock(beginMin: 13 * 60, durationMin: 30, content: true),
+      NowBlock(beginMin: 14 * 60, durationMin: 195, content: true),
+    ];
+
+    test("block seminar takes a right rail, basics keeps the left", () {
+      final p = placeCluster(friday);
+      expect(p[1].left, greaterThan(0.5),
+          reason: 'the 8h seminar belongs in the right rail');
+      expect(p[4].left, 0.0,
+          reason: '"Basics of Manufacturing Technology" reads from the '
+              'left edge - the 50/50 lane split truncated its title');
+      expect(p[4].width, greaterThan(0.5),
+          reason: 'full lecture titles need > half the card');
+      // zero collision at every shared minute (basics 14:00-17:15 vs
+      // seminar 09:00-17:00): the boxes tile, never overlap
+      for (var i = 0; i < p.length; i++) {
+        for (var j = i + 1; j < p.length; j++) {
+          final timeOverlap = friday[i].beginMin < friday[j].endMin &&
+              friday[j].beginMin < friday[i].endMin;
+          final xOverlap = p[i].left < p[j].left + p[j].width - 1e-9 &&
+              p[j].left < p[i].left + p[i].width - 1e-9;
+          if (timeOverlap) {
+            expect(xOverlap, isFalse,
+                reason: 'rows $i and $j share minutes AND pixels');
+          }
+        }
+      }
+    });
+
+    test("two rails: a row overlapping ONLY the inner rail stops at it",
+        () {
+      // begin-sorted cluster: 8:30 lecture, 8:00-12:00 block (4h),
+      // 13:00-20:00 block (7h). Longest goes outermost, so the 8-12
+      // block is the INNER rail - the lecture may not reach into its
+      // x-band at shared minutes even though it overlaps only ONE rail
+      final p = placeCluster([
+        NowBlock(beginMin: 8 * 60 + 30, durationMin: 30, content: true),
+        NowBlock(beginMin: 8 * 60, durationMin: 240, content: true),
+        NowBlock(beginMin: 13 * 60, durationMin: 420, content: true),
+      ]);
+      final twoRails = [
+        [p[0], p[1], p[2]],
+      ].first;
+      for (final pair in [
+        [0, 1],
+        [0, 2],
+        [1, 2]
+      ]) {
+        final a = twoRails[pair[0]], b = twoRails[pair[1]];
+        final xOverlap =
+            a.left < b.left + b.width - 1e-9 && b.left < a.left + a.width - 1e-9;
+        expect(xOverlap, isFalse,
+            reason: 'rails ${pair} share horizontal space');
+      }
+    });
+
+    test("a cluster without block events still splits 50/50 by lanes", () {
+      final p = placeCluster([
+        NowBlock(beginMin: 8 * 60, durationMin: 90),
+        NowBlock(beginMin: 9 * 60, durationMin: 90),
+      ]);
+      expect([p[0].left, p[0].width], [0.0, 0.5]);
+      expect([p[1].left, p[1].width], [0.5, 0.5]);
+    });
+  });
 }

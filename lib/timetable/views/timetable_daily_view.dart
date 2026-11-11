@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
@@ -176,22 +178,19 @@ class TimetableDailyView extends StatelessWidget {
 
       double yOf(int minute) => (minute - axis.startMin) * pxPerMin;
 
-      // Overlapping lectures (Friday 11.13: 08:00 tutorial, 09:00 seminar,
-      // 09:45 tutorial all inside one 08:00-09:30-10:30 chain) go SIDE BY
-      // SIDE in lanes like every real calendar - positioned raw they
-      // stacked ink on ink (b53 device shot: "09:45" printed straight
-      // into "Block 1/3"). A cluster = transitively overlapping blocks;
-      // greedy first-free-lane packing; width/n, offset lane/n.
+      // Overlapping lectures (Friday: 08:00 tutorial, 09:00-17:00 block
+      // seminar, 09:45 tutorial, ...) never print ink on ink: each
+      // overlap cluster lays its rows out with placeCluster - normal
+      // rows keep the readable left region, 3h+ block events take
+      // narrow right rails (b53 stacked them; b54/55 split the card 50/
+      // 50 which gut-cut "Basics of Manufacturing Technology").
       final clusters = overlapClusters(blocks);
-      final laneOf = <int, int>{};
-      final laneCount = <int, int>{};
+      final places = <int, RowPlace>{};
       final clusterEnd = <int, int>{};
       for (final c in clusters) {
-        final lanes = packLanes([for (final i in c) blocks[i]]);
-        final n = lanes.fold<int>(1, (m, l) => l + 1 > m ? l + 1 : m);
+        final cp = placeCluster([for (final i in c) blocks[i]]);
         for (var k = 0; k < c.length; k++) {
-          laneOf[c[k]] = lanes[k];
-          laneCount[c[k]] = n;
+          places[c[k]] = cp[k];
         }
         var end = 0;
         for (final i in c) {
@@ -299,10 +298,11 @@ class TimetableDailyView extends StatelessWidget {
                 Positioned(
                   top: yOf(_beginMin(contents[i])),
                   height: _spanMin(contents[i]) * pxPerMin,
-                  left: fullW * laneOf[i]! / laneCount[i]!,
-                  width: fullW / laneCount[i]!,
+                  left: fullW * places[i]!.left,
+                  width: fullW * places[i]!.width,
                   child: _row(context, contents[i],
-                      _spanMin(contents[i]) * pxPerMin, fullW / laneCount[i]!),
+                      _spanMin(contents[i]) * pxPerMin,
+                      fullW * places[i]!.width),
                 ),
               if (showNowLine)
                 Positioned.fill(
@@ -381,8 +381,28 @@ class TimetableDailyView extends StatelessWidget {
     // (real feeds wrap), one for the normal room, none at all when even
     // one line would not fit.
     final wantPlace = hasPlace || deltaText != null;
-    final titleMaxLines =
-        availH >= 2 * titleLineH + (wantPlace ? placeLineH : 0) ? 2 : 1;
+    // MEASURED, not guessed: does the title fit ONE line at this box
+    // width? A row whose title does NOT fit one line claims the SECOND
+    // line before the place line gets anything: a 90-min box on a phone
+    // card fits time+title+room or time+title x2 - and the lecture's
+    // NAME outranks its room (11.20: "Basics of Manufacturing Technology
+    // (Lecture)" read "Basics of Manufact..." because the budget gave
+    // line 2 to the room it could only ellipsise anyway). Short titles
+    // keep their room line untouched; tall boxes afford title 2 + room.
+    final titleOneLine = TextPainter(
+        textDirection: TextDirection.ltr, maxLines: 1)
+      ..text = TextSpan(
+          text: titleText,
+          style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: appointment.type == TimetableAppointmentType.lunchBreak
+                  ? theme.colorScheme.outline
+                  : null))
+      ..layout(maxWidth: math.max(fullW - 2 * defaultPagePadding, 1));
+    final titleMaxLines = titleOneLine.didExceedMaxLines &&
+            availH >= 2 * titleLineH
+        ? 2
+        : 1;
     final placeRoom = availH - titleMaxLines * titleLineH;
     final placeMax = placeRoom >= 2 * placeLineH ? 2 : 1;
     final showPlace = wantPlace && placeRoom >= placeLineH;
