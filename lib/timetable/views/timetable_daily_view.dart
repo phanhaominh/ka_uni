@@ -235,17 +235,44 @@ class TimetableDailyView extends StatelessWidget {
               left: 0,
               right: 0,
               child: Center(
-                child: Text(
-                  L10n.t("timetable.freeGap", [_dur(nextBegin - end)]),
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.outline),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: ColoredBox(
+                  // mask the hour line behind the chip text
+                  color: theme.cardColor,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      L10n.t("timetable.freeGap", [_dur(nextBegin - end)]),
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.outline),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ),
               ),
             ));
           }
         }
+      }
+
+      // hour gridlines: the separate bars between the clock times, one at
+      // every full hour of the shared axis (the axis edges are whole
+      // hours by construction, so these are exactly the :00 marks).
+      // Fainter than the lecture seams; drawn BELOW the rows, which paint
+      // the card color behind their text - so the lines show through the
+      // free bands and vanish behind events, exactly like paper agendas
+      // and Google Calendar.
+      final hourLines = <Widget>[];
+      for (var m = axis.startMin + 60; m < axis.endMin; m += 60) {
+        hourLines.add(Positioned(
+          top: yOf(m),
+          left: 0,
+          right: 0,
+          height: 1,
+          child: ColoredBox(
+            color: theme.dividerColor.withValues(alpha: 0.35),
+          ),
+        ));
       }
 
       return Align(
@@ -255,6 +282,7 @@ class TimetableDailyView extends StatelessWidget {
           height: columnH,
           child: Stack(
             children: [
+              ...hourLines,
               ...gapChips,
               ...seams,
               // cancelled lectures keep their vacated slot on the axis
@@ -396,6 +424,9 @@ class TimetableDailyView extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.fromLTRB(
                 defaultPagePadding, topPad, defaultPagePadding, 0),
+            // the card fill behind the text: hour gridlines pass UNDER
+            // event rows (calendar convention - lines own the free bands)
+            color: theme.cardColor,
             // short blocks (a 30-min personal feed entry measures ~27px
             // at full scale) cannot hold even one time+title column in
             // their duration-pinned height: scale the text down instead
@@ -575,28 +606,32 @@ class TimetableDailyView extends StatelessWidget {
         child: FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.topLeft,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-                defaultPagePadding, spaceSm, defaultPagePadding, 0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  change.title,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      decoration: TextDecoration.lineThrough),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  L10n.t("timetable.ghostCancelled"),
-                  style: theme.textTheme.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+          child: ColoredBox(
+            // hour gridlines end at the vacated block's text too
+            color: Theme.of(context).cardColor,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  defaultPagePadding, spaceSm, defaultPagePadding, 0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    change.title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        decoration: TextDecoration.lineThrough),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    L10n.t("timetable.ghostCancelled"),
+                    style: theme.textTheme.bodySmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
