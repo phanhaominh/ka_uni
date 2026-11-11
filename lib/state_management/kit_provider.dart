@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:fuzzywuzzy/fuzzywuzzy.dart';
 import 'package:kit_mobile/credentials/models/kit_credentials.dart';
 import 'package:kit_mobile/geo/network/KITTopographyManager.dart';
+import 'package:kit_mobile/mensa/mensa_manager.dart';
 import 'package:kit_mobile/module_info_table/models/module_info_table_cell.dart';
 import 'package:kit_mobile/state_management/ilias/ilias_manager.dart';
 
@@ -32,6 +34,10 @@ class KITProvider extends ChangeNotifier {
   /// In-flight (or last) ILIAS SSO; the agenda awaits it before scraping.
   Future<void> iliasAuth = Future.value();
   late final KITTopographyManager topographyManager;
+
+  /// SW Karlsruhe canteen menu (public feed, no login) feeding the home
+  /// Mensa card
+  late final MensaManager mensa;
   late final IliasFilesProvider iliasFileManager;
   final SignMeUpManager signMeUpManager = SignMeUpManager();
 
@@ -175,6 +181,17 @@ class KITProvider extends ChangeNotifier {
         .then((_) =>
             notifyListeners())); // C18: walk hints + Raum-Finder refresh when the directory lands
 
+    // mensa: public Studierendenwerk feed - safe to kick before login,
+    // restore paints the cached week, the network only refreshes it;
+    // its failures NEVER touch campusManager's surface/offline flags.
+    // Not under the test harness though: 8+ suites construct a
+    // KITProvider and the Studierendenwerk must not eat one GET each
+    mensa = MensaManager();
+    if (!Platform.environment.containsKey('FLUTTER_TEST')) {
+      unawaited(mensa.restore().then((_) => mensa.fetchWeek()).then((_) =>
+          notifyListeners())); // flip the card from pending once settled
+    }
+
     iliasFileManager = IliasFilesProvider();
   }
 
@@ -211,6 +228,11 @@ class KITProvider extends ChangeNotifier {
       await campusManager.forceRefetchEverything(
           allModulesAsWell: allModulesAsWell);
       await fetchSignMeUp();
+      // the home pull-down also refreshes the canteen week - but NOT
+      // awaited: fetchWeek swallows everything and can sit in its 15 s
+      // transport timeout, and the pull spinner must not hang on a
+      // third-party site after the campus cascade already finished
+      unawaited(mensa.fetchWeek(force: true));
     })();
     _refetchInFlight = future;
     // identity-bound clear: an orphaned cascade from the previous account

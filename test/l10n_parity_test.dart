@@ -61,4 +61,19 @@ void main() {
     expect(deKeys.difference(enKeys), isEmpty,
         reason: "module key only in DE -> silent German fallback in EN");
   });
+
+  test("mensa.* key sets are identical between de and en", () {
+    final deKeys = {
+      for (final k in L10n.deTable.keys)
+        if (k.startsWith("mensa.")) k
+    };
+    final enKeys = {
+      for (final k in L10n.enTable.keys)
+        if (k.startsWith("mensa.")) k
+    };
+    expect(deKeys, isNotEmpty);
+    expect(enKeys.difference(deKeys), isEmpty, reason: "mensa key only in EN");
+    expect(deKeys.difference(enKeys), isEmpty,
+        reason: "mensa key only in DE -> silent German fallback in EN");
+  });
 }

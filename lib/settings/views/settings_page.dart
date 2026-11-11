@@ -90,6 +90,13 @@ class _SettingsPageState extends State<SettingsPage> {
                           trailing: CupertinoSwitch(
                               value: settingsVM.showingAvgMark.value,
                               onChanged: settingsVM.showingAvgMark.set)),
+                      SettingRow(
+                          title: L10n.t("mensa.toggle"),
+                          onTap: () => settingsVM.showMensa
+                              .set(!settingsVM.showMensa.value),
+                          trailing: CupertinoSwitch(
+                              value: settingsVM.showMensa.value,
+                              onChanged: settingsVM.showMensa.set)),
                     ],
                   ),
                 ),
