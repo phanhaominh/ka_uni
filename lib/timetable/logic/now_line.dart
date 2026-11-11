@@ -1,171 +1,138 @@
-/// Pure geometry of the "now" overlay, kept free of Flutter imports so the
-/// test can drive it without a binding.
+/// Pure geometry of the day timetable's ABSOLUTE time axis, kept free of
+/// Flutter imports so the tests can drive it without a binding.
+///
+/// The week shares ONE time ruler: every carousel page spans the same
+/// [axisStartMin]..[axisEndMin] wall window at the same px/min, a lecture
+/// is Positioned at (begin - axisStart) * px and sized duration * px -
+/// exactly like paper agendas and Google Calendar. Equal times therefore
+/// land at equal pixels on EVERY day (the "placement is not consistent"
+/// reports of 11/12.11 were every earlier stacked-row design re-flowing
+/// each day on its own: fit factors, centering, folded gap rows).
+library;
 
-/// One painted day-timetable block in plain values: wall-minute start,
-/// length in minutes, and whether the row draws its 1px bottom border
-/// (begin.hour < 17 by today's convention).
+/// Design scale: the pixels a single wall-clock minute claims. The axis
+/// only shrinks below this when the week's time range exceeds the card
+/// budget - never per-day.
+const double timetableIdealPxPerMin = 0.9;
+
+/// Never scale minutes below this; an extreme range (all-day events)
+/// degrades gracefully instead of vanishing.
+const double timetableMinPxPerMin = 0.3;
+
+/// The first/last wall minute of a week's shared time axis, or null when
+/// no weekday carries content (weekend-only stretch, empty feed).
+class TimeAxis {
+  final int startMin;
+  final int endMin;
+  const TimeAxis(this.startMin, this.endMin);
+  int get rangeMin => endMin - startMin;
+}
+
+/// One painted day-timetable block in plain values: wall-minute start and
+/// length in minutes. `content` marks a real lecture/tutorial/lunch row
+/// (drives the running-chip suppression of the now-line label).
 class NowBlock {
   final int beginMin;
   final int durationMin;
-  final bool border;
-
-  /// The row is CONTENT (lecture/tutorial/lunch), i.e. it may paint a
-  /// "running · until" chip in its time line right now (the chip itself
-  /// is minute-live; this flag is not). The now-line skips its HH:MM
-  /// label while it sits inside such a row's TOP strip - both texts
-  /// share the column's right end there (measured: "08:04" painted
-  /// straight onto "running · until 09:00"). Deeper in the block the
-  /// label returns; free-gap rows keep it always.
   final bool content;
 
   const NowBlock(
       {required this.beginMin,
       required this.durationMin,
-      this.border = false,
       this.content = false});
+
+  int get endMin => beginMin + durationMin;
 }
 
-/// y of the now-line inside the painted day Column, or null when the wall
-/// minute lies outside the block column (before the first block, at/after
-/// the last block's end).
-///
-/// Walks exactly like the Column: block i occupies content height
-/// [heights] i and, if [NowBlock.border], another 1px border strip; blocks
-/// stack in list order. Minutes landing in a dead gap (block i ended,
-/// block i+1 not started - zero rendered height) resolve to the previous
-/// block's bottom seam y, so the line visually "sticks" to the seam instead
-/// of vanishing between classes. Inside a row the minute interpolates
-/// linearly across the row's PAID-FOR pixels, so floor/cap-adjusted rows
-/// (see [dayColumnHeights]) can never put the line outside the row its
-/// minute belongs to.
-double? nowLineY({
-  required List<NowBlock> blocks,
-  required List<double> heights,
-  required int minutesOfDay,
-}) {
-  double top = 0;
-  for (var i = 0; i < blocks.length; i++) {
-    final b = blocks[i];
-    final h = heights[i];
-    final bottom = top + h;
-    if (minutesOfDay >= b.beginMin) {
-      if (minutesOfDay < b.beginMin + b.durationMin) {
-        return top + (minutesOfDay - b.beginMin) / b.durationMin * h;
-      }
-      if (i + 1 >= blocks.length) return null; // at/after last block end
-      final next = blocks[i + 1];
-      if (minutesOfDay < next.beginMin) {
-        return bottom + (b.border ? 1 : 0); // dead gap → previous seam
-      }
-      // minutes belong to a later block; keep walking
-    }
-    top = bottom + (b.border ? 1 : 0);
-  }
-  return null; // before the first block's beginMin
-}
-
-/// Design scale: the px a single wall-clock minute claims at full size.
-const double timetableIdealPxPerMin = 0.9;
-
-/// Never scale minutes below this - a jammed day degrades gracefully
-/// instead of vanishing (the fit pass below is the true last resort).
-const double timetableMinPxPerMin = 0.3;
-
-/// A CONTENT row never shrinks below one time line + one title line:
-/// short personal entries (a 20-min slot = 18 px at design scale) used to
-/// FittedBox their text into unreadable smears while the neighbour day,
-/// scaled differently, showed it full-size - the "too tight, no breathing
-/// room" half of the inconsistency report. Sized to time line + title
-/// line + top padding at design font (8 + 16*1.45 + 14*1.45 ≈ 52) so the
-/// row's own FittedBox is a NO-OP at every floor row: one flush-left
-/// text size across the whole column (the scaled-down, visually indented
-/// lunch row of 11.11 was exactly a 48-px floor + 52-px natural height).
-const double timetableContentFloorPx = 52;
-
-/// A FREE-GAP row never claims more pixels than this many minutes design
-/// scale gives: a 2 h lunch void at 0.9 px/min = 108 px of nothing while
-/// lectures breathe - the "big gaps" half. The chip still names the REAL
-/// gap ("2:00"); only the void is folded, agenda-calendar style.
-const int timetableGapCapMin = 40;
-
-/// ...and never collapses to zero: two rows meeting without a visible seam
-/// between them read as one block.
-const double timetableGapFloorPx = 10;
-
-/// Minutes the day EFFECTIVELY claims under [dayColumnHeights] - content
-/// at full worth, gaps folded at [timetableGapCapMin]. The week scale
-/// (see [weekPxPerMin]) picks ONE px/min from the busiest day so every
-/// carousel page shares the same rhythm; effort is the comparable measure.
-double dayEffort(List<NowBlock> blocks) {
-  var eff = 0.0;
-  for (final b in blocks) {
-    eff += b.content
-        ? b.durationMin
-        : (b.durationMin < timetableGapCapMin
-            ? b.durationMin
-            : timetableGapCapMin);
-  }
-  return eff;
-}
-
-/// ONE px/min for the WHOLE week: the largest scale up to design that fits
-/// the busiest day into the viewport (borders are a few px, negligible -
-/// and [dayColumnHeights] still fits any pathological day exactly). Days
-/// swiped next to each other now share one rhythm: equal lecture duration
-/// = equal height everywhere.
-double weekPxPerMin({
-  required double viewportPx,
-  required List<List<NowBlock>> days,
-}) {
-  var pxPerMin = timetableIdealPxPerMin;
+/// The week's shared axis: earliest content begin to latest content end,
+/// rounded OUTWARD to full hours so the day's first/last gridline is a
+/// round clock time (8:00..20:00, not 7:53..20:14).
+TimeAxis? weekTimeAxis(List<List<NowBlock>> days) {
+  int? lo, hi;
   for (final blocks in days) {
-    final eff = dayEffort(blocks);
-    if (eff == 0) continue;
-    pxPerMin = (viewportPx / eff) < pxPerMin ? viewportPx / eff : pxPerMin;
+    for (final b in blocks) {
+      if (lo == null || b.beginMin < lo) lo = b.beginMin;
+      if (hi == null || b.endMin > hi) hi = b.endMin;
+    }
   }
-  return pxPerMin
+  if (lo == null || hi == null || hi <= lo) return null;
+  return TimeAxis((lo ~/ 60) * 60, ((hi + 59) ~/ 60) * 60);
+}
+
+/// ONE px/min for the whole week: design scale unless the axis range does
+/// not fit the card budget.
+double axisPxPerMin({required double capPx, required int rangeMin}) {
+  if (rangeMin <= 0) return timetableIdealPxPerMin;
+  return (capPx / rangeMin)
       .clamp(timetableMinPxPerMin, timetableIdealPxPerMin)
       .toDouble();
 }
 
-/// The single source of row heights: the Column paints EXACTLY these and
-/// the now-line walks EXACTLY these (content floor + gap cap/fold included),
-/// so painted and measured geometry can never disagree. Content rows
-/// [timetableContentFloorPx] floored, free rows folded into
-/// [timetableGapCapMin]/[timetableGapFloorPx]; if a day STILL exceeds the
-/// viewport (a floor-heavy jam no week scale could fit) every row gives
-/// uniform share - never a clip, never a stripe.
-List<double> dayColumnHeights({
+/// y of the now-line inside the axis column, or null when the wall minute
+/// lies outside the axis (the line never floats before the day's window
+/// opens or after it closes). Pure linear: minute -> pixel, globally.
+double? nowLineY({
+  required TimeAxis axis,
   required double pxPerMin,
-  required List<NowBlock> blocks,
-  required double viewportPx,
-  double contentFloor = timetableContentFloorPx,
+  required int minutesOfDay,
 }) {
-  final heights = [
-    for (final b in blocks)
-      b.content
-          ? (b.durationMin * pxPerMin) > contentFloor
-              ? b.durationMin * pxPerMin
-              : contentFloor
-          : (b.durationMin * pxPerMin).clamp(
-              b.durationMin * pxPerMin < timetableGapFloorPx
-                  ? b.durationMin * pxPerMin // dead-small seam: stay honest
-                  : timetableGapFloorPx,
-              timetableGapCapMin * pxPerMin,
-            )
-  ];
-  var borders = 0.0;
-  var content = 0.0;
-  for (var i = 0; i < blocks.length; i++) {
-    if (blocks[i].border) borders += 1;
-    content += heights[i];
+  if (minutesOfDay < axis.startMin || minutesOfDay >= axis.endMin) {
+    return null;
   }
-  final total = content + borders;
-  if (content > 0 && total > viewportPx) {
-    final k = (viewportPx - borders) / content;
-    for (var i = 0; i < heights.length; i++) {
-      heights[i] *= k;
+  return (minutesOfDay - axis.startMin) * pxPerMin;
+}
+
+/// The rectangle a block occupies on the axis column: (top, height) in px.
+(double top, double height) blockRect(
+        NowBlock b, TimeAxis axis, double pxPerMin) =>
+    ((b.beginMin - axis.startMin) * pxPerMin, b.durationMin * pxPerMin);
+
+/// One maximal set of mutually/touching-overlapping blocks: consecutive
+/// blocks whose [endMin] reaches past the next block's begin join one
+/// cluster; the cluster ENDS at the farthest end inside it (a 90-min
+/// block starting before a 45-min one extends the cluster past the
+/// 45-min block). Blocks that merely touch (end == next begin) are
+/// neighbours, not overlapping - no side-by-side needed then.
+List<List<int>> overlapClusters(List<NowBlock> blocks) {
+  final out = <List<int>>[];
+  var cluster = <int>[];
+  int clusterEnd = 0;
+  for (var i = 0; i < blocks.length; i++) {
+    if (cluster.isNotEmpty && blocks[i].beginMin < clusterEnd) {
+      cluster.add(i);
+      if (blocks[i].endMin > clusterEnd) clusterEnd = blocks[i].endMin;
+    } else {
+      if (cluster.isNotEmpty) out.add(cluster);
+      cluster = [i];
+      clusterEnd = blocks[i].endMin;
     }
   }
-  return heights;
+  if (cluster.isNotEmpty) out.add(cluster);
+  return out;
+}
+
+/// Side-by-side lane packing inside one overlap cluster (the classic
+/// calendar algorithm): each block takes the FIRST lane whose current
+/// last block has ended by its begin, else a fresh lane. Greedy over
+/// begin-sorted input, so lane indices are < cluster.length.
+List<int> packLanes(List<NowBlock> cluster) {
+  final laneEnds = <int>[];
+  final laneOf = <int>[];
+  for (final b in cluster) {
+    var lane = -1;
+    for (var l = 0; l < laneEnds.length; l++) {
+      if (laneEnds[l] <= b.beginMin) {
+        lane = l;
+        break;
+      }
+    }
+    if (lane == -1) {
+      lane = laneEnds.length;
+      laneEnds.add(b.endMin);
+    } else {
+      laneEnds[lane] = b.endMin;
+    }
+    laneOf.add(lane);
+  }
+  return laneOf;
 }

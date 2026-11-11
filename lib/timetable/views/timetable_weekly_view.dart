@@ -48,24 +48,10 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
   /// stretches): the zzz placeholder gets a seat worth centring in.
   static const _minCardHeight = 320.0;
 
-  /// Floor height handed to every day view (see [TimetableDailyView
-  /// .contentFloor]): recomputed per build with the user's text scale.
-  double _weekFloor = timetableContentFloorPx;
-
-  /// Card height for this build: the tallest day column of the week,
-  /// clamped to [_minCardHeight]..(old fixed strip budget).
+  /// Card height for this build: the shared axis window at [_weekPxPerMin]
+  /// (identical on every page), clamped to [_minCardHeight]..(old fixed
+  /// strip budget).
   double _cardHeight = _minCardHeight;
-
-  /// time line + title line + top padding at the user's font scale - the
-  /// height below which content text would have to shrink to fit, which
-  /// no row may ever do (per-row rescale = the inconsistency report).
-  double _contentFloor(BuildContext context) {
-    final t = MediaQuery.textScalerOf(context);
-    final theme = Theme.of(context);
-    return spaceSm +
-        t.scale(theme.textTheme.bodyLarge?.fontSize ?? 16) * 1.45 +
-        t.scale(theme.textTheme.titleSmall?.fontSize ?? 14) * 1.45;
-  }
 
   /// The carousel page currently centered; with infinite scroll "today"
   /// starts at 10000 + initial index, one step = ±1 day.
@@ -83,17 +69,23 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
   /// _feedCached (agenda_page.dart:176-182).
   bool _feedCached = false;
 
-  /// ONE px/min for every carousel page of this week (see [weekPxPerMin]):
+  /// ONE px/min for every carousel page of this week (see [axisPxPerMin]):
   /// recomputed per build from all five weekday templates so a lecture is
   /// the same height on Monday and on Friday. Swiping between days must
   /// never re-scale the wall clock - the old per-day fit made every page
   /// place its rows at different y (inconsistency report, 11.11).
   double _weekPxPerMin = timetableIdealPxPerMin;
 
-  /// Effort inputs for [weekPxPerMin]: each weekday filtered through the
-  /// SAME occurrence predicate the carousel builder applies to its page
-  /// (next occurrence of that weekday as canonical - the template repeats
-  /// weekly; an EXDATE week differing a little only nudges the scale).
+  /// The week's shared wall window (see [weekTimeAxis]): earliest lecture
+  /// begin to latest lecture end over all five weekday templates, rounded
+  /// to whole hours. Every page maps it onto the same pixels, so 09:45 is
+  /// the same height everywhere.
+  TimeAxis? _weekAxis;
+
+  /// Axis inputs: each weekday filtered through the SAME occurrence
+  /// predicate the carousel builder applies to its page (next occurrence
+  /// of that weekday as canonical - the template repeats weekly; an EXDATE
+  /// week differing a little only nudges the window).
   List<List<NowBlock>> _weekBlocks(KITProvider vm) {
     final todayIdx = DateTime.now().weekday - 1;
     final out = <List<NowBlock>>[];
@@ -109,7 +101,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
                 a.occurrenceDates == null ||
                 a.occurrenceDates!.contains(pageDate))
             .toList();
-      out.add(TimetableDailyView.blocksFor(tt));
+      out.add(TimetableDailyView.contentBlocksFor(tt));
     }
     return out;
   }
@@ -217,29 +209,22 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
     final bandHeight = _dateBandHeight * textScale;
     final cap = _weekdayHeight - 40 - bandHeight;
     final blocksByDay = _weekBlocks(vm);
-    final floor = _contentFloor(context);
-    // week-wide rhythm BEFORE the pages build (itemBuilder runs after)
-    _weekPxPerMin = weekPxPerMin(viewportPx: cap, days: blocksByDay);
-    _weekFloor = floor;
-    // The card is exactly as tall as the week's TALLEST day: a light day
-    // then ends early with at most the intrinsic day-to-day difference of
-    // air below, but never dangles inside a bottomless fixed-height card
-    // (a half-full Wednesday in a 742px frame was the "big gaps" of 11.11;
-    // the old centring answer to it caused the placement jitter).
-    var tallest = 0.0;
-    for (final blocks in blocksByDay) {
-      final h = dayColumnHeights(
-          pxPerMin: _weekPxPerMin,
-          blocks: blocks,
-          viewportPx: cap,
-          contentFloor: floor);
-      final colH = h.fold<double>(0, (s, v) => s + v) +
-          blocks.fold<double>(0, (s, b) => s + (b.border ? 1 : 0));
-      if (colH > tallest) tallest = colH;
+    // week-wide shared ruler BEFORE the pages build (itemBuilder runs
+    // after): ONE window [axis.start, axis.end) and ONE px/min mapped
+    // onto it - every page positions its blocks on this ruler, so equal
+    // times sit at equal pixels across the whole carousel
+    final axis = weekTimeAxis(blocksByDay);
+    _weekAxis = axis;
+    if (axis == null) {
+      _weekPxPerMin = timetableIdealPxPerMin;
+      _cardHeight = _minCardHeight;
+    } else {
+      _weekPxPerMin =
+          axisPxPerMin(capPx: cap, rangeMin: axis.rangeMin);
+      final columnH = axis.rangeMin * _weekPxPerMin;
+      _cardHeight =
+          columnH < _minCardHeight ? _minCardHeight : columnH;
     }
-    _cardHeight = tallest < _minCardHeight
-        ? _minCardHeight
-        : (tallest > cap ? cap : tallest);
     return Column(
       children: [
         _dateBand(context, bandHeight),
@@ -329,7 +314,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
         changes: _changesFor(_pageDate(w)),
         rowTapsEnabled: w == _currentRealPage,
         pxPerMin: _weekPxPerMin,
-        contentFloor: _weekFloor,
+        axis: _weekAxis,
       );
     }
 

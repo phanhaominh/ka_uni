@@ -40,69 +40,18 @@ int _spanMin(TimetableAppointment a) {
   return s > 0 ? s : 90;
 }
 
-/// Minutes row [i] occupies on the wall clock: content rows their own
-/// span; EMPTY 'Free' rows stretch from the previous content row's end
-/// to the next content row's begin, so chip text, row height and the
-/// now-line walk all speak about the REAL gap - the scaffold
-/// placeholder's generic span (always 1:30/1:45) used to misreport it.
-/// TWO rules keep the phantom bands out of the column: only the LAST
-/// empty row of a consecutive run owns the gap (the scaffold hands out
-/// several placeholder blocks per gap, and if every one of them counted
-/// the same minutes the gap band would be 2-3x its real size and the
-/// fit-factor would squash every lecture), and a run between two
-/// ADJACENT classes (gap <= 0, e.g. the 90-min scaffold block sitting
-/// between a class that ends and the next that begins at the same
-/// minute) claims ZERO - [TimetableDailyView.build] drops such rows,
-/// which used to open an invisible 90-minute void between neighbours.
-int _rowMin(List<TimetableAppointment> rows, int i) {
-  final a = rows[i];
-  if (_isContent(a)) return _spanMin(a);
-  var prev = i - 1, next = i + 1;
-  while (prev >= 0 && !_isContent(rows[prev])) prev--;
-  while (next < rows.length && !_isContent(rows[next])) next++;
-  if (prev < 0 || next >= rows.length) return _spanMin(a);
-  // not the last row of the empty run: the run's owner below claims it
-  if (next != i + 1) return 0;
-  final gap =
-      _beginMin(rows[next]) - (_beginMin(rows[prev]) + _spanMin(rows[prev]));
-  return gap > 0 ? gap : 0;
-}
-
-/// A hairline is drawn after block [i] only where it separates something:
-/// after the LAST row, and anywhere inside a pure empty run (the leading
-/// or trailing void of the day), a line would float over nothing. ONE
-/// list built by this rule feeds both the row stack and the now-line
-/// walk, so painted and measured geometry can never disagree.
-List<bool> dayColumnSeams(List<TimetableAppointment> rows) => [
-      for (var i = 0; i < rows.length; i++)
-        i < rows.length - 1 && (_isContent(rows[i]) || _isContent(rows[i + 1]))
+/// The day's content rows as now-line/axis blocks (lectures, tutorials,
+/// lunch) - the ONLY rows that anchor the absolute axis; scaffold
+/// placeholders carry no time semantics and never widen the week's
+/// shared window.
+List<NowBlock> _contentBlocks(List<TimetableAppointment> day) => [
+      for (final a in day)
+        if (_isContent(a))
+          NowBlock(
+              beginMin: _beginMin(a),
+              durationMin: _spanMin(a),
+              content: true)
     ];
-
-/// The now-line's view of the filtered day column: one NowBlock per row
-/// with the EXACT geometry the row stack paints. A GAP row covers the wall
-/// window [prevEnd, nextBegin) - its pixels start where the previous
-/// content row ENDS - so its band must claim that wall start, NOT the
-/// scaffold placeholder's nominal begin: fed with the placeholder's generic
-/// 9:45 the line walked a shifted window, painting through the NEXT
-/// lecture's first minutes while the gap still had time left (then jumping
-/// at the band's bogus end), which also made [_rowMin]'s "the now-line walk
-/// speaks about the REAL gap" contract false. After [TimetableDailyView
-/// .build]'s filter the row before a gap is always its previous CONTENT row
-/// (zero-minute placeholders never enter the column), so day[i-1]'s end is
-/// exactly the minute the gap band's top pixel shows.
-List<NowBlock> dayColumnBlocks(List<TimetableAppointment> day) {
-  final seams = dayColumnSeams(day);
-  return [
-    for (var i = 0; i < day.length; i++)
-      NowBlock(
-          beginMin: _isContent(day[i])
-              ? _beginMin(day[i])
-              : _beginMin(day[i - 1]) + _rowMin(day, i - 1),
-          durationMin: _rowMin(day, i),
-          border: seams[i],
-          content: _isContent(day[i]))
-  ];
-}
 
 class TimetableDailyView extends StatelessWidget {
   final TimetableDaily tt;
@@ -126,18 +75,14 @@ class TimetableDailyView extends StatelessWidget {
   /// centering tap (in timetable_weekly_view) receives the tap.
   final bool rowTapsEnabled;
 
-  /// One px/min for the whole week (see [weekPxPerMin]): every carousel
-  /// page renders on the SAME scale, so equal lecture durations are equal
-  /// heights on every day. Null (standalone use) falls back to this day's
-  /// own week scale.
+  /// One px/min for the whole week (see [axisPxPerMin]): every carousel
+  /// page renders the SAME time ruler - equal minutes, equal pixels.
   final double? pxPerMin;
 
-  /// Floor height for content rows (see [timetableContentFloorPx]): the
-  /// weekly view passes a text-scale-adapted value so a floor row always
-  /// fits time line + title at the user's font size - the row's FittedBox
-  /// must be a no-op, never a per-row rescale (indented shrunken lunch
-  /// row, 11.11).
-  final double contentFloor;
+  /// The week's shared wall window (see [weekTimeAxis]): the minute that
+  /// maps to the column's top edge. Null (standalone use) derives it from
+  /// this day's own content.
+  final TimeAxis? axis;
 
   const TimetableDailyView(
       {super.key,
@@ -146,22 +91,18 @@ class TimetableDailyView extends StatelessWidget {
       this.changes = const [],
       this.rowTapsEnabled = true,
       this.pxPerMin,
-      this.contentFloor = timetableContentFloorPx});
+      this.axis});
 
-  /// The rows one day column renders, from [tt] + tutorial attachments:
-  /// first non-empty per block, chronological by TIME-OF-DAY (template
-  /// rows carry mixed dates - a raw DateTime compare put Nov-2's 13:00
-  /// lunch above Nov-5's 08:00 lecture on future carousel pages; Dart's
-  /// sort is stable: equal-minute rows keep their template order), scaffold
-  /// voids outside the content range trimmed (they used to eat up to half
-  /// the page at full scale - only the void BETWEEN real rows carries
-  /// meaning and a chip), zero-minute placeholders dropped (they claim no
-  /// pixels and no chip, and an invisible 90-minute void used to open
-  /// between flush neighbours).
+  /// The rows one day renders, from [tt] + tutorial attachments: first
+  /// non-empty per block, chronological by TIME-OF-DAY (template rows
+  /// carry mixed dates - a raw DateTime compare put Nov-2's 13:00 lunch
+  /// above Nov-5's 08:00 lecture on future carousel pages; Dart's sort is
+  /// stable: equal-minute rows keep their template order). Empty scaffold
+  /// placeholders STAY: on the absolute axis they own no pixels, but they
+  /// still carry the ghosts of cancelled lectures.
   static List<TimetableAppointment> dayRows(
       TimetableDaily tt, Map<int, List<Tutorial>> tutorialsByBlock) {
-    final rows = tt
-        .appointmentsWithTutorials(tutorialsByBlock)
+    return tt.appointmentsWithTutorials(tutorialsByBlock)
         .map((block) => block
             .whereType<TimetableAppointment>()
             .where((appointment) => !appointment.isEmpty || block.length <= 1)
@@ -169,21 +110,13 @@ class TimetableDailyView extends StatelessWidget {
         .toList(growable: false)
       ..sort((a, b) => (a.begin.hour * 60 + a.begin.minute)
           .compareTo(b.begin.hour * 60 + b.begin.minute));
-    if (!rows.any(_isContent)) return rows;
-    final trimmed = rows.sublist(
-        rows.indexWhere(_isContent), rows.lastIndexWhere(_isContent) + 1);
-    return [
-      for (var i = 0; i < trimmed.length; i++)
-        if (_isContent(trimmed[i]) || _rowMin(trimmed, i) > 0) trimmed[i]
-    ];
   }
 
-  /// The layout/now-line geometry feed of a day WITHOUT tutorials merged
-  /// (week-scale picker - tutorial rows are user-local noise for the
-  /// busiest-day decision; a tutorial-heavier day is caught by the exact
-  /// fit pass in [dayColumnHeights]).
-  static List<NowBlock> blocksFor(TimetableDaily tt) =>
-      dayColumnBlocks(dayRows(tt, const {}));
+  /// The axis/now-line feed of a day WITHOUT tutorials merged (the week
+  /// axis picker: user-local tutorial slots must not shift the shared
+  /// window for everybody else's lectures).
+  static List<NowBlock> contentBlocksFor(TimetableDaily tt) =>
+      _contentBlocks(dayRows(tt, const {}));
 
   @override
   Widget build(BuildContext context) {
@@ -214,42 +147,107 @@ class TimetableDailyView extends StatelessWidget {
       tutorialsByBlock.putIfAbsent(tutorial.blockIndex, () => []).add(tutorial);
     }
 
-    // the rendered column (see [dayRows]: merge, sort, trim, drop voids)
     final day = dayRows(tt, tutorialsByBlock);
 
     if (!day.any(_isContent)) return _dayFree(context);
 
-    final mins = [for (var i = 0; i < day.length; i++) _rowMin(day, i)];
-    final seams = dayColumnSeams(day);
-    // ONE feed (see dayColumnBlocks): the painted row stack and the
-    // now-line walk consume the same durations, borders and WALL starts,
-    // so painted and measured geometry can never disagree
-    final blocks = dayColumnBlocks(day);
+    final contents =
+        day.where(_isContent).toList(growable: false);
+    final blocks = _contentBlocks(day);
 
     return LayoutBuilder(builder: (context, constraints) {
-      // ONE height list drives every row AND the now-line walk (see
-      // [dayColumnHeights]), so the line can never sit over a row it did
-      // not measure. The scale is the WEEK's ([pxPerMin], decided by the
-      // busiest carousel page) - not this day's own fit: per-day fitting
-      // made 08:00 start at a different height on every page and 90-minute
-      // lectures claim different pixel heights side by side (the
-      // "placement is inconsistent" report).
+      // ABSOLUTE TIME GRID: one wall window ([axis], shared by every
+      // carousel page of the week), one px/min, and every block POSITIONED
+      // at its clock time - (begin - axis.start) * px. Nothing stacks, so
+      // 09:45 sits at the same pixel on Monday and Friday, a 90-minute
+      // lecture is the same height everywhere, and free time is exactly
+      // as wide as it is long (the folded/stacked rows before 12.11 made
+      // the SAME time land on different pages' different heights - every
+      // "not consistent / not aligned" report traced back to stacking).
       final now = NowClock.timeSource();
       final nowMinutes = now.hour * 60 + now.minute;
+      final axis = this.axis ??
+          weekTimeAxis([blocks]) ??
+          const TimeAxis(8 * 60, 14 * 60);
       final pxPerMin = this.pxPerMin ??
-          weekPxPerMin(viewportPx: constraints.maxHeight, days: [blocks]);
-      final heights = dayColumnHeights(
-          pxPerMin: pxPerMin,
-          blocks: blocks,
-          viewportPx: constraints.maxHeight,
-          contentFloor: contentFloor);
-      // Exact column height (rows + seam hairlines). The column is TOP-
-      // anchored like every calendar ever drawn: a light day ends early,
-      // but 08:00 sits at the same pixel on every page. (It used to centre
-      // as one unit - "days with few events float in mid-card" was the
-      // direct inconsistency complaint, 11.11.)
-      final columnH = heights.fold<double>(0, (s, h) => s + h) +
-          blocks.fold<double>(0, (s, b) => s + (b.border ? 1 : 0));
+          axisPxPerMin(
+              capPx: constraints.maxHeight, rangeMin: axis.rangeMin);
+      final columnH = axis.rangeMin * pxPerMin;
+
+      double yOf(int minute) => (minute - axis.startMin) * pxPerMin;
+
+      // Overlapping lectures (Friday 11.13: 08:00 tutorial, 09:00 seminar,
+      // 09:45 tutorial all inside one 08:00-09:30-10:30 chain) go SIDE BY
+      // SIDE in lanes like every real calendar - positioned raw they
+      // stacked ink on ink (b53 device shot: "09:45" printed straight
+      // into "Block 1/3"). A cluster = transitively overlapping blocks;
+      // greedy first-free-lane packing; width/n, offset lane/n.
+      final clusters = overlapClusters(blocks);
+      final laneOf = <int, int>{};
+      final laneCount = <int, int>{};
+      final clusterEnd = <int, int>{};
+      for (final c in clusters) {
+        final lanes = packLanes([for (final i in c) blocks[i]]);
+        final n = lanes.fold<int>(1, (m, l) => l + 1 > m ? l + 1 : m);
+        for (var k = 0; k < c.length; k++) {
+          laneOf[c[k]] = lanes[k];
+          laneCount[c[k]] = n;
+        }
+        var end = 0;
+        for (final i in c) {
+          if (blocks[i].endMin > end) end = blocks[i].endMin;
+        }
+        clusterEnd[c.first] = end;
+      }
+
+      // free time gets named, centred in its REAL band (no folded stub
+      // rows any more): the band is the wall window between the END of
+      // one overlap cluster and the BEGIN of the next
+      final gapLineH = MediaQuery.textScalerOf(context)
+              .scale(theme.textTheme.bodySmall?.fontSize ?? 12) *
+          1.45;
+      final gapChips = <Widget>[];
+      final seams = <Widget>[];
+      final fullW = constraints.maxWidth;
+      for (var ci = 0; ci < clusters.length; ci++) {
+        final c = clusters[ci];
+        if (ci + 1 >= clusters.length) continue; // no line under the last
+        final end = clusterEnd[c.first]!;
+        // one hairline under each CLUSTER (a per-block line would cut
+        // across the side-by-side neighbour mid-box)
+        seams.add(Positioned(
+          top: yOf(end),
+          left: 0,
+          right: 0,
+          height: 1,
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: defaultPagePadding),
+            color: theme.dividerColor,
+          ),
+        ));
+        final nextBegin = blocks[clusters[ci + 1].first].beginMin;
+        if (nextBegin > end) {
+          final h = yOf(nextBegin) - yOf(end);
+          if (h >= gapLineH) {
+            gapChips.add(Positioned(
+              top: yOf(end),
+              height: h,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Text(
+                  L10n.t("timetable.freeGap", [_dur(nextBegin - end)]),
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.outline),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ));
+          }
+        }
+      }
+
       return Align(
         alignment: Alignment.topLeft,
         child: SizedBox(
@@ -257,13 +255,27 @@ class TimetableDailyView extends StatelessWidget {
           height: columnH,
           child: Stack(
             children: [
-              Column(
-                children: [
-                  for (var i = 0; i < day.length; i++)
-                    _rowWithSeam(context, day, mins, i, heights[i], seams[i],
-                        constraints.maxWidth)
-                ],
-              ),
+              ...gapChips,
+              ...seams,
+              // cancelled lectures keep their vacated slot on the axis
+              for (final a in day)
+                if (!_isContent(a) && _ghostFor(a) != null)
+                  Positioned(
+                    top: yOf(_beginMin(a)),
+                    height: _spanMin(a) * pxPerMin,
+                    left: 0,
+                    right: 0,
+                    child: _ghostCard(context, _ghostFor(a)!),
+                  ),
+              for (var i = 0; i < contents.length; i++)
+                Positioned(
+                  top: yOf(_beginMin(contents[i])),
+                  height: _spanMin(contents[i]) * pxPerMin,
+                  left: fullW * laneOf[i]! / laneCount[i]!,
+                  width: fullW / laneCount[i]!,
+                  child: _row(context, contents[i],
+                      _spanMin(contents[i]) * pxPerMin, fullW / laneCount[i]!),
+                ),
               if (showNowLine)
                 Positioned.fill(
                   // CustomPaint without hitTestSelf never absorbs taps; the
@@ -273,8 +285,10 @@ class TimetableDailyView extends StatelessWidget {
                     child: RepaintBoundary(
                       child: CustomPaint(
                         painter: _NowLinePainter(
+                          axis: axis,
+                          pxPerMin: pxPerMin,
+                          columnH: columnH,
                           blocks: blocks,
-                          heights: heights,
                           color: theme.colorScheme.primary,
                           textStyle: theme.textTheme.bodyLarge?.copyWith(
                                   color: theme.colorScheme.primary) ??
@@ -293,70 +307,9 @@ class TimetableDailyView extends StatelessWidget {
     });
   }
 
-  /// One 1px hairline between consecutive blocks, inset to the text
-  /// gutter so it never touches the card's rounded frame. EXACTLY 1px,
-  /// drawn iff [seam] - the same flag the blocks list handed to
-  /// dayColumnHeights/nowLineY, so the line only sits where a measured row is.
-  Widget _rowWithSeam(BuildContext context, List<TimetableAppointment> rows,
-      List<int> mins, int i, double boxH, bool seam, double fullW) {
-    final row = _row(context, rows, mins, i, boxH, fullW);
-    if (!seam) return row;
-    return Column(
-      children: [
-        row,
-        Container(
-          height: 1,
-          margin: const EdgeInsets.symmetric(horizontal: defaultPagePadding),
-          color: Theme.of(context).dividerColor,
-        ),
-      ],
-    );
-  }
-
-  Widget _row(BuildContext context, List<TimetableAppointment> rows,
-      List<int> mins, int i, double boxH, double fullW) {
+  Widget _row(BuildContext context, TimetableAppointment appointment,
+      double boxH, double fullW) {
     final theme = Theme.of(context);
-    final appointment = rows[i];
-
-    if (!_isContent(appointment)) {
-      final ghost = _ghostFor(appointment);
-      if (ghost != null) {
-        return _ghostCard(context, appointment, ghost, boxH);
-      }
-      // a slot between two lectures is worth naming; one at either end of
-      // the day is only a seam
-      final boxedIn = i > 0 &&
-          i < rows.length - 1 &&
-          _isContent(rows[i - 1]) &&
-          _isContent(rows[i + 1]);
-      // SUPPRESS (not FittedBox): a 15-min gap measures 13.5 px at full
-      // scale - LESS than one bodySmall line - and Center does not clip, so
-      // the chip used to straddle the seam hairline, the one line the
-      // column's geometry contract says must stay readable. Scaling it
-      // down would keep a sub-pixel-height smudge on the seam instead; at
-      // under one line height the gap simply is not worth naming.
-      final gapBox = boxH;
-      final gapLineH = MediaQuery.textScalerOf(context)
-              .scale(theme.textTheme.bodySmall?.fontSize ?? 12) *
-          1.45;
-      return SizedBox(
-        // A free block must read as empty: the placeholder dash and
-        // its time badge used to render like a lecture called "-".
-        height: gapBox,
-        child: boxedIn && gapBox >= gapLineH
-            ? Center(
-                child: Text(
-                  L10n.t("timetable.freeGap", [_dur(mins[i])]),
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.outline),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              )
-            : null,
-      );
-    }
-
     final isTut = appointment.type == TimetableAppointmentType.tutorial;
     // lunch shows the localized word, not the raw feed/model title
     final titleText = appointment.type == TimetableAppointmentType.lunchBreak
@@ -372,8 +325,8 @@ class TimetableDailyView extends StatelessWidget {
         : L10n.t(
             "timetable.changeRoomDelta", [roomDelta.oldRoom!, roomDelta.room]);
 
-    // the fitted row height ([dayColumnHeights]) doubles as the geometry
-    // the now-line walks, so a 60-min block must give up text lines
+    // the duration-pinned height doubles as the geometry the now-line
+    // walks, so a 60-min block must give up text lines
     // instead of pushing its words over the neighbour's first row (what an
     // unbounded text column inside a fixed SizedBox did: AUDIT-test bled
     // into KLAUSUR)
@@ -609,45 +562,41 @@ class TimetableDailyView extends StatelessWidget {
     return null;
   }
 
-  Widget _ghostCard(BuildContext context, TimetableAppointment block,
-      IcsChange change, double boxH) {
+  Widget _ghostCard(BuildContext context, IcsChange change) {
     final theme = Theme.of(context);
     // same recipe as the lecture row (ClipRect + FittedBox scaleDown +
-    // top-left + min-size Column): a real gap is routinely 15-30 min =
-    // 13.5-27 px while the struck title + "entfällt" line measure ~45 px,
-    // so unclipped the ghost painted RenderFlex stripes over BOTH
-    // neighbouring lectures' text
+    // top-left + min-size Column) inside the Positioned's duration-pinned
+    // box: a 15-min vacated slot is 13.5 px while the struck title +
+    // "entfällt" line measure ~45 px, so unclipped the ghost painted
+    // RenderFlex stripes over BOTH neighbouring lectures' text
     return Opacity(
       opacity: deadContentOpacity,
       child: ClipRect(
-        child: SizedBox(
-          height: boxH,
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.topLeft,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  defaultPagePadding, spaceSm, defaultPagePadding, 0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    change.title,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        decoration: TextDecoration.lineThrough),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    L10n.t("timetable.ghostCancelled"),
-                    style: theme.textTheme.bodySmall,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.topLeft,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+                defaultPagePadding, spaceSm, defaultPagePadding, 0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  change.title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      decoration: TextDecoration.lineThrough),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  L10n.t("timetable.ghostCancelled"),
+                  style: theme.textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ),
         ),
@@ -684,14 +633,18 @@ class TimetableDailyView extends StatelessWidget {
 }
 
 class _NowLinePainter extends CustomPainter {
+  final TimeAxis axis;
+  final double pxPerMin;
+  final double columnH;
   final List<NowBlock> blocks;
-  final List<double> heights;
   final Color color;
   final TextStyle textStyle;
 
   _NowLinePainter(
-      {required this.blocks,
-      required this.heights,
+      {required this.axis,
+      required this.pxPerMin,
+      required this.columnH,
+      required this.blocks,
       required this.color,
       required this.textStyle})
       : super(repaint: NowClock.minutesOfDay);
@@ -707,7 +660,8 @@ class _NowLinePainter extends CustomPainter {
     // read the live value here - the minute arrives via the repaint
     // listenable WITHOUT any widget rebuilding
     final minute = NowClock.minutesOfDay.value;
-    final y = nowLineY(blocks: blocks, heights: heights, minutesOfDay: minute);
+    // pure linear ruler: minute -> pixel, same map as the rows' Positioned
+    final y = nowLineY(axis: axis, pxPerMin: pxPerMin, minutesOfDay: minute);
     if (y == null) return;
 
     // the stroke stops short of the rounded card frame instead of
@@ -724,54 +678,25 @@ class _NowLinePainter extends CustomPainter {
     // right end - and that chip exists for exactly as long as the minute
     // is inside the row, so the HH:MM label could only ever collide with
     // it there (measured 12.11: "12:39" painted straight onto
-    // "running · until 13:00"; the old <40px band missed every line below
-    // the time line). The chip is the better label anyway - the HH:MM
-    // returns for gap rows and seam snaps, which carry no chip.
-    final (stripTop, stripBottom) = _stripOfMinute(minute);
+    // "running · until 13:00"). The chip is the better label anyway - the
+    // HH:MM returns in free bands, which carry no chip.
     if (_contentAt(minute)) return;
     final chip = TextPainter(textDirection: TextDirection.ltr)
       ..text = TextSpan(text: _hm(minute), style: textStyle)
       ..layout();
-    // above the line, unless it would climb out of the block (or the line
-    // sits on a gap seam - distance 0) -> flip below, but ONLY while the
-    // flipped chip still fits inside the block: on a block shorter than
-    // chip + margins (anything under ~40 min) the old unconditional flip
-    // painted the HH:MM straight over the NEXT row's first text line, as
-    // canvas draws below here are not clipped; when it would not fit, the
-    // label stays above the line - grazing one's own top edge beats
-    // invading a neighbour (a zero-height gap seam likewise keeps the
-    // label above the seam, out of the next row's running-chip strip)
-    final below = y - stripTop < 26 && y + 6 + chip.height <= stripBottom;
+    // above the line; flip below only when the line sits so near the
+    // axis top that the label would climb out of the column (and still
+    // fit inside it) - canvas draws below are not clipped, an overflowing
+    // label invades whatever the card shows above
+    final below = y - chip.height - 6 < 0 && y + 6 + chip.height <= columnH;
     chip.paint(
         canvas,
         Offset(size.width - chip.width - defaultPagePadding,
             below ? y + 6 : y - chip.height - 6));
   }
 
-  /// (top, bottom) y of the block strip (or seam) the minute resolved
-  /// into; mirrors [nowLineY]'s walk. [bottom] excludes the 1px border
-  /// strip, i.e. it is where the next row's text begins. Only consulted
-  /// for painted minutes.
-  (double, double) _stripOfMinute(int minute) {
-    double top = 0;
-    for (var i = 0; i < blocks.length; i++) {
-      final b = blocks[i];
-      final bottom = top + heights[i];
-      if (minute >= b.beginMin) {
-        if (minute < b.beginMin + b.durationMin) return (top, bottom);
-        if (i + 1 >= blocks.length) return (top, bottom);
-        if (minute < blocks[i + 1].beginMin) {
-          final seam = bottom + (b.border ? 1 : 0);
-          return (seam, seam);
-        }
-      }
-      top = bottom + (b.border ? 1 : 0);
-    }
-    return (0, 0); // before the first block - paint() returns earlier
-  }
-
   /// Whether the minute resolves INSIDE a content block (one that may
-  /// paint the running chip); dead-gap seam snaps do NOT count.
+  /// paint the running chip).
   bool _contentAt(int minute) {
     for (final b in blocks) {
       if (b.content &&
@@ -785,8 +710,10 @@ class _NowLinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_NowLinePainter oldDelegate) =>
+      oldDelegate.axis != axis ||
+      oldDelegate.pxPerMin != pxPerMin ||
+      oldDelegate.columnH != columnH ||
       oldDelegate.blocks != blocks ||
-      oldDelegate.heights != heights ||
       oldDelegate.color != color ||
       oldDelegate.textStyle != textStyle;
 }
