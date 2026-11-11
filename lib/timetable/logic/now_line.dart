@@ -75,8 +75,12 @@ const double timetableMinPxPerMin = 0.3;
 /// short personal entries (a 20-min slot = 18 px at design scale) used to
 /// FittedBox their text into unreadable smears while the neighbour day,
 /// scaled differently, showed it full-size - the "too tight, no breathing
-/// room" half of the inconsistency report.
-const double timetableContentFloorPx = 48;
+/// room" half of the inconsistency report. Sized to time line + title
+/// line + top padding at design font (8 + 16*1.45 + 14*1.45 ≈ 52) so the
+/// row's own FittedBox is a NO-OP at every floor row: one flush-left
+/// text size across the whole column (the scaled-down, visually indented
+/// lunch row of 11.11 was exactly a 48-px floor + 52-px natural height).
+const double timetableContentFloorPx = 52;
 
 /// A FREE-GAP row never claims more pixels than this many minutes design
 /// scale gives: a 2 h lunch void at 0.9 px/min = 108 px of nothing while
@@ -135,13 +139,14 @@ List<double> dayColumnHeights({
   required double pxPerMin,
   required List<NowBlock> blocks,
   required double viewportPx,
+  double contentFloor = timetableContentFloorPx,
 }) {
   final heights = [
     for (final b in blocks)
       b.content
-          ? (b.durationMin * pxPerMin) > timetableContentFloorPx
+          ? (b.durationMin * pxPerMin) > contentFloor
               ? b.durationMin * pxPerMin
-              : timetableContentFloorPx
+              : contentFloor
           : (b.durationMin * pxPerMin).clamp(
               b.durationMin * pxPerMin < timetableGapFloorPx
                   ? b.durationMin * pxPerMin // dead-small seam: stay honest

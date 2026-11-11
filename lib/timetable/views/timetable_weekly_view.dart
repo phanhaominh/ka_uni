@@ -44,6 +44,29 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
   /// viewport (top padding + titleLarge row + gap to the card).
   static const _dateBandHeight = 48.0;
 
+  /// Floor for the content-sized card (lecture-free weeks, weekends-only
+  /// stretches): the zzz placeholder gets a seat worth centring in.
+  static const _minCardHeight = 320.0;
+
+  /// Floor height handed to every day view (see [TimetableDailyView
+  /// .contentFloor]): recomputed per build with the user's text scale.
+  double _weekFloor = timetableContentFloorPx;
+
+  /// Card height for this build: the tallest day column of the week,
+  /// clamped to [_minCardHeight]..(old fixed strip budget).
+  double _cardHeight = _minCardHeight;
+
+  /// time line + title line + top padding at the user's font scale - the
+  /// height below which content text would have to shrink to fit, which
+  /// no row may ever do (per-row rescale = the inconsistency report).
+  double _contentFloor(BuildContext context) {
+    final t = MediaQuery.textScalerOf(context);
+    final theme = Theme.of(context);
+    return spaceSm +
+        t.scale(theme.textTheme.bodyLarge?.fontSize ?? 16) * 1.45 +
+        t.scale(theme.textTheme.titleSmall?.fontSize ?? 14) * 1.45;
+  }
+
   /// The carousel page currently centered; with infinite scroll "today"
   /// starts at 10000 + initial index, one step = ±1 day.
   late int _currentRealPage;
@@ -192,9 +215,31 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
     // subtraction scale with the very text line that sets the height
     final textScale = MediaQuery.textScalerOf(context).scale(28) / 28;
     final bandHeight = _dateBandHeight * textScale;
-    final viewportPx = _weekdayHeight - 40 - bandHeight;
+    final cap = _weekdayHeight - 40 - bandHeight;
+    final blocksByDay = _weekBlocks(vm);
+    final floor = _contentFloor(context);
     // week-wide rhythm BEFORE the pages build (itemBuilder runs after)
-    _weekPxPerMin = weekPxPerMin(viewportPx: viewportPx, days: _weekBlocks(vm));
+    _weekPxPerMin = weekPxPerMin(viewportPx: cap, days: blocksByDay);
+    _weekFloor = floor;
+    // The card is exactly as tall as the week's TALLEST day: a light day
+    // then ends early with at most the intrinsic day-to-day difference of
+    // air below, but never dangles inside a bottomless fixed-height card
+    // (a half-full Wednesday in a 742px frame was the "big gaps" of 11.11;
+    // the old centring answer to it caused the placement jitter).
+    var tallest = 0.0;
+    for (final blocks in blocksByDay) {
+      final h = dayColumnHeights(
+          pxPerMin: _weekPxPerMin,
+          blocks: blocks,
+          viewportPx: cap,
+          contentFloor: floor);
+      final colH = h.fold<double>(0, (s, v) => s + v) +
+          blocks.fold<double>(0, (s, b) => s + (b.border ? 1 : 0));
+      if (colH > tallest) tallest = colH;
+    }
+    _cardHeight = tallest < _minCardHeight
+        ? _minCardHeight
+        : (tallest > cap ? cap : tallest);
     return Column(
       children: [
         _dateBand(context, bandHeight),
@@ -212,10 +257,10 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
               viewportFraction: MediaQuery.sizeOf(context).width >= 900
                   ? 1.0 - 128.0 / MediaQuery.sizeOf(context).width
                   : 0.8,
-              // the header moved out of the pages into the fixed band,
-              // so subtract it here: total height and card placement
-              // stay exactly as before
-              height: viewportPx,
+              // content-sized frame (see build): the header moved out of
+              // the pages into the fixed band, so the band height was
+              // subtracted from the old fixed strip budget (cap)
+              height: _cardHeight,
               // feeds the REAL page index to the date band - with
               // itemCount 1 the onPageChanged index is always 0 and
               // useless
@@ -284,6 +329,7 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
         changes: _changesFor(_pageDate(w)),
         rowTapsEnabled: w == _currentRealPage,
         pxPerMin: _weekPxPerMin,
+        contentFloor: _weekFloor,
       );
     }
 
@@ -309,37 +355,29 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
   static bool _slotVacant(TimetableAppointment a) =>
       a.type == TimetableAppointmentType.lunchBreak || a.isEmpty;
 
-  /// The zzz idiom, shared by the weekend page and a lecture-free week.
+  /// A zzz idiom, shared by the weekend page and a lecture-free week.
+  /// Centred within the (content-sized) card, no screen-relative padding.
   Widget _dayPlaceholder(BuildContext context, String label) {
     final theme = Theme.of(context);
-    return Padding(
-        padding: EdgeInsets.symmetric(
-            vertical: MediaQuery.of(context).size.height * 0.15),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            SizedBox(
-              width: MediaQuery.of(context).size.width * 0.8,
-              height: _weekdayHeight * 0.4,
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            CupertinoIcons.zzz,
+            color: theme.colorScheme.primary,
+            size: 64,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: spaceSm),
+            child: Text(
+              label,
+              style: theme.textTheme.bodyLarge,
             ),
-            Column(
-              children: [
-                Icon(
-                  CupertinoIcons.zzz,
-                  color: theme.colorScheme.primary,
-                  size: 64,
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: spaceSm),
-                  child: Text(
-                    label,
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                )
-              ],
-            )
-          ],
-        ));
+          )
+        ],
+      ),
+    );
   }
 
   /// The "Montag · 2. November"/"Heute, …" heading of the centered page.

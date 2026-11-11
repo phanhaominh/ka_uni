@@ -278,3 +278,26 @@ vertical centring are gone.
 feeds the scale picker with the same occurrence-filtered geometry the
 pages render). Tests: floor/cap/uniform-fit/busiest-decides/equal-durations-
 equal-pixels + seam-policy walk updated to `heights:`.
+
+## Wave b52: content-sized cards, honest floor, chip-only now-label (0.8.3+52)
+
+b51 fixed the SCALE but two inconsistencies survived on-device:
+
+1. BOTTOMLESS CARDS: the carousel kept the old fixed 742px frame while
+   top-anchoring made light days end early - today's card was ~45% content,
+   neighbour days fuller ("big gaps", second report). The card is now as
+   tall as the WEEK'S TALLEST day column (clamped [320, cap]); the weekend
+   /free-day placeholders lost their screen-relative padding (Center +
+   min-size Column) so a short card can never stripe them.
+2. SHRUNK INDENTED ROWS: the content floor (48) sat BELOW a row's natural
+   time+title+pad height (~52) - those rows FittedBox-scaled their whole
+   subtree: smaller text, visually indented (lunch row). The floor is now
+   text-scale-adapted and ≥ that sum everywhere (weekly computes it per
+   build, passes it to every day view AND the tallest-card pre-pass): a
+   floor row renders at scale 1.0 flush-left like every other row.
+3. NOW-LABEL vs RUNNING CHIP: the "running · until HH:MM" chip exists for
+   exactly as long as the line is inside the row, so the painter's own
+   HH:MM label could only ever collide with it (old <40px band missed
+   lines below the time line; measured "12:39" straight on
+   "running · until 13:00"). Label is skipped for content rows entirely
+   now; gap rows and seam snaps keep it (they carry no chip).

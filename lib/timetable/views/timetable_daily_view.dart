@@ -132,13 +132,21 @@ class TimetableDailyView extends StatelessWidget {
   /// own week scale.
   final double? pxPerMin;
 
+  /// Floor height for content rows (see [timetableContentFloorPx]): the
+  /// weekly view passes a text-scale-adapted value so a floor row always
+  /// fits time line + title at the user's font size - the row's FittedBox
+  /// must be a no-op, never a per-row rescale (indented shrunken lunch
+  /// row, 11.11).
+  final double contentFloor;
+
   const TimetableDailyView(
       {super.key,
       required this.tt,
       this.showNowLine = false,
       this.changes = const [],
       this.rowTapsEnabled = true,
-      this.pxPerMin});
+      this.pxPerMin,
+      this.contentFloor = timetableContentFloorPx});
 
   /// The rows one day column renders, from [tt] + tutorial attachments:
   /// first non-empty per block, chronological by TIME-OF-DAY (template
@@ -233,7 +241,8 @@ class TimetableDailyView extends StatelessWidget {
       final heights = dayColumnHeights(
           pxPerMin: pxPerMin,
           blocks: blocks,
-          viewportPx: constraints.maxHeight);
+          viewportPx: constraints.maxHeight,
+          contentFloor: contentFloor);
       // Exact column height (rows + seam hairlines). The column is TOP-
       // anchored like every calendar ever drawn: a light day ends early,
       // but 08:00 sits at the same pixel on every page. (It used to centre
@@ -647,36 +656,30 @@ class TimetableDailyView extends StatelessWidget {
   }
 
   /// Nothing lecture-shaped all day: the weekly weekend idiom, own words.
+  /// Centred with NO screen-relative padding: the card height tracks the
+  /// week's busiest day (see TimetableWeeklyView), so fixed 15%-of-screen
+  /// paddings would overflow a short card into RenderFlex stripes.
   Widget _dayFree(BuildContext context) {
     final theme = Theme.of(context);
-    final size = MediaQuery.of(context).size;
-    return Padding(
-        padding: EdgeInsets.symmetric(vertical: size.height * 0.15),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            SizedBox(
-              width: size.width * 0.8,
-              height: size.height * 0.4,
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            CupertinoIcons.zzz,
+            color: theme.colorScheme.primary,
+            size: 64,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: spaceSm),
+            child: Text(
+              L10n.t("timetable.dayFree"),
+              style: theme.textTheme.bodyLarge,
             ),
-            Column(
-              children: [
-                Icon(
-                  CupertinoIcons.zzz,
-                  color: theme.colorScheme.primary,
-                  size: 64,
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: spaceSm),
-                  child: Text(
-                    L10n.t("timetable.dayFree"),
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                )
-              ],
-            )
-          ],
-        ));
+          )
+        ],
+      ),
+    );
   }
 }
 
@@ -717,11 +720,15 @@ class _NowLinePainter extends CustomPainter {
           ..strokeWidth = 1.5);
     canvas.drawCircle(Offset(6, y), 2, Paint()..color = color);
 
-    // inside a content row's top strip the row's own "running · until"
-    // chip owns the right end - two green texts may never overlap;
-    // deeper in the block the label returns
+    // inside a content row the row's OWN "running · until" chip owns the
+    // right end - and that chip exists for exactly as long as the minute
+    // is inside the row, so the HH:MM label could only ever collide with
+    // it there (measured 12.11: "12:39" painted straight onto
+    // "running · until 13:00"; the old <40px band missed every line below
+    // the time line). The chip is the better label anyway - the HH:MM
+    // returns for gap rows and seam snaps, which carry no chip.
     final (stripTop, stripBottom) = _stripOfMinute(minute);
-    if (_contentAt(minute) && y - stripTop < 40) return;
+    if (_contentAt(minute)) return;
     final chip = TextPainter(textDirection: TextDirection.ltr)
       ..text = TextSpan(text: _hm(minute), style: textStyle)
       ..layout();
