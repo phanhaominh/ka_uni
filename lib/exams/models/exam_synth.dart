@@ -1,4 +1,5 @@
 import 'exam_list.dart';
+import '../../utils/ics_text.dart';
 
 /// UID prefix identifying synthetic exam-sitting VEVENTs (see
 /// [buildExamSynthBlock]). Consumers that must tell genuine timetable
@@ -55,8 +56,8 @@ String buildExamSynthBlock(List<ExamEntry> exams) {
           // only REAL end times are exported; a guessed end (no second
           // time token) stays out of the document entirely
           "${end == null ? "" : "DTEND;TZID=Europe/Berlin:${_icsLocal(end)}\r\n"}"
-          "SUMMARY:${_icsEscape(_icsFoldable("Klausur: ${e.title}"))}\r\n"
-          "${room.isEmpty ? "" : "LOCATION:${_icsEscape(_icsFoldable(room))}\r\n"}"
+          "SUMMARY:${_icsEscape(icsFoldable("Klausur: ${e.title}"))}\r\n"
+          "${room.isEmpty ? "" : "LOCATION:${_icsEscape(icsFoldable(room))}\r\n"}"
           "END:VEVENT\r\n");
     }
   }
@@ -92,13 +93,9 @@ final _timeToken = RegExp(r"(\d{1,2}):(\d{2})");
 /// this additionally fence-offs any character outside that printable set.
 final _kitExamNumber = RegExp(r"^[0-9]{2}-[0-9A-Za-z/.-]+$");
 
-final _newlineRun = RegExp(r"\s*[\r\n]+\s*");
-
-/// A CR/LF inside a property value splits the physical ICS line and
-/// destroys the document; HTML-sourced room labels survive .trim() with
-/// interior newlines. Collapse any whitespace run that contains a newline
-/// into a single space.
-String _icsFoldable(String v) => v.replaceAll(_newlineRun, " ");
+// R23: the CR/LF guard moved to utils/ics_text.dart - the SignMeUp synth
+// emitter writes the same class of foreign text and needed it too:
+// String _icsFoldable(String v) => v.replaceAll(_newlineRun, " ");
 
 String _icsStamp(DateTime d) {
   final u = d.toUtc();

@@ -122,6 +122,10 @@ class _AgendaPageState extends State<AgendaPage> {
   /// restyles rows, it never re-splits _load)
   DateTime _lastShownDay = DateTime.now();
 
+  // R23: (ics cache bytes hashCode | local day) of the last full
+  // _rerenderFromCache pass - see the gate there
+  String _rerenderGateKey = "";
+
   /// armed by scrollToToday; consumed by [_scheduleTodayScroll] once the
   /// today card has rendered data-driven content
   bool _todayScrollPending = false;
@@ -427,10 +431,22 @@ class _AgendaPageState extends State<AgendaPage> {
   /// exam sittings) has finished writing.
   Future<void> _rerenderFromCache(KITProvider vm) async {
     final prefs2 = await SharedPreferences.getInstance();
-    final feed2 = WebcalFeed.parse(prefs2.getString(_icsCacheKey) ?? "");
+    final now2 = DateTime.now();
+    // R23: one pull-refresh can call this up to 4x back-to-back (after
+    // _refetch + SignMeUp tail x2 + exams tail) even when neither
+    // injector actually touched the ICS cache - each pass re-read and
+    // re-parsed the whole feed (unfold + RRULE expansion to the 56 d
+    // horizon) plus every NextUp scan. Gate on (cache bytes, local day):
+    // identical cache on the same day has nothing new to render, while
+    // the midnight day-cross call always slips through (day changed).
+    final icsRaw = prefs2.getString(_icsCacheKey) ?? "";
+    final gateKey =
+        "${icsRaw.hashCode}|${now2.year}-${now2.month}-${now2.day}";
+    if (gateKey == _rerenderGateKey) return;
+    _rerenderGateKey = gateKey;
+    final feed2 = WebcalFeed.parse(icsRaw);
     vm.campusManager.rememberEnrolledTitles(feed2);
     if (!mounted) return;
-    final now2 = DateTime.now();
     var cachedChanges = _load.changes;
     // R22: the same consume rule _refreshOnce applies - the midnight
     // day-cross path rerenders from memory only, so fully-stale deltas

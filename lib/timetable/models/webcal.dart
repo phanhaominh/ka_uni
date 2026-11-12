@@ -369,7 +369,33 @@ class WebcalFeed {
     final title = summary ?? "—";
     final room = location ?? "";
 
+    // R22: raw-string EXDATE matching only ever hit naive stamps written
+    // in exactly DTSTART's wall format. The parser ACCEPTS VALUE=DATE
+    // (`EXDATE;VALUE=DATE:20261112`) and UTC (`20261109T070000Z`) shapes -
+    // precisely what Google/Apple/Outlook exports write - and they could
+    // never match: cancelled dates stayed in grid, agenda and weekly card
+    // AND got T−30 alarms for lectures that will not happen. Normalize
+    // through the very same _dtOf the occurrences use; a date-only EXDATE
+    // cancels the WHOLE day.
+    // R23: normalization runs BEFORE the weekly branch - a NON-weekly
+    // (or oddly-recurrent) VEVENT carrying EXDATEs previously skipped it
+    // entirely and the cancelled day stayed scheduled.
+    final exStamps = <DateTime>{};
+    final exDayKeys = <String>{};
+    for (final raw in exdates) {
+      if (raw.length == 8) {
+        exDayKeys.add(raw); // YYYYMMDD, no time part
+      } else {
+        final t = _dtOf(raw);
+        if (t != null) exStamps.add(t);
+      }
+    }
+
     if (rrule == null || !rrule.contains("FREQ=WEEKLY")) {
+      final fmtStart = _fmt(start);
+      if (exStamps.contains(start) || exDayKeys.contains(fmtStart.substring(0, 8))) {
+        return []; // a cancelled one-shot must not render or alarm either
+      }
       return [
         IcsOccurrence(
             start: start,
@@ -382,25 +408,6 @@ class WebcalFeed {
             fromPersonalIcs: personal,
             url: url)
       ];
-    }
-
-    // R22: raw-string EXDATE matching only ever hit naive stamps written
-    // in exactly DTSTART's wall format. The parser ACCEPTS VALUE=DATE
-    // (`EXDATE;VALUE=DATE:20261112`) and UTC (`20261109T070000Z`) shapes -
-    // precisely what Google/Apple/Outlook exports write - and they could
-    // never match: cancelled dates stayed in grid, agenda and weekly card
-    // AND got T−30 alarms for lectures that will not happen. Normalize
-    // through the very same _dtOf the occurrences use; a date-only EXDATE
-    // cancels the WHOLE day.
-    final exStamps = <DateTime>{};
-    final exDayKeys = <String>{};
-    for (final raw in exdates) {
-      if (raw.length == 8) {
-        exDayKeys.add(raw); // YYYYMMDD, no time part
-      } else {
-        final t = _dtOf(raw);
-        if (t != null) exStamps.add(t);
-      }
     }
 
     // weekly expansion; UNTIL is naive wall time in the feed
@@ -821,10 +828,20 @@ class IcsChange {
     try {
       final list = jsonDecode(raw);
       if (list is! List) return const [];
-      return list
-          .whereType<Map<String, dynamic>>()
-          .map(IcsChange.fromJson)
-          .toList();
+      // R23: per-entry tolerance (mirrors the exam-snapshot replay fix):
+      // one stale/renamed element - e.g. an IcsChangeKind no longer in
+      // values.byName after an app update - used to drop the ENTIRE
+      // pending-delta list, silently clearing the CHANGED band and the
+      // home badge for genuinely unseen changes
+      final out = <IcsChange>[];
+      for (final e in list.whereType<Map<String, dynamic>>()) {
+        try {
+          out.add(IcsChange.fromJson(e));
+        } on Object {
+          continue; // one unreadable delta is a cache miss, not all of them
+        }
+      }
+      return out;
     } on Object {
       return const [];
     }

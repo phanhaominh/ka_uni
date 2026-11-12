@@ -93,10 +93,11 @@ void main() {
   });
 
   test("hardcoded login seeds still pass the pin", () {
-    // every url the chain itself navigates to must survive the check
+    // every url the chain itself navigates to must survive the check —
+    // R23: asserted against the PRODUCTION constant, not a test-local
+    // copy of it (a drifted seed used to keep this green by construction)
     expect(
-      pin("https://idp.scc.kit.edu/idp/profile/SAML2/Redirect/SSO"
-          "?execution=e1s1"),
+      pin(KITLoginManager.ssoSeedUrl),
       isNotNull,
     );
     final cas = Uri.parse("https://campus.studium.kit.edu");

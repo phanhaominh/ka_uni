@@ -128,6 +128,14 @@ class MensaTranslate {
   Future<void> _run() async {
     if (_running) return;
     _running = true;
+    // R23: a cold English cache drains ~20-40 sequential 2-name batches;
+    // per-batch onChanged -> mensa.notifyListeners -> KITProvider ->
+    // WHOLE home tree rebuild (weekly grid, cards, modules table) per
+    // round-trip = 20-40 dashboard rebuilds across the drain. Throttle
+    // progress repaints to one per 2 s and guarantee a final flush so the
+    // last batch still lands.
+    var lastNotify = DateTime.fromMillisecondsSinceEpoch(0);
+    var changedSinceNotify = false;
     try {
       while (_queue.isNotEmpty) {
         // two in flight, small burst: the endpoint tolerates a casual
@@ -162,7 +170,14 @@ class MensaTranslate {
         if (changed) {
           _failedBatches = 0;
           await _persist();
-          onChanged?.call();
+          final now = DateTime.now();
+          if (now.difference(lastNotify).inMilliseconds >= 2000) {
+            lastNotify = now;
+            changedSinceNotify = false;
+            onChanged?.call();
+          } else {
+            changedSinceNotify = true;
+          }
         } else if (++_failedBatches >= 3) {
           // three straight all-failed batches = blocked or rate-limited
           // endpoint; stop hammering it with the rest of the week (the
@@ -178,6 +193,7 @@ class MensaTranslate {
       }
     } finally {
       _running = false;
+      if (changedSinceNotify) onChanged?.call();
     }
   }
 

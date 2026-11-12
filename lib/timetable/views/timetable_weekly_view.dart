@@ -86,7 +86,29 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
   /// predicate the carousel builder applies to its page (next occurrence
   /// of that weekday as canonical - the template repeats weekly; an EXDATE
   /// week differing a little only nudges the window).
+  // R23: _weekBlocks runs 5 filter+sort passes + contentBlocksFor per
+  // weekday on EVERY build - and a carousel fling setStates on every
+  // page-step (_onScrolled), turning one swipe into up to 5 full grid
+  // recomputes whose result provably cannot change mid-drag (the axis,
+  // card height and blocks depend only on (timetable identity,
+  // _todayRealPage, wall day) - all constant during a gesture; every
+  // data update REPLACES campusManager.timetable, so identity is the
+  // change signal)
+  List<List<NowBlock>>? _blocksMemo;
+  Object? _blocksMemoTimetable;
+  int _blocksMemoPage = -1;
+  String _blocksMemoDay = "";
+
   List<List<NowBlock>> _weekBlocks(KITProvider vm) {
+    final nowB = DateTime.now();
+    final dayKey = "${nowB.year}-${nowB.month}-${nowB.day}";
+    final memo = _blocksMemo;
+    if (memo != null &&
+        identical(_blocksMemoTimetable, vm.timetable) &&
+        _blocksMemoPage == _todayRealPage &&
+        _blocksMemoDay == dayKey) {
+      return memo;
+    }
     final todayIdx = DateTime.now().weekday - 1;
     final out = <List<NowBlock>>[];
     for (var idx = 0; idx < 5 && idx < vm.timetable.days.length; idx++) {
@@ -103,6 +125,10 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
             .toList();
       out.add(TimetableDailyView.contentBlocksFor(tt));
     }
+    _blocksMemo = out;
+    _blocksMemoTimetable = vm.timetable;
+    _blocksMemoPage = _todayRealPage;
+    _blocksMemoDay = dayKey;
     return out;
   }
 

@@ -44,7 +44,12 @@ class _KITHomePageState extends State<KITHomePage> {
   @override
   Widget build(BuildContext context) {
     final vm = Provider.of<KITProvider>(context);
-    final toastsProvider = Provider.of<ToastsProvider>(context);
+    // R23: listen:false — the page only ever CALLS showTextToast from
+    // tap closures; the provider notifies on show AND on auto-hide, so
+    // the old listening build cost TWO full home-tree rebuilds (weekly
+    // grid recompute x2) per toast
+    final toastsProvider =
+        Provider.of<ToastsProvider>(context, listen: false);
     final settingsVM = Provider.of<SettingsProvider>(context);
 
     return Scaffold(

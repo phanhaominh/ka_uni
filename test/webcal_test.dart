@@ -599,4 +599,102 @@ void main() {
     expect(nov2.end, DateTime(2026, 11, 2, 10),
         reason: 'end follows the start by wall clock');
   });
+
+  // ---- R23: EXDATE / recurrence / decode-tolerance regressions ----
+
+  test('cancelled one-shot (EXDATE;VALUE=DATE) disappears', () {
+    // Google/Apple export date-only EXDATE; pre-R23 matched EXDATE only
+    // in the weekly branch and only as a raw wall string, so a cancelled
+    // single appointment (exam sitting, make-up date) stayed in grid,
+    // agenda AND fired its alarms
+    final raw = '''
+BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:one1
+SUMMARY:Klausuranmeldung
+DTSTART:20261204T100000
+DTEND:20261204T120000
+EXDATE;VALUE=DATE:20261204
+END:VEVENT
+BEGIN:VEVENT
+UID:one2
+SUMMARY:Ersatztermin
+DTSTART:20261204T140000
+DTEND:20261204T160000
+END:VEVENT
+END:VCALENDAR
+''';
+    final feed = WebcalFeed.parse(raw, now: DateTime(2026, 11, 12))!;
+    final titles = feed.occurrences.map((o) => o.title).toList();
+    expect(titles, isNot(contains("Klausuranmeldung")),
+        reason: "date-only EXDATE must cancel the whole day");
+    expect(titles, contains("Ersatztermin"));
+  });
+
+  test('UTC EXDATE cancels only its own week in a weekly series', () {
+    final raw = '''
+BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:u1
+SUMMARY:Colloquium
+DTSTART:20261119T070000Z
+DTEND:20261119T080000Z
+RRULE:FREQ=WEEKLY;UNTIL=20270115T000000Z
+EXDATE:20261119T070000Z
+END:VEVENT
+END:VCALENDAR
+''';
+    final feed = WebcalFeed.parse(raw, now: DateTime(2026, 11, 12))!;
+    final occs =
+        feed.occurrences.where((o) => o.title == "Colloquium").toList();
+    // any local timezone keeps 19th/26th as the day-of-month pair here
+    expect(occs.where((o) => o.start.day == 19), isEmpty);
+    expect(occs.where((o) => o.start.day == 26), isNotEmpty,
+        reason: "the series itself must continue");
+  });
+
+  test('EXDATE reaches oddly-recurrent one-shots too', () {
+    // non-weekly RRULE keeps only the DTSTART occurrence (documented
+    // limitation) - pre-R23 that survivor bypassed EXDATE entirely
+    final raw = '''
+BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:ox1
+SUMMARY:Journal club
+DTSTART:20261116T170000
+DTEND:20261116T180000
+RRULE:FREQ=MONTHLY;COUNT=4
+EXDATE:20261116T170000
+END:VEVENT
+END:VCALENDAR
+''';
+    // parse() reports a zero-occurrence feed as null (documented
+    // "no usable data" contract) - the cancellation must not leave the
+    // event behind in either shape
+    final feed = WebcalFeed.parse(raw, now: DateTime(2026, 11, 12));
+    final occs = feed?.occurrences ?? const <IcsOccurrence>[];
+    expect(occs.where((o) => o.title == "Journal club"), isEmpty);
+  });
+
+  test('IcsChange.decode skips only unreadable entries', () {
+    // a single stale kind used to drop the WHOLE pending-delta list ->
+    // the CHANGED band and home badge silently vanished for genuinely
+    // unseen changes
+    final good = IcsChange(
+        kind: IcsChangeKind.added,
+        title: "AdM V",
+        when: DateTime(2026, 11, 3, 10),
+        room: "HS1");
+    final inner =
+        IcsChange.encode([good]).substring(1); // "[{...}]" -> "{...}]"
+    final raw = '[{"k":"retired_kind","t":"x","w":"2026-11-03T10:00:00",'
+        '"r":""},42,$inner';
+    final back = IcsChange.decode(raw);
+    expect(back.length, 1);
+    expect(back.single.kind, IcsChangeKind.added);
+    expect(back.single.title, "AdM V");
+  });
 }

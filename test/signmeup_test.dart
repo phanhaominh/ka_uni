@@ -185,6 +185,48 @@ void main() {
       expect(RegExp('BEGIN:VEVENT').allMatches(block).length, 1);
     });
 
+    test('foreign newline cannot split the emitted ICS lines (R23)', () {
+      // name/topicName are instructor-set free text straight off the
+      // wire; _icsEscape escapes \ ; , but NOT CR/LF. Before the shared
+      // icsFoldable guard a pasted newline smuggled a physical property
+      // line INTO the cache: strict export consumers reject the whole
+      // document, and a forged END:VEVENT/sentinel desyncs the splice
+      // logic that carries the user's personal block
+      final mgr = SignMeUpManager();
+      mgr.mine = [
+        SignMeUpRegistration.fromJson({
+          "id": 7,
+          "procedureId": 8,
+          "name": "Bad Name\r\nEND:VEVENT\r\nX-Injected: yes",
+          "state": 3,
+          "assignedTopic": {
+            "name": "G1",
+            "description": "<div>Monday&nbsp;10:00-12:00</div>",
+          },
+        })
+      ];
+      mgr.loadedMine = true;
+      mgr.termStart = DateTime(2026, 10, 1);
+      final block = mgr.buildSynthBlock();
+      expect(block, isNotEmpty, reason: "schedule must still emit");
+      // the text SURVIVES (folded into the value) - what must not
+      // survive is any second physical line or smuggled property, so
+      // the counters look at PHYSICAL lines only (the folded title
+      // legitimately contains the literal "END:VEVENT" as its text)
+      final lines = block.split('\r\n');
+      expect(lines.where((l) => l == 'BEGIN:VEVENT').length, 1);
+      expect(lines.where((l) => l == 'END:VEVENT').length, 1);
+      expect(
+          lines.every((l) => !l.startsWith('X-Injected')),
+          isTrue,
+          reason: "forged property became its own physical line");
+      final summary = block
+          .split('\r\n')
+          .firstWhere((l) => l.startsWith('SUMMARY:'));
+      expect(summary, contains('Bad Name'));
+      expect(summary, contains('END:VEVENT')); // folded INTO the value text
+    });
+
     test('synthetic events survive the webcal parser', () {
       final mgr = SignMeUpManager();
       mgr.mine = loadMine();

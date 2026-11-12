@@ -40,15 +40,20 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- Re-deliver exact alarms after reboot / app update / time change -->
+        <!-- Re-deliver pending exact alarms after reboot / app update.
+             R23: TIMESET (typo — the broadcast is TIME_SET), TIMEZONE_CHANGED
+             and the alarm-permission action were DEAD WEIGHT here: the
+             plugin's ScheduledNotificationBootReceiver only reacts to
+             BOOT_COMPLETED / MY_PACKAGE_REPLACED / QUICKBOOT and ignores
+             every other action, so the recovery this comment promised
+             never happened. Time-change re-arming is covered by the app's
+             own resyncOnStartup on next cold start (+30 min poll tail);
+             real TIME_SET recovery would need an app-owned receiver. -->
         <receiver android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" android:exported="false" />
         <receiver android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <action android:name="android.intent.action.TIMESET" />
-                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
-                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
     </application>

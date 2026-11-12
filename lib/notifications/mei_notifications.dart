@@ -62,6 +62,10 @@ class MeiNotifications {
   /// C66: inputs of the last [scheduleExamReminders] rebuild; replayed by
   /// [resyncOnStartup] so the deadline family tracks last-known state.
   static const _examSnapshotKey = "DATA_examReminderSnapshot";
+  // R23: once-per-install marker for the exact-alarm settings prompt
+  // (plain PREF_, survives logout: it records a system-UI fact, not
+  // account data)
+  static const _exactAlarmAskedKey = "PREF_exactAlarmAsked";
 
   static bool _canScheduleExact = true;
 
@@ -96,11 +100,41 @@ class MeiNotifications {
     // isolate mainActivity is null and the plugin NPEs (crash-loop every
     // poll). Only the UI process may prompt; background inits only probe.
     if (requestPermissions) {
-      await androidPlugin?.requestExactAlarmsPermission();
-      await androidPlugin?.requestNotificationsPermission();
+      // R23: requestExactAlarmsPermission() is NOT a polite dialog - on
+      // S+ the plugin UNCONDITIONALLY startActivityForResult(ACTION_
+      // REQUEST_SCHEDULE_EXACT_ALARM) whenever the grant is missing: a
+      // user who denied exact alarms once (or whose Android 15 ROM ships
+      // the toggle off) was dumped onto the system "Alarm access"
+      // settings page OVER THE SPLASH on literally every app open.
+      // Ask only while the grant is actually missing, and at most once
+      // per install; the inexact fallback already covers the denial.
+      // Each request is try-wrapped: an OEM ROM missing the settings
+      // intent used to abort init() before _ready=true, killing ALL
+      // notifications for the session.
+      try {
+        final missing =
+            await androidPlugin?.canScheduleExactNotifications() == false;
+        final prefs = await SharedPreferences.getInstance();
+        if (missing && !prefs.containsKey(_exactAlarmAskedKey)) {
+          await prefs.setBool(_exactAlarmAskedKey, true);
+          await androidPlugin?.requestExactAlarmsPermission();
+        }
+      } on Object catch (e) {
+        if (kDebugMode) print("exact-alarm prompt failed: $e");
+      }
+      try {
+        await androidPlugin?.requestNotificationsPermission();
+      } on Object catch (e) {
+        if (kDebugMode) print("notification permission prompt failed: $e");
+      }
     }
-    _canScheduleExact =
-        await androidPlugin?.canScheduleExactNotifications() ?? true;
+    try {
+      _canScheduleExact =
+          await androidPlugin?.canScheduleExactNotifications() ?? true;
+    } on Object catch (e) {
+      if (kDebugMode) print("exact-alarm probe failed: $e");
+      _canScheduleExact = false; // -> inexact path, alarms still delivered
+    }
     _ready = true;
   }
 
@@ -151,6 +185,26 @@ class MeiNotifications {
   static Future<void> cancelLibraryPing(int id) async {
     if (!supported || !_ready) return;
     await _plugin.cancel(id);
+  }
+
+  /// Immediate (re-)post of a library check-in ping. R23: the cold-start
+  /// ghost sweep (resyncOnStartup's cancelAll) also wipes the SHADE of a
+  /// ping that already fired but whose 15-minute check-in window is still
+  /// open - replay re-arms future pings only, so without this repost the
+  /// reminder is destroyed mid-window and the booking silently expires.
+  static Future<void> showLibraryPingNow(int id, String title, String body,
+      {required String payload}) async {
+    if (!supported) return;
+    if (!_ready) await init(requestPermissions: false);
+    await _plugin.show(
+        id,
+        title,
+        body,
+        NotificationDetails(
+            android: AndroidNotificationDetails(
+                channelIdLibrary, L10n.t("notifs.channelLibrary"),
+                importance: Importance.max)),
+        payload: payload);
   }
 
   /// Immediate heads-up (used by the background diff job). [payload] routes
@@ -591,20 +645,37 @@ class MeiNotifications {
     }
     await scheduleExamReminders([
       for (final e in entries)
-        if (e is Map<String, dynamic>)
-          ExamEntry(
-              // only the scheduling fields rehydrate; terms belong to the
-              // next real fetch, the deadline alarm never reads them
-              examNumber: "snapshot",
-              title: e["t"] as String? ?? "",
-              examiners: "",
-              examType: "",
-              registered: e["r"] as bool? ?? false,
-              windowStatus: ExamWindowStatus.values
-                  .byName(e["w"] as String? ?? "unknown"),
-              windowStart: DateTime.tryParse(e["s"] as String? ?? ""),
-              windowEnd: DateTime.tryParse(e["e"] as String? ?? ""))
-    ]);
+        // R23: per-entry containment - byName THROWS on a stored status
+        // name that a later app version renamed (the ?? "unknown" only
+        // covers a MISSING key), and the `as String?` casts throw on
+        // foreign types; one poisoned element used to escape through
+        // resyncOnStartup into main's bootstrap try, taking
+        // LibraryNotifications.replayPending() down with it: exam
+        // deadline alarms AND library check-in pings lost every reboot
+        // until the next successful possibleexams fetch
+        () {
+          try {
+            if (e is! Map<String, dynamic>) return null;
+            final w = e["w"] as String?;
+            return ExamEntry(
+                // only the scheduling fields rehydrate; terms belong to
+                // the next real fetch, the deadline alarm never reads them
+                examNumber: "snapshot",
+                title: e["t"] as String? ?? "",
+                examiners: "",
+                examType: "",
+                registered: e["r"] as bool? ?? false,
+                windowStatus: ExamWindowStatus.values.firstWhere(
+                    (s) => s.name == w,
+                    orElse: () => ExamWindowStatus.unknown),
+                windowStart:
+                    DateTime.tryParse(e["s"] as String? ?? ""),
+                windowEnd: DateTime.tryParse(e["e"] as String? ?? ""));
+          } on Object {
+            return null; // one unreadable snapshot row is a dropped row
+          }
+        }(),
+    ].whereType<ExamEntry>().toList());
   }
 }
 

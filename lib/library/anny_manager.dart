@@ -540,6 +540,16 @@ class AnnyManager extends ChangeNotifier {
       } on AnnyUnauthorized {
         _diag("re-minted JWT still rejected", AnnyErrorKind.auth);
         return null;
+        // R23: the retry runs INSIDE the `on` handler above — Dart does
+        // NOT route a throw from one handler into the sibling `catch (e)`
+        // clause, so a non-401 failure during the retry (network death
+        // mid-reauth, markup AnnyError) escaped _authed, broke its
+        // "never throws" contract, froze isLoadingBookings/_busy in the
+        // callers and landed unhandled rejections in the zone. Catch it
+        // right here, same containment the first attempt gets.
+      } catch (e) {
+        _diag("api: $e", _kindFromApi(e));
+        return null;
       }
     } catch (e) {
       _diag("api: $e", _kindFromApi(e));
@@ -567,9 +577,16 @@ class AnnyManager extends ChangeNotifier {
       notifyListeners();
       // uuid read INSIDE the call: a silent re-auth may have delivered a
       // fresh one, and myBookings' primary route needs no uuid at all
-      final List<AnnyBooking>? list = await _authed<List<AnnyBooking>>(
-          (String jwt) => myBookings(http, jwt, _session?.accountUuid ?? ""));
-      isLoadingBookings = false;
+      final List<AnnyBooking>? list;
+      try {
+        list = await _authed<List<AnnyBooking>>(
+            (String jwt) => myBookings(http, jwt, _session?.accountUuid ?? ""));
+      } finally {
+        // R23: gate release in finally — same lesson as the isBooking
+        // fix: a contract-violating throw used to leave the spinner
+        // owner (isLoadingBookings) set for the whole session
+        isLoadingBookings = false;
+      }
       if (list != null && gen == _signOutGen) {
         bookings = list;
         error = AnnyErrorKind.none;

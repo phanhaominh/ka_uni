@@ -102,7 +102,24 @@ class LibraryNotifications {
           .whereType<int>()
           .toList();
       // stable slot across restarts: reuse the persisted id if known
-      final nid = known.isNotEmpty ? known.first : idFor(bookingId);
+      var nid = known.isNotEmpty ? known.first : idFor(bookingId);
+      if (known.isEmpty) {
+        // R23: idFor buckets into only idCount slots - two live bookings
+        // sharing a bucket (~5% per pair) shared ONE notification id:
+        // the later zonedSchedule replaced the earlier ping, replay won
+        // twice more, and cancelling either booking silenced the
+        // survivor. Probe forward for a slot not held by a DIFFERENT
+        // pending booking (live bookings stay far below idCount, so the
+        // probe always lands)
+        final taken = pending
+            .where((e) => e["id"] != bookingId)
+            .map((e) => e["nid"])
+            .whereType<int>()
+            .toSet();
+        for (var k = 0; k < idCount && taken.contains(nid); k++) {
+          nid = idBase + (nid - idBase + 1) % idCount;
+        }
+      }
       await MeiNotifications.scheduleLibraryPing(
         nid,
         L10n.t("library.checkinBanner", [room, hhmm]),
@@ -161,6 +178,21 @@ class LibraryNotifications {
         if (id is! String || startMs is! int) continue;
         final start = DateTime.fromMillisecondsSinceEpoch(startMs);
         if (!start.isAfter(now.add(const Duration(seconds: 30)))) {
+          // R23: the check-in WINDOW outlives the ping: fired at slot
+          // start, a brief cold start cancelAll'd the shade, and dropping
+          // the entry here left the booking expiring at start+15 with no
+          // reminder at all. Inside the window -> repost NOW (same nid:
+          // show replaces, never stacks), then retire the entry.
+          if (now.isBefore(start.add(const Duration(minutes: 15)))) {
+            await MeiNotifications.showLibraryPingNow(
+                e["nid"] is int ? e["nid"] as int : idFor(id),
+                L10n.t("library.checkinBanner", [
+                  e["room"] as String? ?? "",
+                  _hhmm(start.add(const Duration(minutes: 15)))
+                ]),
+                L10n.t("library.checkinBody"),
+                payload: NotificationPayload.library);
+          }
           continue; // dead/expired while the app was gone
         }
         final room = e["room"] as String? ?? "";

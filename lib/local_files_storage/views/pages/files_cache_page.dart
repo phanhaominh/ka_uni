@@ -274,24 +274,20 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                                 ),
                                               ),
                                               Spacer(),
-                                              FutureBuilder(
-                                                  future: File(semFile).stat(),
-                                                  builder: (context, snapshot) {
-                                                    if (snapshot.hasData &&
-                                                        snapshot.data != null) {
-                                                      return Text(
-                                                          "${(snapshot.data!.size / 1024 / 1024).toStringAsFixed(1)} MB");
-                                                    }
-                                                    if (snapshot.hasError) {
-                                                      // a vanished or
-                                                      // unreadable file must
-                                                      // not spin forever
-                                                      return const Text(
-                                                          "\u2014");
-                                                    }
-
-                                                    return KITProgressIndicator();
-                                                  }),
+                                              // R23: was an inline
+                                              // FutureBuilder(future: File(
+                                              // semFile).stat()) - EVERY
+                                              // rebuild of this page
+                                              // (pin/rename/unpin notify)
+                                              // handed every visible row
+                                              // a fresh stat() future and
+                                              // flashed the spinner again;
+                                              // the file's own
+                                              // _cacheFuture comment calls
+                                              // this out as the known
+                                              // anti-pattern. Resolved
+                                              // exactly once per row.
+                                              _FileSizeText(path: semFile),
                                               // Spacer(),
                                               CupertinoButton(
                                                   child: Semantics(
@@ -507,5 +503,49 @@ class _FilesCachePageState extends State<FilesCachePage> {
       expandedSemesterString = currentSemesterString;
       expandedSemesterStringFiles = files;
     });
+  }
+}
+
+/// One file's size label, stat()ed EXACTLY ONCE per mounted row (R23:
+/// inline FutureBuilder(future: File(...).stat()) re-ran per rebuild and
+/// flashed the spinner on every unrelated provider notification - the
+/// memoized `_cacheFuture` in this very file documents that pattern as
+/// the bug). Rows in the map carry no keys, so a path change on the same
+/// element position re-stats instead of keeping the stale size.
+class _FileSizeText extends StatefulWidget {
+  const _FileSizeText({required this.path});
+
+  final String path;
+
+  @override
+  State<_FileSizeText> createState() => _FileSizeTextState();
+}
+
+class _FileSizeTextState extends State<_FileSizeText> {
+  late Future<FileStat> _stat = File(widget.path).stat();
+
+  @override
+  void didUpdateWidget(_FileSizeText old) {
+    super.didUpdateWidget(old);
+    if (old.path != widget.path) {
+      setState(() => _stat = File(widget.path).stat());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+        future: _stat,
+        builder: (context, snapshot) {
+          if (snapshot.hasData && snapshot.data != null) {
+            return Text(
+                "${(snapshot.data!.size / 1024 / 1024).toStringAsFixed(1)} MB");
+          }
+          if (snapshot.hasError) {
+            // a vanished or unreadable file must not spin forever
+            return const Text("\u2014");
+          }
+          return KITProgressIndicator();
+        });
   }
 }

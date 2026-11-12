@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../state_management/kit_login_manager.dart';
+import '../utils/ics_text.dart';
 
 class SignMeUpProcedure {
   final int id;
@@ -301,7 +302,14 @@ class SignMeUpRegistration {
             .trim();
         if (room.length < 3 && i + 1 < lines.length) {
           final next = lines[i + 1];
-          if (_timeRange.firstMatch(next) == null) room = next;
+          if (_timeRange.firstMatch(next) == null) {
+            // R23: the cleanup above ran on the OLD room text only; the
+            // fallback line must pass the same collapse (interior raw CR
+            // would otherwise reach LOCATION and from there the ICS cache)
+            room = icsFoldable(next)
+                .replaceAll(RegExp(r'^[\s,/:–-]+|[\s,/:–-]+$'), "")
+                .trim();
+          }
         }
         final sm = tm.group(2) ?? "00";
         final em = tm.group(4) ?? "00";
@@ -510,7 +518,14 @@ class SignMeUpManager {
       final topic = (r.topicName?.trim().isNotEmpty ?? false)
           ? r.topicName!.trim()
           : null;
-      final title = topic == null ? r.name : "${r.name} ($topic)";
+      // R23: name/topicName are instructor-set free text off the SignMeUp
+      // wire. _icsEscape covers \ ; , but NOT newlines: an interior CR/LF
+      // split the physical ICS line in the CACHE (the exam emitter's
+      // icsFoldable guard, exam_synth.dart, existed for exactly this
+      // data class) - strict export consumers then reject the document,
+      // and a crafted line could impersonate END:VEVENT or a sentinel and
+      // make the splice logic cut the user's personal block out
+      final title = icsFoldable(topic == null ? r.name : "${r.name} ($topic)");
       for (final s in r.schedules) {
         // first matching weekday at/after the term start
         var d = DateTime(termStart?.year ?? until.year, termStart?.month ?? 10,
@@ -542,7 +557,7 @@ class SignMeUpManager {
             "DTEND;TZID=Europe/Berlin:${_icsLocal(end)}\r\n"
             "RRULE:FREQ=WEEKLY;UNTIL=${_icsLocal(until)}\r\n"
             "SUMMARY:${_icsEscape(title)}\r\n"
-            "LOCATION:${_icsEscape(s.room)}\r\n"
+            "LOCATION:${_icsEscape(icsFoldable(s.room))}\r\n"
             "END:VEVENT\r\n");
       }
       final one = r.singleAppointment;

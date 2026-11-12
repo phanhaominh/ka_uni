@@ -306,6 +306,14 @@ class _IliasPageViewWState extends State<IliasPageView> {
           if (dir.existsSync()) {
             for (final e in dir.listSync()) {
               if (e is! File) continue;
+              // R23: ".pdf" is NEVER a probe candidate. It was reaching
+              // here as `<stem>.pdf`.startsWith(`<stem>.`) → true: the
+              // corrupt entry that JUST failed the magic-byte check got
+              // re-selected and delivered forever, resurrecting exactly
+              // the bug the magic gate exists to heal. Any surviving
+              // ".pdf" candidate therefore goes back to the download
+              // path, which overwrites the bad bytes.
+              if (e.path.endsWith(".pdf")) continue;
               if (e.path.startsWith("$stem.") &&
                   e.path.length > stem.length + 1) {
                 file = e;

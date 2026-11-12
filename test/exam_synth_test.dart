@@ -169,7 +169,13 @@ void main() {
       // sit seven days out so the parser's 56-day horizon always contains it
       final d = DateTime.now().add(const Duration(days: 7));
       String two(int v) => v.toString().padLeft(2, "0");
-      final label = "Mo, ${two(d.day)}.${two(d.month)}.${d.year}";
+      // R23: weekday prefix DERIVED from the date — a hardcoded "Mo," on
+      // an arbitrary now()+7d only stayed green because the parser
+      // ignores the token; the day it trusts it, this silently becomes a
+      // date flake
+      const deDays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+      final label =
+          "${deDays[d.weekday - 1]}, ${two(d.day)}.${two(d.month)}.${d.year}";
       final block = buildExamSynthBlock([
         _exam(terms: [_term(label, "17:30 - 19:00")])
       ]);
@@ -201,7 +207,11 @@ void main() {
     test("past sittings are skipped (block rolls at the date boundary)", () {
       final past = DateTime.now().subtract(const Duration(days: 30));
       String two(int v) => v.toString().padLeft(2, "0");
-      final label = "Di, ${two(past.day)}.${two(past.month)}.${past.year}";
+      // R23: prefix derived from the date (see the parser test above)
+      const deDays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+      final label =
+          "${deDays[past.weekday - 1]}, ${two(past.day)}."
+          "${two(past.month)}.${past.year}";
       expect(
           buildExamSynthBlock([
             _exam(terms: [_term(label, "17:30 - 19:00")])

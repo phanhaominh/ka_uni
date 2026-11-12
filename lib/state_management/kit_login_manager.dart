@@ -557,9 +557,14 @@ class KITLoginManager {
     }
   }
 
+  /// R23: named so the pin test can assert THE REAL chain seed (the old
+  /// test re-declared the URL locally — production could drift to a
+  /// pin-rejected seed and the test stayed green).
+  static const ssoSeedUrl =
+      "https://idp.scc.kit.edu/idp/profile/SAML2/Redirect/SSO?execution=e1s1";
+
   Future<bool> fetchJSession() async {
-    String url =
-        "https://idp.scc.kit.edu/idp/profile/SAML2/Redirect/SSO?execution=e1s1";
+    String url = ssoSeedUrl;
 
     await netGet(Uri.parse(url));
     if (sessionContainsCookieNamed("JSESSIONID")) {

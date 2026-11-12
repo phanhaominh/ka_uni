@@ -90,7 +90,20 @@ class CampusManager extends KITLoginManager {
     final prefs = await SharedPreferences.getInstance();
     final stored = prefs.getString(_studentDataKey);
     if (stored != null && stored.isNotEmpty) {
-      student.copyFrom(Student.fromJson(jsonDecode(stored)));
+      try {
+        student.copyFrom(Student.fromJson(jsonDecode(stored)));
+      } on Object catch (e) {
+        // R23: THE only unguarded boot parse - and it sits on the one
+        // chain whose failure bricks the whole warm start:
+        // tryPreloadCache -> loadCachedDataAndNotify throws BEFORE
+        // ready=true, main's catchError eats it, and the app parks on
+        // the LOGIN FORM on every cold start despite valid stored
+        // credentials (only a manual re-login rewrites this key).
+        // Corrupt bytes, a non-object payload or a renamed field are
+        // cache misses - drop the key and boot on fresh data
+        if (kDebugMode) print("student cache unreadable: $e");
+        await prefs.remove(_studentDataKey);
+      }
     }
   }
 

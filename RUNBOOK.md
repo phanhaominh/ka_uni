@@ -364,3 +364,43 @@ warnings (the one resetForTest visible-for-testing warning predates it).
   separator (malformed ICS the widened regex would truncately parse) -
   fixed to real format; new tests: date-only UNTIL, UTC/VALUE=DATE
   EXDATE, blockKeys ties, mensa join matrix.
+
+## Wave R23: async + UI-cost pool integration (0.8.6+60)
+
+9 fresh lenses (async containment, rebuild cost, decode tolerance, boot
+guards, ICS emitter hygiene). 518 tests green, 0 analyzer errors.
+
+- async containment: anny _authed's retry ran INSIDE its own `on
+  AnnyUnauthorized` handler - Dart does not route a throw from a handler
+  into the sibling `catch`, so a socket blip during the re-mint escaped
+  as an uncaught error (and refreshBookings left isLoadingBookings stuck
+  for the whole session - now try/finally). exam-snapshot replay decoded
+  per-entry (one renamed status name used to kill exam alarms AND the
+  library ping replay behind it); IcsChange.decode likewise.
+- boot guard: DATA_student was the last unguarded warm-start parse - one
+  corrupt blob parked the app on the LOGIN FORM every cold start despite
+  valid sessions (loadStudentData threw before ready=true); now a cache
+  miss: key dropped, boot continues (3 new tests pin all four shapes).
+- ICS emitter hygiene: name/topicName are instructor-set free text;
+  _icsEscape never escaped CR/LF, so a pasted newline smuggled physical
+  property lines (even a forged END:VEVENT) into the merged cache.
+  Shared utils/ics_text.dart icsFoldable now guards both synth emitters.
+- ilias: ".pdf" probe candidates - the corrupt file that just failed the
+  magic check re-qualified via startsWith("$stem.") and was served
+  forever; the magic gate's healing loop was defeated by its own naming.
+- UI cost: toast provider listen:false (every toast rebuilt the whole
+  home tree twice), _weekBlocks memoized per (timetable, page, day)
+  (one carousel fling = up to 5 full grid recomputes), _rerenderFromCache
+  gated on (ics bytes, day) (pull-refresh parsed the feed up to 4x with
+  nothing new), translate drain notifies throttled to 1/2s + final flush,
+  files-page size labels stat() once per row instead of per rebuild.
+- alarms: exact-alarm settings prompt is UI-process-only now (the
+  WorkManager isolate used to S+ startActivity a settings page the user
+  never asked for); library check-in pings no longer re-show within the
+  window, expire honestly, and survive force-stop; manifest receiver
+  actions corrected (TIMESET was a dead typo the plugin ignores).
+- tests: global DE/EN key + placeholder-arity parity (the 417-key table
+  as ONE guard, was two area subsets), dynamic month keys pinned,
+  kit_https pin test asserts the PRODUCTION seed const (was a drifted
+  local copy), exam_synth weekday prefixes derived from the date,
+  orphan 6.9k-line ref.ics fixture deleted.
