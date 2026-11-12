@@ -164,7 +164,19 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
   /// Midnight roll: exactly ONE setState steps today forward; band, dim,
   /// now-line and button anchor all follow it - per minute nothing rebuilds.
   void _onMidnight() {
-    if (mounted) setState(() => _todayRealPage += 1);
+    if (!mounted) return;
+    // R22: catch up to the WALL DATE, not "+1": an Android-cached process
+    // can sleep through MULTIPLE days (weekend!) and NowClock publishes
+    // the date exactly once per change - a single +1 left the anchor N
+    // days behind: now-line and running chips on yesterday's page, past-
+    // dim and ShowToday one day off until the NEXT midnight
+    setState(() {
+      final n = DateTime.now();
+      final today = DateTime(n.year, n.month, n.day);
+      while (_pageDate(_todayRealPage).isBefore(today)) {
+        _todayRealPage += 1;
+      }
+    });
   }
 
   /// The concrete calendar date carousel page [w] shows. The band heading,
@@ -388,11 +400,17 @@ class _TimetableWeeklyViewState extends State<TimetableWeeklyView> {
 
     String dateTitle = L10n.t("timetable.dayMonth", [date.day, monthStr]);
 
-    if (now.day == date.day && now.month == date.month) {
+    // R22: compare WHOLE calendar dates: raw day-of-month arithmetic
+    // lost the qualification around month ends (now=31.05 vs page 01.06
+    // is a ±30 difference) and the year, so a page swiped one full year
+    // out rendered as "Heute"
+    final d0 = DateTime(date.year, date.month, date.day);
+    final t0 = DateTime(now.year, now.month, now.day);
+    if (d0 == t0) {
       dateTitle = L10n.t("agenda.todayFull", [dateTitle]);
-    } else if (now.day - date.day == 1 && now.month == date.month) {
+    } else if (d0 == DateTime(t0.year, t0.month, t0.day - 1)) {
       dateTitle = L10n.t("timetable.yesterdayFull", [dateTitle]);
-    } else if (now.day - date.day == -1 && now.month == date.month) {
+    } else if (d0 == DateTime(t0.year, t0.month, t0.day + 1)) {
       dateTitle = L10n.t("agenda.tomorrowFull", [dateTitle]);
     }
 

@@ -314,3 +314,53 @@ b51 fixed the SCALE but two inconsistencies survived on-device:
    lines below the time line; measured "12:39" straight on
    "running · until 13:00"). Label is skipped for content rows entirely
    now; gap rows and seam snaps keep it (they carry no chip).
+
+## Wave R22: full-repo sweep integration (0.8.5+59)
+
+11-subsystem review pool + 6 cross-cutting lenses, adversarially verified;
+this batch integrates the survivors. 507 tests green, no new analyzer
+warnings (the one resetForTest visible-for-testing warning predates it).
+
+- cascampus: red "KIT site changed" banner only ever cleared by the NEXT
+  solved 503 - one interstitial without a seed pinned it for the whole
+  process (across logouts); now any healthy cascampus page disproves it.
+- signmeup: procedures/meta fetches left the bare-get outside any try ->
+  offline throw REJECTED forceRefetchEverything instead of the contract's
+  false; wall-clock guard: free-text DATE descriptions ("12.04 - 30.04")
+  matched the dd.MM sweep and minted phantom 02:00 weekly tutorials.
+- exams: self-heal lacked !offlineSuspected -> unthrottled offline retry
+  storm on every rebuild.
+- agenda: midnight day-cross rerender never consumed stale deltas (home
+  badge stayed lit for changes that render nowhere); same-`when` room
+  re-edits walked to the stale intermediate (isAfter can't tie-break -
+  ties now resolve stored-order-last); ILIAS prefs write re-checks the
+  teardown epoch AFTER its own awaits (logout purge double).
+- webcal: EXDATE matched raw strings - UTC and VALUE=DATE stamps (what
+  Google/Apple/Outlook export) never cancelled -> alarms for lectures
+  that will not happen; date-only UNTIL missed the regex -> series
+  expanded past its end (date-only UNTIL = last DAY, 23:59:59);
+  INTERVAL=0 filled the 400-guard with identical rows; blockKeys tie
+  rule = newer-or-equal `when` (regression test pins both directions).
+- timetable: midnight tick stepped +1 per publish - a weekend-cached
+  process stayed N days behind the wall date (now-line on yesterday);
+  band "Heute" compared day-of-month only (a page one year out said
+  Heute); tutorial Save double-tap persisted duplicate tutorials (new id
+  per press); appointment sheet re-fetched the room page EVERY scroll
+  frame (placeData is an async getter passed inline to FutureBuilder);
+  OSM attribution tap printed the URL instead of opening it.
+- ILIAS: proved non-PDF saves ("<stem>.zip/.pptx") were never reused -
+  probe only knew ".pdf" -> re-downloaded tens of MB per re-tap; retry
+  gate could hit _refreshSession after dispose.
+- mensa: fetchWeek joined ANY waiter regardless of args - a boot pull of
+  week N crossing midnight answered the card's force:true pull for N+1
+  and skipped it; join now keyed on canteen|isoWeek + force (test pins
+  all four combos + TTL skip).
+- files: disk-side deletes (cache page single + semester wipe) left
+  pinned prefs entries pointing at deleted bytes -> dead tiles; new
+  unpinFilesByPaths sweeps them; removeFile/deleteSync tolerate vanished
+  bytes (the wipe loop no longer aborts on the first eviction).
+- login: both TextEditingControllers leaked on every logout cycle.
+- test-fixture honesty: webcal's rruleEv emitted UNTIL without the T
+  separator (malformed ICS the widened regex would truncately parse) -
+  fixed to real format; new tests: date-only UNTIL, UTC/VALUE=DATE
+  EXDATE, blockKeys ties, mensa join matrix.

@@ -34,6 +34,15 @@ class LoginPageState extends State<LoginPage> {
   final _passwordInputController = TextEditingController();
 
   @override
+  void dispose() {
+    // R22: the login route is re-pushed after every logout, so these two
+    // controllers used to leak on each cycle - nothing ever disposed them
+    _usernameInputController.dispose();
+    _passwordInputController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final credsVM = Provider.of<CredentialsProvider>(context);
     final vm = Provider.of<KITProvider>(context);

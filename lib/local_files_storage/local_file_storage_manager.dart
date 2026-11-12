@@ -90,6 +90,17 @@ class LocalFileStorageManager {
   }
 
   Future<FileSystemEntity> removeFile(String filePath) async {
-    return await File(filePath).delete();
+    final file = File(filePath);
+    try {
+      return await file.delete();
+    } on FileSystemException {
+      // R22: the caller's list is a DISK SCAN snapshot - between scan and
+      // tap the file can already be gone (OS cache eviction, external
+      // delete, or the delete-all-of-semester loop hitting one vanished
+      // mid-loop). The wanted end state ("gone") is reached; throwing
+      // aborted the wipe loop after the first vanished file and left the
+      // UI half-updated
+      return file;
+    }
   }
 }

@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/timetable/models/timetable_appointment.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
@@ -38,6 +39,14 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
   /// all of them.
   ScrollController? _sheetController;
   VoidCallback? _sheetOffsetListener;
+
+  /// R22: placeData is an ASYNC GETTER (HTTP GET of the room dataUrl +
+  /// HTML parse). Passing widget.appointment.placeData inline into the
+  /// FutureBuilder gave every rebuild a NEW future - and the sheet's
+  /// offset listener setState fires on EVERY scroll frame, so dragging
+  /// re-fetched the room page per frame and reset the map to spinner +
+  /// initial camera each time. Resolve exactly once per page instance.
+  late final Future<LatLng> _placeFuture = widget.appointment.placeData;
 
   /// The panel opens EXPANDED (details readable on arrival, no drag tax)
   /// and collapses to a peek via the header chevron or a drag. min==peek,
@@ -160,7 +169,7 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
             width: mq.size.width,
             height: mq.size.height,
             child: FutureBuilder(
-              future: widget.appointment.placeData,
+              future: _placeFuture,
               builder: (context, snapshot) {
                 if (!snapshot.hasData || snapshot.data == null) {
                   return KITProgressIndicator();
@@ -253,8 +262,12 @@ class _TimetableAppointmentPageState extends State<TimetableAppointmentPage> {
                       attributions: [
                         TextSourceAttribution(
                           'OpenStreetMap contributors',
-                          onTap: () => print(
-                              Uri.parse('https://openstreetmap.org/copyright')),
+                          // R22: the legally-requested attribution tap only
+                          // printed the URL to the console (analyzer even
+                          // flagged the avoid_print) - open it for real
+                          onTap: () => launchUrl(
+                              Uri.parse('https://openstreetmap.org/copyright'),
+                              mode: LaunchMode.externalApplication),
                         ),
                       ],
                     ),

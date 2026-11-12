@@ -157,6 +157,14 @@ class MensaManager extends ChangeNotifier {
   }
 
   Future<bool>? _inFlight;
+  // R22: join metadata: fetchWeek() takes a WEEK and a force flag, but the
+  // old single-slot join handed ANY waiter the in-flight future regardless
+  // of args (the _favSlotsSlug lesson from library_manager). Boot pull of
+  // week N still running past midnight gets joined by the card's
+  // force:true pull for N+1: the joiner gets N's outcome, N+1 is never
+  // fetched, and the "successful" refresh keeps showing last week's plan
+  String _inFlightSource = "";
+  bool _inFlightForce = false;
 
   /// a fetch is genuinely in flight RIGHT NOW - the card shows its
   /// spinner on this, never on "fetchedAt happens to be null"
@@ -169,12 +177,29 @@ class MensaManager extends ChangeNotifier {
   /// a refused fetch - HTTP error, gate, layout drift, wrong week,
   /// socket death - is the false the card turns into a toast).
   Future<bool> fetchWeek({DateTime? forDate, bool force = false}) {
+    final DateTime target = forDate ?? DateTime.now();
+    // same source string _fetch builds internally ("canteen|isoWeek")
+    final source = "$defaultCanteen|${isoWeek(target)}";
     final inflight = _inFlight;
-    if (inflight != null) return inflight;
-    final future = _fetch(forDate ?? DateTime.now(), force);
+    // join only an EXACT match: same week AND no stronger force request
+    // (a TTL-skipped in-flight must not answer a force:true waiter)
+    if (inflight != null &&
+        _inFlightSource == source &&
+        (!force || _inFlightForce)) {
+      return inflight;
+    }
+    final future = _fetch(target, force);
     _inFlight = future;
+    _inFlightSource = source;
+    _inFlightForce = force;
     return future.whenComplete(() {
-      if (identical(_inFlight, future)) _inFlight = null;
+      // identity-bound: a superseded slot (new source started while this
+      // one ran) must NOT be cleared by the OLD future's completion
+      if (identical(_inFlight, future)) {
+        _inFlight = null;
+        _inFlightSource = "";
+        _inFlightForce = false;
+      }
     });
   }
 

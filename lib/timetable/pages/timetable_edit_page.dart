@@ -261,6 +261,11 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
     }
 
     String selectedModuleId = existing?.moduleId ?? moduleList.first.id;
+    // R22: one-shot the Save handler: each press for a NEW tutorial mints
+    // a fresh unique tutorialId (addOrUpdateTutorial dedupes by id only),
+    // so a double-tap during the prefs write persisted TWO identical
+    // tutorials - both listed, both requiring deletion
+    bool saving = false;
     Weekday selectedWeekday = existing?.weekday ?? Weekday.monday;
     int selectedBlockIndex = existing?.blockIndex ?? _defaultBlockIndex;
     final TextEditingController notesController = TextEditingController(
@@ -410,9 +415,12 @@ class _TimetableEditPageState extends State<TimetableEditPage> {
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 14, vertical: 8),
                                           onPressed: () async {
+                                            if (saving) return;
+                                            saving = true;
                                             final module =
                                                 modulesById[selectedModuleId];
                                             if (module == null) {
+                                              saving = false;
                                               return;
                                             }
 

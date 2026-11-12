@@ -200,6 +200,14 @@ class KITLoginManager {
       uri = relayed;
       response = await netGet(uri);
     }
+    if (response.statusCode == 200 &&
+        !response.body.contains("botchallenge")) {
+      // R22: the flag was only ever cleared by the NEXT solved 503 - one
+      // malformed challenge page pinned the red "KIT site changed?"
+      // banner for the whole process (and across a logout, since the
+      // manager outlives accounts). Any healthy campus page disproves it.
+      botChallengeAlgorithmChanged = false;
+    }
     return response;
   }
 
@@ -384,9 +392,16 @@ class KITLoginManager {
   Future<bool> ensurePlusSession({bool force = false}) async {
     if (plusReady && !force) return true;
     plusAccountMissing = false;
-    final probe = await netGet(
-        Uri.parse("https://plus.campus.kit.edu/api/user/info"),
-        headers: {"Accept": "application/json"});
+    final http.Response probe;
+    try {
+      // R22: netGet THROWS on socket death - unguarded this rejected the
+      // whole fetchMine chain instead of the contract's "not ready: false"
+      probe = await netGet(
+          Uri.parse("https://plus.campus.kit.edu/api/user/info"),
+          headers: {"Accept": "application/json"});
+    } on Object {
+      return false;
+    }
     if (probe.statusCode == 200 &&
         probe.body.trim().isNotEmpty &&
         probe.body.trim() != "null") {
@@ -453,8 +468,14 @@ class KITLoginManager {
         if (fields != null) req.bodyFields = fields;
         final h = headerFor(u);
         if (h != null) req.headers["cookie"] = h;
-        final resp = await http.Response.fromStream(await raw.send(req))
-            .timeout(netTimeout);
+        // R22 precedence bug: `await fromStream(await raw.send(..))`
+        // left the raw.send round-trip itself un-timed-out (the .timeout
+        // only wrapped fromStream) - a stalled ASP socket froze
+        // ensurePlusSession, fetchMine and the whole SignMeUp single-
+        // flight forever. Timeout the SEND, then the drain.
+        final streamed = await raw.send(req).timeout(netTimeout);
+        final resp =
+            await http.Response.fromStream(streamed).timeout(netTimeout);
         absorb(u, resp);
         return resp;
       }

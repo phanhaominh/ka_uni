@@ -14,6 +14,7 @@ import '../exams/models/exam_list.dart';
 import '../l10n/l10n.dart';
 import '../signmeup/signmeup_manager.dart';
 import '../state_management/campus/campus_manager.dart';
+import '../state_management/kit_login_manager.dart';
 import 'notification_payload.dart';
 import '../timetable/models/webcal.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -32,8 +33,8 @@ const String channelIdLibrary = "mei_library";
 /// before re-arming, so a new family MUST take a fresh gap and join this
 /// list: 10-400 lecture T−30 · 410-499 T−15 re-arm for CHANGED lectures
 /// (R12) · 500-600 exam registration deadlines · 700-799 SignMeUp
-/// deadlines · 900-999 morning digest · 1000-1019 CHANGED heads-up
-/// rotation.
+/// deadlines · 800-819 library seat check-in pings (LibraryNotifications)
+/// · 900-999 morning digest · 1000-1019 CHANGED heads-up rotation.
 class MeiNotifications {
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -259,7 +260,9 @@ class MeiNotifications {
     // failure (init throw, _cancelRange platform error) here so a scheduler
     // can never surface as an unhandled zone error at the call sites.
     try {
-      if (!_ready) await init();
+      if (!_ready) await init(requestPermissions: false); // R22: schedulers
+      // may run in the WorkManager isolate (poll tail) - prompting there
+      // NPEs the plugin and kills the whole re-arm; only main() may ask.
       final epoch = teardownEpoch;
       await _cancelRange(10, 400);
       await _cancelRange(410, 499);
@@ -336,7 +339,9 @@ class MeiNotifications {
     if (!MeiNotifications.supported) return;
     // C61: contained fire-and-forget scheduler (see the lecture family).
     try {
-      if (!_ready) await init();
+      if (!_ready) await init(requestPermissions: false); // R22: schedulers
+      // may run in the WorkManager isolate (poll tail) - prompting there
+      // NPEs the plugin and kills the whole re-arm; only main() may ask.
       // The unawaited fetch-chain caller may land AFTER a logout sweep
       // (the sqassign fetch above it takes seconds): without this gate
       // the scheduler re-armed 500-band alarms and re-persisted the
@@ -349,8 +354,14 @@ class MeiNotifications {
               .isEmpty) {
         return;
       }
-      await _cancelRange(500, 600);
+      // R22: capture the epoch BEFORE the ~100-cancel window below: a
+      // logout landing inside _cancelRange would otherwise leave this
+      // chain holding the POST-bump epoch, every later guard would pass,
+      // and the loop would re-arm the logged-out account's 500-band
+      // alarms after cancelAll ran (the lecture/SignMeUp families
+      // captured before their cancels all along - these two were outliers)
       final epoch = teardownEpoch;
+      await _cancelRange(500, 600);
       final now = DateTime.now();
       var id = 500;
       for (final exam in exams) {
@@ -408,7 +419,9 @@ class MeiNotifications {
     if (!MeiNotifications.supported) return;
     // C61: unawaited call site inside a finally block - contain the throw.
     try {
-      if (!_ready) await init();
+      if (!_ready) await init(requestPermissions: false); // R22: schedulers
+      // may run in the WorkManager isolate (poll tail) - prompting there
+      // NPEs the plugin and kills the whole re-arm; only main() may ask.
       await _cancelRange(700, 799);
       final now = DateTime.now();
       var id = 700;
@@ -453,9 +466,14 @@ class MeiNotifications {
     if (!MeiNotifications.supported) return;
     // C61: contained fire-and-forget scheduler (see the lecture family).
     try {
-      if (!_ready) await init();
-      await _cancelRange(900, 999);
+      if (!_ready) await init(requestPermissions: false); // R22: schedulers
+      // may run in the WorkManager isolate (poll tail) - prompting there
+      // NPEs the plugin and kills the whole re-arm; only main() may ask.
+      // R22: epoch before the cancel window (see exam family above) -
+      // otherwise a logout inside _cancelRange lets the digest re-arm
+      // with the old account's lecture titles post-teardown
       final epoch = teardownEpoch;
+      await _cancelRange(900, 999);
       final now = DateTime.now();
       for (var ahead = 1; ahead <= 2; ahead++) {
         final day = DateTime(now.year, now.month, now.day + ahead);
@@ -635,6 +653,14 @@ void meiBackgroundCallback() {
       // fresh isolate: mirror main()'s locale bootstrap before t()
       L10n.setSystemLanguage(PlatformDispatcher.instance.locale.languageCode);
       await L10n.reload();
+      // R22: bring _ready up HERE, permission-free. Otherwise the tail's
+      // scheduleLectureReminders/scheduleMorningDigest reach the plugin's
+      // request*Permission methods with mainActivity == null (this
+      // isolate has no activity, ever) - a PlatformException that aborts
+      // init() before _ready and silently kills the whole re-arm, exactly
+      // the "quiet days expire the 2-day horizon" failure the tail exists
+      // to prevent. Prompting stays main()'s job.
+      await MeiNotifications.init(requestPermissions: false);
       // E2E test seam: same --dart-define as the foreground fetch
       final testUrl = CampusManager.testWebcalUrl;
       final url =
@@ -646,9 +672,17 @@ void meiBackgroundCallback() {
         await Workmanager().cancelByUniqueName("mei-webcal-poll");
         return true; // not provisioned yet
       }
-      final response = await http.get(Uri.parse(url), headers: const {
-        "User-Agent": "MEI-Cockpit/0.6"
-      }).timeout(const Duration(seconds: 45));
+      // R22: the webcal endpoint sends NO charset, so a bare http.get
+      // decodes UTF-8 bytes as latin1 - "Übung" turned to mojibake that
+      // this isolate then persisted into DATA_webcalIcsCache (rendered
+      // verbatim by the agenda on cold start) and fingerprinted against
+      // the foreground's UTF-8 baseline (phantom "timetable changed"
+      // heads-up on every foreground/background alternation). The
+      // foreground GET runs through netGet, which applies this exact fix.
+      final response = KITLoginManager.fixUtf8Body(await http.get(
+              Uri.parse(url),
+              headers: const {"User-Agent": "MEI-Cockpit/0.6"})
+          .timeout(const Duration(seconds: 45)));
       if (response.statusCode != 200 ||
           !response.body.contains("BEGIN:VCALENDAR")) {
         return true; // transient; next window retries
@@ -804,6 +838,16 @@ void meiBackgroundCallback() {
       // responsibility at cold start — give it a head start instead of
       // interleaving.
       await Future.delayed(const Duration(seconds: 12));
+      // R22 cross-isolate fence for the TAIL: teardownEpoch is a
+      // per-isolate 0 here (the main isolate's bump is invisible), so a
+      // logout completing during the head start would otherwise re-arm
+      // the DEAD account's lecture/digest alarms AFTER logout's
+      // cancelAll ran - the leak with a two-day delay. Platform prefs
+      // are the only valid fence in this isolate (urlLive pattern).
+      if ((await SharedPreferencesAsync().getString("DATA_webcalUrl") ?? "")
+          .isEmpty) {
+        return true; // logged out during the head start: never re-arm
+      }
       final mergedFeed = WebcalFeed.parse(mergedRaw) ?? feed;
       await MeiNotifications.scheduleLectureReminders(mergedFeed);
       await MeiNotifications.scheduleMorningDigest(mergedFeed);

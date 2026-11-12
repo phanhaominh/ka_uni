@@ -328,10 +328,21 @@ class _AgendaPageState extends State<AgendaPage> {
         final prefs3 = await SharedPreferences.getInstance();
         await prefs3.setString(
             _iliasCacheKey, encodeIliasCard(unread, announcements));
-
-        // fire-and-forget: the watcher swallows every failure internally
-        // and must never delay or poison the agenda rebuild behind it
-        IliasWatcher.diffAndNotify(announcements);
+        if (vm.campusManager.teardownEpoch != iliasEpoch) {
+          // R22: the epoch above was checked BEFORE the two prefs awaits -
+          // a logout landing inside this write hop re-persisted A's unread
+          // counts and announcement titles into the store the sweep had
+          // just purged (and the watcher would nag about A's courses).
+          // Undo the write and fall into the unreachable handling.
+          await prefs3.remove(_iliasCacheKey);
+          iliasError = L10n.t("agenda.iliasUnreachable");
+          unread = null;
+          announcements = const [];
+        } else {
+          // fire-and-forget: the watcher swallows every failure internally
+          // and must never delay or poison the agenda rebuild behind it
+          IliasWatcher.diffAndNotify(announcements);
+        }
       }
     } catch (_) {
       // the bare error line replaces content only where nothing was ever
@@ -420,6 +431,16 @@ class _AgendaPageState extends State<AgendaPage> {
     vm.campusManager.rememberEnrolledTitles(feed2);
     if (!mounted) return;
     final now2 = DateTime.now();
+    var cachedChanges = _load.changes;
+    // R22: the same consume rule _refreshOnce applies - the midnight
+    // day-cross path rerenders from memory only, so fully-stale deltas
+    // were never consumed there: DATA_webcalChanges survived, the background
+    // poll kept re-arming timetableChanged, and the home badge stayed lit
+    // for phantom changes that rendered nowhere
+    if (cachedChanges.isNotEmpty && freshChanges(cachedChanges, now2).isEmpty) {
+      unawaited(_dismissChanges());
+      cachedChanges = const [];
+    }
     setState(() {
       _feedCached = _feedCached ||
           (prefs2.getString(_icsCacheKey) ?? "").contains("BEGIN:VCALENDAR");
@@ -428,7 +449,7 @@ class _AgendaPageState extends State<AgendaPage> {
           today: NextUp.onDay(feed2, now2),
           tomorrow: NextUp.onDay(
               feed2, DateTime(now2.year, now2.month, now2.day + 1)),
-          changes: _load.changes,
+          changes: cachedChanges,
           upcoming: _upcoming(feed2, now2),
           unread: _load.unread,
           announcements: _load.announcements,
@@ -749,7 +770,11 @@ class _AgendaPageState extends State<AgendaPage> {
       touched = true;
       if (c.kind == IcsChangeKind.changed &&
           c.oldRoom != c.room &&
-          (roomDelta == null || c.when.isAfter(roomDelta.when))) {
+          // R22: successive edits of the SAME session share one `when`
+          // (the occurrence start), so isAfter can never pick the newer
+          // A→B vs B→C delta - the stale intermediate room was walked to.
+          // Ties resolve in stored (oldest-first) order: last one wins
+          (roomDelta == null || !c.when.isBefore(roomDelta.when))) {
         roomDelta = c;
       }
     }

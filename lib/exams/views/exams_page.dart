@@ -21,7 +21,15 @@ class ExamsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final vm = Provider.of<KITProvider>(context);
     final cm = vm.campusManager;
-    if (!cm.examsLoaded && !cm.isFetchingExams && !cm.examsSurfaceBroken) {
+    if (!cm.examsLoaded &&
+        !cm.isFetchingExams &&
+        !cm.examsSurfaceBroken &&
+        // R22: omitting offlineSuspected made the self-heal an unthrottled
+        // offline loop: fetch fails -> notify -> rebuild -> condition still
+        // true -> fetch again, storming cascampus (boot + scrape each cycle,
+        // bot-challenge quota!) while the tab is open. The flag clears on
+        // the next healthy fetch, re-arming this heal then.
+        !cm.offlineSuspected) {
       // self-heal: a stale session that never ran fetchExams (e.g. login
       // predates this build) must not leave the user on an endless spinner
       // single-flight via the provider: the agenda's synthetic-exam

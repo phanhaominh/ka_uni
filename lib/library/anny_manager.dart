@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'anny_api.dart';
 import '../notifications/library_notifications.dart';
+import '../notifications/mei_notifications.dart';
+import '../settings/providers/settings_provider.dart' show showingLibraryKey;
 import 'anny_auth.dart';
 import '../state_management/kit_login_manager.dart' show KITLoginManager;
 
@@ -240,6 +242,14 @@ class AnnyManager extends ChangeNotifier {
   }
 
   Future<void> _refreshAnon(bool force) async {
+    // R22 opt-out honor (mensa precedent, mensa_manager._fetch): hiding
+    // the library section in settings must ALSO stop the third-party
+    // traffic, not just unmount the card - boot() and every campus
+    // pull-refresh used to contact b.anny.eu regardless of the toggle
+    try {
+      final SharedPreferences prefs0 = await SharedPreferences.getInstance();
+      if (prefs0.getBool(showingLibraryKey) == false) return;
+    } catch (_) {}
     final DateTime now = DateTime.now();
     final DateTime? at = _anonFetchedAt;
     if (!force &&
@@ -368,11 +378,21 @@ class AnnyManager extends ChangeNotifier {
   /// the keychain (NEVER logged), derives the KIT email, then pulls the
   /// booking list. False = failed; [error] says which flavor.
   Future<bool> signIn(String kitUser, String password) async {
+    // R22: a logout landing inside the multi-hop headless SSO used to be
+    // overwritten by this chain's continuation: ANN_* prefs + the KIT
+    // email + the keychain password came back AFTER signOut and the
+    // ANN_* sweep, so the NEXT user's boot() silently re-minted a live
+    // JWT for the dead account (the R21 hazard, racy path left open)
+    final int epoch = MeiNotifications.teardownEpoch;
     isSigningIn = true;
     notifyListeners();
     try {
       final AnnySession s =
           await auth.signIn(kitUser: kitUser, password: password);
+      if (epoch != MeiNotifications.teardownEpoch) {
+        _diag("signed out during sign-in", AnnyErrorKind.none);
+        return false;
+      }
       _session = s;
       reauthFailed = false;
       final SharedPreferences p = await SharedPreferences.getInstance();
@@ -409,6 +429,7 @@ class AnnyManager extends ChangeNotifier {
   /// Forget the session, the password and the booking list (account data
   /// must not survive on a shared device); the anonymous catalog stays.
   Future<void> signOut() async {
+    _signOutGen++; // drop any bookings reply still in flight (R22)
     _session = null;
     bookings = const [];
     // rooms/freeCounts/favSlots stay: anonymous data (MensaKeys precedent)
@@ -468,7 +489,13 @@ class AnnyManager extends ChangeNotifier {
         return null;
       }
       try {
+        final int epoch = MeiNotifications.teardownEpoch;
         final AnnySession s = await auth.signIn(kitUser: kitUser, password: pw);
+        if (epoch != MeiNotifications.teardownEpoch) {
+          // logged out mid re-mint: _session for the dead account must
+          // not come back to life in memory (its prefs are swept)
+          return null;
+        }
         _session = s;
         reauthFailed = false;
         return s.jwt;
@@ -522,6 +549,11 @@ class AnnyManager extends ChangeNotifier {
 
   Future<bool>? _bookingsInFlight;
 
+  // R22: bumped by signOut; a bookings reply that started for the OLD
+  // session must never re-arm the list after signOut cleared it (the
+  // next device user was shown the predecessor's check-in banner)
+  int _signOutGen = 0;
+
   /// Pull the upcoming bookings of the signed-in account. Never throws;
   /// keeps the previous list on failure (mensa discipline).
   Future<bool> refreshBookings() {
@@ -529,6 +561,7 @@ class AnnyManager extends ChangeNotifier {
     if (inflight != null) return inflight;
     late final Future<bool> fut;
     fut = () async {
+      final int gen = _signOutGen;
       if (_session == null) return false;
       isLoadingBookings = true;
       notifyListeners();
@@ -537,7 +570,7 @@ class AnnyManager extends ChangeNotifier {
       final List<AnnyBooking>? list = await _authed<List<AnnyBooking>>(
           (String jwt) => myBookings(http, jwt, _session?.accountUuid ?? ""));
       isLoadingBookings = false;
-      if (list != null) {
+      if (list != null && gen == _signOutGen) {
         bookings = list;
         error = AnnyErrorKind.none;
         diag = null;

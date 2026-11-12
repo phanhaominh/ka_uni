@@ -84,7 +84,18 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
                   if (kDebugMode) print("ILIAS unpin failed: $e");
                   return;
                 }
-                File(widget.path).deleteSync();
+                // R22: vanish-tolerant like LocalFileStorageManager.removeFile
+                // (cf.): the bytes can already be gone when the user taps
+                // delete - a throwing deleteSync AFTER the successful unpin
+                // skipped the pop and stranded the viewer on a file whose
+                // prefs entry no longer exists
+                try {
+                  File(widget.path).deleteSync();
+                } on FileSystemException {
+                  if (kDebugMode) {
+                    print("already gone: ${widget.path}");
+                  }
+                }
                 if (!mounted) return;
                 Navigator.pop(context);
               },

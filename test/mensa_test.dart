@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -328,6 +329,58 @@ void main() {
       expect(m.days.length, 3);
       expect(m.diag, contains("threw"));
     });
+
+    test("join respects week and force: never hand week N's pull to N+1",
+        () async {
+      // R22: the single-slot join answered ANY waiter with the running
+      // future - a boot fetch of the OLD week crossing midnight got
+      // joined by the card's force:true pull for the NEW week: the new
+      // week was never fetched and the "successful" refresh kept showing
+      // the old plan
+      final gated = _GatedStub();
+      final m = MensaManager()..transport = gated.respond;
+
+      final first = m.fetchWeek(forDate: DateTime(2026, 11, 11));
+      await pumpEventQueue();
+      expect(gated.calls, 1);
+
+      // same week, plain → ride the in-flight GET, no second request
+      final joiner = m.fetchWeek(forDate: DateTime(2026, 11, 12));
+      await pumpEventQueue();
+      expect(gated.calls, 1, reason: "same week must join");
+
+      gated.releaseAll();
+      expect(await first, isTrue);
+      expect(await joiner, isTrue);
+
+      // week rollover: old week forced + new week plain must BOTH fetch
+      final oldWeek = m.fetchWeek(forDate: DateTime(2026, 11, 11), force: true);
+      await pumpEventQueue();
+      final newWeek = m.fetchWeek(forDate: DateTime(2026, 11, 16));
+      await pumpEventQueue(); // _fetch awaits prefs before its GET
+      expect(gated.calls, 3, reason: "different week must not join");
+      expect(gated.lastUri.toString(), contains("kw=47"));
+      gated.releaseAll();
+      await oldWeek;
+      await newWeek; // week-46 body for a week-47 request: fence refuses →
+      // the awaited bool may be false; the point is the GET happened
+
+      // force never joins a NON-forced in-flight (it may be TTL-skipping)
+      m.fetchedAt = DateTime.now().subtract(const Duration(days: 3));
+      final plain = m.fetchWeek(forDate: DateTime(2026, 11, 11));
+      await pumpEventQueue();
+      final forced = m.fetchWeek(forDate: DateTime(2026, 11, 11), force: true);
+      await pumpEventQueue();
+      expect(gated.calls, 5, reason: "force joiner must start its own GET");
+      gated.releaseAll();
+      await plain;
+      await forced;
+
+      // fresh cache still answers plain requests WITHOUT any traffic
+      final callsBefore = gated.calls;
+      expect(await m.fetchWeek(forDate: DateTime(2026, 11, 11)), isTrue);
+      expect(gated.calls, callsBefore, reason: "TTL skip untouched");
+    });
   });
 
   group("home card", () {
@@ -508,5 +561,28 @@ class _Stub {
     if (t != null) throw t;
     return http.Response(body, status,
         headers: {"content-type": "text/html; charset=utf-8"});
+  }
+}
+
+/// Parks every request on its own Completer until releaseAll() - lets a
+/// test hold a fetch genuinely in flight while asserting join behaviour.
+class _GatedStub {
+  final List<Completer<void>> _pending = [];
+  int calls = 0;
+  Uri? lastUri;
+
+  Future<http.Response> respond(Uri u) {
+    calls++;
+    lastUri = u;
+    final c = Completer<void>();
+    _pending.add(c);
+    return c.future.then((_) => http.Response(fixture(), 200,
+        headers: {"content-type": "text/html; charset=utf-8"}));
+  }
+
+  void releaseAll() {
+    for (final c in _pending) {
+      if (!c.isCompleted) c.complete();
+    }
   }
 }

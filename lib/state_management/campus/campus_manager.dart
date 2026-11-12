@@ -318,6 +318,13 @@ class CampusManager extends KITLoginManager {
     personalIcs = "";
     personalIcsUrl = "";
     _personalIcsLoaded = false;
+    // the manual ILIAS link map is account data ("MIL <semester>" is swept):
+    // kept warm, B's module cards gain A's attached ILIAS buttons, and
+    // B's first setManualIliasUrl re-persists A's ENTIRE map into B's key
+    // (re-seeding what the logout sweep just purged). The reload is safe
+    // because the legacy snapshot pass of that sweep evicts the key.
+    _manualIliasLinks.clear();
+    _manualIliasLinksLoaded = false;
   }
 
   /// Logout hook (KITProvider.dropInFlightFetches): like the exam memo in
@@ -625,10 +632,10 @@ class CampusManager extends KITLoginManager {
     }
   }
 
-  Future<void> fetchModulesForRows(List<HierarchicTableRow> rowsToFetch,
+  Future<bool> fetchModulesForRows(List<HierarchicTableRow> rowsToFetch,
       {inParallel = true}) async {
     if (rowsToFetch.isEmpty) {
-      return;
+      return true;
     }
 
     if (inParallel) {
@@ -657,15 +664,24 @@ class CampusManager extends KITLoginManager {
           addRelevantModuleRow(newModule.row!);
         }
       }
+      // R22 honesty verdict: a run where EVERY page failed (dead network
+      // mid-cascade; the per-row catchError above swallows them all) must
+      // not report success - callers gate the "all fetched" flags on it
+      return newModuleFutures.isEmpty || newModules.isNotEmpty;
     } else {
+      var attempted = 0, resolved = 0;
       for (final row in rowsToFetch) {
         if (row.level < 4) {
           continue;
         }
 
-        await _fetchModuleForChain(row).catchError((_) => KITModule());
+        attempted++;
+        final m =
+            await _fetchModuleForChain(row).catchError((_) => KITModule());
+        if (!m.isEmpty) resolved++;
         addRelevantModuleRow(row);
       }
+      return attempted == 0 || resolved > 0;
     }
   }
 
@@ -682,7 +698,15 @@ class CampusManager extends KITLoginManager {
       print("Fetching all modules");
     }
 
-    await prepareRelevantModuleRows();
+    try {
+      await prepareRelevantModuleRows();
+    } on Object {
+      // R22: this prefs-touching await sat OUTSIDE the try/finally below;
+      // a rethrown plugin failure left isFetchingModules latched true and
+      // spun the home progress indicator for the rest of the session
+      isFetchingModules = false;
+      rethrow;
+    }
     List<HierarchicTableRow> rowsToFetch = [], lessImportantRows = [];
     List<HierarchicTableRow> preSort =
         List<HierarchicTableRow>.from(moduleRows);
@@ -710,11 +734,14 @@ class CampusManager extends KITLoginManager {
     }
 
     try {
-      await fetchModulesForRows(rowsToFetch, inParallel: inParallel);
-      mostImportantModulesFetched = true;
+      if (await fetchModulesForRows(rowsToFetch, inParallel: inParallel)) {
+        mostImportantModulesFetched = true;
+      }
       if (!onlyMostImportantOnes) {
-        await fetchModulesForRows(lessImportantRows, inParallel: inParallel);
-        allModulesFetched = true;
+        if (await fetchModulesForRows(lessImportantRows,
+            inParallel: inParallel)) {
+          allModulesFetched = true;
+        }
       }
     } finally {
       // the flag is what every spinner waits on; it may never outlive the fetch
@@ -735,6 +762,12 @@ class CampusManager extends KITLoginManager {
       userInitiated = false,
       sessionRetried = false}) async {
     final url = row.href;
+    // R22: the last account-bound chain without a teardown fence. A scrape
+    // completing after wipeAccountMemory used to re-register A's parsed
+    // page under programme-derived row ids that are IDENTICAL for B -
+    // _isModuleReady then served A's grades row and favourite objectValues
+    // to the next student without ever refetching.
+    final epoch = _teardownEpoch;
 
     final response = await guardedCasGet(url);
 
@@ -769,6 +802,7 @@ class CampusManager extends KITLoginManager {
     } else if (!module.isEmpty) {
       module.row = row;
       module.hierarchicalTableRowId = row.id;
+      if (epoch != _teardownEpoch) return module; // logged out: not cacheable
       rowModules[row.id] = module;
     }
 
@@ -810,6 +844,12 @@ class CampusManager extends KITLoginManager {
       return fetchModule(row, recursiveRetry: false);
     }
 
+    if (epoch != _teardownEpoch) {
+      // logged out during the chain (or during the joined refetch above):
+      // hand the parsed page to the awaiting caller but never re-register
+      // it or touch the manual-ILIAS map of the new/empty session
+      return module;
+    }
     rowModules[module.hierarchicalTableRowId] = module;
 
     addRelevantModuleRow(row);
@@ -1334,7 +1374,18 @@ class CampusManager extends KITLoginManager {
     const url =
         "https://cascampus.studium.kit.edu/campus/student/specificBrickView.asp";
 
-    final response = await guardedCasPost(url, {action: cell.objectValue});
+    final http.Response response;
+    try {
+      response = await guardedCasPost(url, {action: cell.objectValue});
+    } on Object {
+      // socket/timeout death mid-toggle used to skip the rollback below
+      // entirely: the optimistic flip stayed against an un-toggled server,
+      // the caller's catch only toasts, and the NEXT toggle then sent the
+      // wrong action (R22)
+      if (anticipate) cell.isFavorite = !cell.isFavorite;
+      notificationCallback();
+      return false;
+    }
     // an expired session answers the POST with a 200 "Sitzung abgelaufen"
     // page (<div class="message message-error">) - the old
     // "sitzung ist abgelaufen" substring NEVER matches that wording, so
@@ -1531,7 +1582,8 @@ class CampusManager extends KITLoginManager {
   /// carry number prefixes/lecturer suffixes the synthetic one lacks, the
   /// synthetic one may carry a topic suffix). A feed that will not parse
   /// suppresses nothing: keeping a duplicate is always the safer error.
-  @visibleForTesting
+  /// Production-facing: the background poll (mei_notifications) and the
+  /// foreground write phase both run it before embedding the synth block.
   static String dropSignMeUpSynthCoveredByFeed(String feedRaw, String block) {
     if (block.isEmpty || !block.contains("BEGIN:VEVENT")) return block;
     final feed = WebcalFeed.parse(feedRaw);
@@ -1720,6 +1772,12 @@ class CampusManager extends KITLoginManager {
   Future<void> refreshPersonalIcsFromUrl() async {
     final url = personalIcsUrl;
     if (url.isEmpty) return;
+    // R22: fire-and-forget from fetchWebcalTimetable, OUTSIDE that chain's
+    // fences - with a 20 s slow-server GET window far wider than the
+    // microsecond races fenced elsewhere. Unguarded, a logout during the
+    // GET let setPersonalIcsFromRaw rewrite the DEAD account's personal
+    // calendar (PII) past the sweep, to be re-read into B's next merge.
+    final epoch = _teardownEpoch;
     final last = _lastPersonalIcsRefresh;
     if (last != null &&
         DateTime.now().difference(last) < const Duration(minutes: 30)) {
@@ -1728,6 +1786,7 @@ class CampusManager extends KITLoginManager {
     try {
       final response =
           await netGet(Uri.parse(url)).timeout(const Duration(seconds: 20));
+      if (epoch != _teardownEpoch) return; // logged out mid-fetch
       if (response.statusCode != 200 ||
           !response.body.contains("BEGIN:VEVENT")) {
         return;
@@ -2194,6 +2253,11 @@ class CampusManager extends KITLoginManager {
   }
 
   Future<String?> _ensureWebcalUrl() async {
+    // token URL is a credential: the logout sweep (legacy pass) evicts the
+    // snapshot entry this read answers from, and the epoch below keeps the
+    // provisioning WRITE from re-persisting the DEAD account's token into
+    // the purged store when a logout lands during the three network hops
+    final epoch = _teardownEpoch;
     final prefs = await SharedPreferences.getInstance();
     final stored = prefs.getString(_webcalUrlKey);
     if (stored != null && stored.isNotEmpty) {
@@ -2233,6 +2297,11 @@ class CampusManager extends KITLoginManager {
     }
 
     final url = m.group(1)!.split("?").first;
+    if (epoch != _teardownEpoch) {
+      // logged out while provisioning: never hand A's fresh token to the
+      // store the sweep just purged
+      return null;
+    }
     await prefs.setString(_webcalUrlKey, url);
     if (kDebugMode) {
       print("WebCal token provisioned");
@@ -2290,6 +2359,12 @@ class CampusManager extends KITLoginManager {
     // aborted mid-pipeline *after* clearEverything() had already wiped
     // the caches - half-reset app, no error shown.
     try {
+      // Capture the account fence BEFORE provisioning (R22 sweep): logged
+      // out during the token scrape, dead-token re-provision or the GETs,
+      // the write-phase fence below must trip. Captured after that network
+      // I/O, a stale fetch wrote the DEAD account's ICS cache/fingerprint/
+      // token URL past the logout sweep on a shared device.
+      final epoch = _teardownEpoch;
       // stage breadcrumbs: the live device showed NO diag after failed pulls,
       // so every silent-exit path is a suspect - marks make the stuck stage
       // readable from the agenda footer alone
@@ -2307,6 +2382,17 @@ class CampusManager extends KITLoginManager {
       await _webcalDiag("GET stored url");
       var response = await netGet(Uri.parse(url));
       var feed = feedFromResponse(response);
+      if (feed == null &&
+          response.statusCode == 200 &&
+          response.body.contains("BEGIN:VCALENDAR")) {
+        // R22: healthy subscription, ZERO occurrences in the rolling parse
+        // window (over-UNTIL'ed series + next term beyond +56 d during the
+        // long break). parse()==null here is NOT a dead token: keep the
+        // previous grid, never purge/re-provision, or every fetch burns
+        // 2 GETs + a scrape and shows "no token link" for weeks.
+        await _webcalDiag("feed ok: 0 events in window");
+        return true;
+      }
       if (feed == null && testWebcalUrl.isEmpty) {
         // KIT retires webcal tokens while the CAS session stays healthy,
         // and _ensureWebcalUrl only provisions when the stored key is
@@ -2344,6 +2430,13 @@ class CampusManager extends KITLoginManager {
         feed = feedFromResponse(response);
       }
       if (feed == null) {
+        if (response.statusCode == 200 &&
+            response.body.contains("BEGIN:VCALENDAR")) {
+          // fresh token with an empty window (rotation during break):
+          // same healthy-but-no-events case as above, not a dead token
+          await _webcalDiag("feed ok: 0 events in window");
+          return true;
+        }
         await _webcalDiag(
             "feed ${response.statusCode}/${response.body.length}");
         if (kDebugMode) {
@@ -2353,7 +2446,6 @@ class CampusManager extends KITLoginManager {
         return false;
       }
 
-      final epoch = _teardownEpoch;
       final prefs = await SharedPreferences.getInstance();
       // a logout landing during the network GET above used to write the
       // OLD account's feed back into the purged store, which the new
@@ -2449,6 +2541,14 @@ class CampusManager extends KITLoginManager {
       // at the fence is what a background poll may have left behind
       timetableChanged = changesLiveRaw.isNotEmpty || timetableChanged;
       notificationCallback();
+      if (epoch != _teardownEpoch) {
+        // logged out during the write phase: the data writes above rode
+        // past the sweep (bounded, next fetch overwrites) but the ALARMS
+        // must never fire for the dead account - that is the leak with a
+        // two-day delay (C81 fence family, foreground write phase)
+        await _webcalDiag("late: epoch $epoch/$_teardownEpoch");
+        return false;
+      }
       unawaited(MeiNotifications.scheduleLectureReminders(merged ?? feed));
       unawaited(MeiNotifications.scheduleMorningDigest(merged ?? feed));
 
@@ -2560,7 +2660,11 @@ class CampusManager extends KITLoginManager {
       if (retryIfFailed) {
         cascampusReady = false;
         if (await bootCascampusSession()) {
-          return _fetchExamsGuarded(retryIfFailed: false);
+          // `return await`: a bare return would run the finally below as
+          // soon as the retry future is CREATED, so isFetchingExams would
+          // lie false for the whole re-bootstrap while exams_page's
+          // self-heal thinks no fetch is running (R22)
+          return await _fetchExamsGuarded(retryIfFailed: false);
         }
       }
       examsSurfaceBroken = true;

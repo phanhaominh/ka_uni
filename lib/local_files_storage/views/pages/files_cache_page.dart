@@ -331,6 +331,15 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                                   await filesVM
                                                       .localFileStorageManager
                                                       .removeFile(semFile);
+                                                  // R22: bytes alone are not
+                                                  // the deletion - drop any
+                                                  // pinned entry pointing at
+                                                  // this exact path (dead
+                                                  // tiles otherwise)
+                                                  await filesVM
+                                                      .unpinFilesByPaths({
+                                                    semFile
+                                                  });
                                                   final newSemFiles = await filesVM
                                                       .localFileStorageManager
                                                       .getFilesForSemesterString(
@@ -379,12 +388,20 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                                 return;
                                               }
 
+                                              final wiped = <String>{};
                                               for (final file
                                                   in expandedSemesterStringFiles) {
                                                 await filesVM
                                                     .localFileStorageManager
                                                     .removeFile(file);
+                                                wiped.add(file);
                                               }
+                                              // R22: same as the single-file
+                                              // delete - the wipe must also
+                                              // clear pinned prefs entries
+                                              // pointing at wiped bytes
+                                              await filesVM
+                                                  .unpinFilesByPaths(wiped);
                                               // the wipe outlives the page
                                               // on a slow disk: after
                                               // dispose only the files may

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 import '../state_management/kit_login_manager.dart';
 
@@ -304,10 +305,22 @@ class SignMeUpRegistration {
         }
         final sm = tm.group(2) ?? "00";
         final em = tm.group(4) ?? "00";
+        final int sMin = int.parse(tm.group(1)!) * 60 + int.parse(sm);
+        final int eMin = int.parse(tm.group(3)!) * 60 + int.parse(em);
+        // R22 wall-clock guard: the dot doubles as a DATE separator, so
+        // free-text ranges in topic descriptions ("Mo … 12.04.2026 -
+        // 30.04.2026") match as clock times ("26 - 30.04"). No real clock
+        // time exceeds 23:59 and none ends at or before it starts - such a
+        // "slot" used to become a phantom weekly 02:00-06:04 tutorial in
+        // the merged feed, with T−30 alarms firing at 01:30 for accepted
+        // registrations until term end
+        if (sMin > 23 * 60 + 59 || eMin > 23 * 60 + 59 || eMin <= sMin) {
+          continue;
+        }
         out.add(SignMeUpTopicSchedule(
           dayOfWeek: day,
-          startMinutes: int.parse(tm.group(1)!) * 60 + int.parse(sm),
-          endMinutes: int.parse(tm.group(3)!) * 60 + int.parse(em),
+          startMinutes: sMin,
+          endMinutes: eMin,
           room: room,
         ));
       }
@@ -346,8 +359,20 @@ class SignMeUpManager {
   int get acceptedCount => mine.where((r) => r.accepted).length;
 
   Future<bool> fetch(KITLoginManager login) async {
-    final response = await login.session.get(Uri.parse("$_api/procedures"),
-        headers: {"Accept": "application/json"});
+    final http.Response response;
+    try {
+      // R22: netGet (house convention, cf. the registrations call in
+      // fetchMine): bare session.get sat OUTSIDE any try with no timeout -
+      // offline threw instead of the contract's false (rejecting
+      // forceRefetchEverything and vetoing the mensa/library refreshes
+      // behind it), and a half-open socket hung forever, poisoning the
+      // provider's single-flight memo for the rest of the session
+      response = await login.netGet(Uri.parse("$_api/procedures"),
+          headers: {"Accept": "application/json"});
+    } on Object catch (e) {
+      if (kDebugMode) print("SignMeUp fetch threw: $e");
+      return false;
+    }
     if (response.statusCode != 200) {
       if (kDebugMode) {
         print("SignMeUp fetch failed: ${response.statusCode}");
@@ -391,8 +416,16 @@ class SignMeUpManager {
   /// Campus+ session (the plain list endpoint hides user state for anon).
   Future<bool> fetchMine(KITLoginManager login) async {
     if (!await login.ensurePlusSession()) return false;
-    final meta = await login.session
-        .get(Uri.parse("$_api/meta"), headers: {"Accept": "application/json"});
+    final http.Response meta;
+    try {
+      // R22: same class as fetch()'s procedures call (the registrations
+      // request below already used netGet correctly)
+      meta = await login.netGet(Uri.parse("$_api/meta"),
+          headers: {"Accept": "application/json"});
+    } on Object catch (e) {
+      if (kDebugMode) print("SignMeUp meta threw: $e");
+      return false;
+    }
     if (meta.statusCode != 200) return false;
     try {
       final terms =

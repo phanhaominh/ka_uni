@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:kit_mobile/credentials/models/auth_result.dart';
 import 'package:kit_mobile/credentials/models/kit_credentials.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
@@ -170,6 +171,12 @@ class CredentialsProvider extends ChangeNotifier {
       {clearCookiesAndCache = true}) async {
     loggingIn = true;
     notifyListeners();
+    // R22: the tail below (valid=true, real-name displayName,
+    // _writeCredentials) used to run even if a logout tore the session
+    // down while these awaits slept - re-persisting the PREVIOUS
+    // student's name plus a phantom isLoggedIn over the fresh wipe,
+    // which loadCredentials then reported as a VALID empty session
+    final int epoch = vm.campusManager.teardownEpoch;
     try {
       if (clearCookiesAndCache) {
         await vm.clearCookiesAndCache();
@@ -183,7 +190,14 @@ class CredentialsProvider extends ChangeNotifier {
       // await vm.iliasManager.authorize();
       await vm.fetchSchedule(secondRetryIfFailed: false);
 
-      if (!vm.profileReady) {
+      // On the boot re-login path tryPreloadCache set campusManager.ready
+      // =true unconditionally BEFORE this call, so profileReady is true no
+      // matter how dead the session is - the per-fetch abort flag is the
+      // only honest arbiter (stage0<0 = invalid credentials, stage3 = dead
+      // session; offline boots throw out of netGet and keep the cached
+      // home, they never reach this line). Without it a rotated password
+      // pinned the user to the dead session's cached home forever.
+      if (!vm.profileReady || vm.campusManager.scheduleFetchFailed) {
         credentials.valid = false;
         return AuthResult.fail;
       }
@@ -192,6 +206,10 @@ class CredentialsProvider extends ChangeNotifier {
       // re-enables input. Root cause of the frozen-form dead end.
       loggingIn = false;
       notifyListeners();
+    }
+
+    if (vm.campusManager.teardownEpoch != epoch) {
+      return AuthResult.fail; // see R22 note above: logout raced the tail
     }
 
     credentials.valid = true;
@@ -239,6 +257,17 @@ class CredentialsProvider extends ChangeNotifier {
       await vm.clearCookiesAndCache();
     } on Object catch (e) {
       failures.add("cookie/cache purge: $e");
+    }
+    try {
+      // The webview engine jar is the SECOND cookie store: completing the
+      // IdP wall inside the ILIAS webview leaves A's SSO cookies there, and
+      // a rejected PHPSESSID then silently SSO-issues A's account into the
+      // next user's webview. The engine only clears ALL domains at once,
+      // which is why periodic re-auth skips it - logout must not. (Every
+      // webview load re-injects a fresh PHPSESSID beforehand anyway.)
+      await WebViewCookieManager().clearCookies();
+    } on Object catch (e) {
+      failures.add("webview cookie jar: $e");
     }
     vm.campusManager.wipeAccountMemory();
     tutorialManager.clearAll();
@@ -288,6 +317,9 @@ class CredentialsProvider extends ChangeNotifier {
     // logged-out re-check is the fence for that last in-flight run.
     try {
       await Workmanager().cancelByUniqueName("mei-webcal-poll");
+      // the seam-registered one-off shares the data fence but still
+      // outlives the account boundary unless cancelled here too
+      await Workmanager().cancelByUniqueName("mei-webcal-poll-test");
     } on Object catch (e) {
       failures.add("bg poll cancel: $e");
     }
@@ -316,6 +348,30 @@ class CredentialsProvider extends ChangeNotifier {
       }
     } on Object catch (e) {
       failures.add("prefs sweep: $e");
+    }
+    try {
+      // Second pass through the LEGACY instance: getInstance() answers from
+      // a per-isolate snapshot the Async removals never invalidate, so every
+      // reader still on the legacy API (_ensureWebcalUrl, personalIcs load,
+      // the ICS-cache synth paths, manual-ILIAS reload) would hand the DEAD
+      // account's cached values - including the live webcal token URL - to
+      // the next student in the same process. Legacy remove() evicts the
+      // snapshot entry itself, killing the whole stale-read class at the
+      // root instead of per-call-site.
+      final legacy = await SharedPreferences.getInstance();
+      for (final key in legacy
+          .getKeys()
+          .where((k) =>
+              k.startsWith("DATA_") ||
+              k.startsWith("RMR ") ||
+              k.startsWith("module_cache_") ||
+              k.startsWith("MIL ") ||
+              k.startsWith("ANN_"))
+          .toList()) {
+        await legacy.remove(key);
+      }
+    } on Object catch (e) {
+      failures.add("legacy prefs sweep: $e");
     }
     try {
       // library family first: explicit per-id cancel, so a partial

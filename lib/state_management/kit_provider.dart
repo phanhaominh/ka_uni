@@ -68,7 +68,8 @@ class KITProvider extends ChangeNotifier {
     if (existing != null) {
       return existing;
     }
-    final future = _doFetchSignMeUp();
+    late final Future<void> future;
+    future = _doFetchSignMeUp(() => identical(_signMeUpInFlight, future));
     _signMeUpInFlight = future;
     // identity-bound clear: a logout may already have DROPPED this memo
     // (dropInflightFetches) while the chain still sleeps/retries, and the
@@ -84,7 +85,7 @@ class KITProvider extends ChangeNotifier {
     });
   }
 
-  Future<void> _doFetchSignMeUp() async {
+  Future<void> _doFetchSignMeUp([bool Function()? isCurrent]) async {
     final offer = await signMeUpManager.fetch(campusManager);
     // the campus session is cookie-only and dies with the process: on the
     // FIRST refresh after a cold start the login stages may still be in
@@ -106,6 +107,11 @@ class KITProvider extends ChangeNotifier {
     // deadline nags only with PROVEN registration state: on a failed
     // fetchMine the registered set is stale/empty and every open
     // procedure would fire a false "noch nicht angemeldet" alarm
+    // R22: logout mid-chain (incl. the 20 s retry sleep) orphans this run
+    // while the NEXT account's chain is already in flight - unguarded, a
+    // failing orphan tail called cancelSignMeUpReminders() and deleted
+    // B's freshly armed 700-799 deadline alarms
+    if (isCurrent != null && !isCurrent()) return;
     if (mine) {
       unawaited(MeiNotifications.scheduleSignMeUpReminders(
           signMeUpManager.procedures,
@@ -158,6 +164,12 @@ class KITProvider extends ChangeNotifier {
     _signMeUpColdRetryDone = false;
     // schedule + per-row module memos live on the campus side
     campusManager.dropInFlightFetches();
+    // R22: the ILIAS SSO chain is account-bound too - its memo, freshness
+    // stamp and PHPSESSID used to survive logout, so B's first
+    // getPHPSESSID JOINED A's still-running chain and scraped A's ILIAS
+    // board into B's agenda card (and A's <30-min stamp suppressed B's
+    // own re-authorize)
+    iliasManager.dropAuthInFlight();
   }
 
   bool get profileReady => campusManager.ready;
@@ -173,10 +185,13 @@ class KITProvider extends ChangeNotifier {
     // single-flight; calling campusManager.forceRefetchEverything directly
     // stacked concurrent clear+cookie-wipe cascades under sibling fetches
     campusManager.forceRefetchViaOwner = forceRefetchEverything;
-    campusManager.fetchJSession();
+    // R22: netGet THROWS on an unreachable network - bare fire-and-forget
+    // delivered two uncaught zone errors on every offline cold start
+    // (every other kick here follows the containment discipline)
+    unawaited(campusManager.fetchJSession().catchError((_) => false));
 
     iliasManager = IliasManager();
-    iliasManager.fetchJSession();
+    unawaited(iliasManager.fetchJSession().catchError((_) => false));
     // fetchSchedule();
 
     topographyManager = KITTopographyManager();
@@ -230,6 +245,13 @@ class KITProvider extends ChangeNotifier {
     await prepareCachedData();
     setCredentials(credentials);
     campusManager.ready = true;
+    // R22: raw flag mutation needs the manual notify (house rule - cf.
+    // campus_manager's `ready = true; notificationCallback();` and
+    // main's teardown): without it the login gate keeps showing the
+    // LOGIN FORM despite the warm preload (flip only rides the next
+    // unrelated mensa/anny/topography notify - seconds on weak
+    // networks) and holds queued notification taps that whole window
+    notifyListeners();
     // (iliasAuth is kicked off by the caller AFTER credsVM.login: login's
     // clearCookiesAndCache would wipe this SSO's jar mid-redirect)
     // campus data is fetched by the caller AFTER the login stages complete:
@@ -243,13 +265,25 @@ class KITProvider extends ChangeNotifier {
   }
 
   Future<void>? _refetchInFlight;
+  bool _refetchAllModules = false;
 
   Future<void> forceRefetchEverything({bool allModulesAsWell = true}) {
     // single-flight: home pull, empty-state button and refresh icon can
     // otherwise stack concurrent clear+fetch cascades (cookie resets while
     // sibling requests are in flight)
     final inflight = _refetchInFlight;
-    if (inflight != null) return inflight;
+    if (inflight != null) {
+      // R22: a JOIN THAT NEEDS MORE must actually get more: the
+      // session-recovery chain runs allModulesAsWell:false, and a home
+      // pull (true) joining it used to report success while the module
+      // pages were never fetched - the timetable-edit spinner then waited
+      // on flags that cascade "never ran"
+      if (allModulesAsWell && !_refetchAllModules) {
+        return inflight.then((_) => campusManager.fetchAllModules());
+      }
+      return inflight;
+    }
+    _refetchAllModules = allModulesAsWell;
     final future = (() async {
       await campusManager.forceRefetchEverything(
           allModulesAsWell: allModulesAsWell);
@@ -268,7 +302,10 @@ class KITProvider extends ChangeNotifier {
     // identity-bound clear: an orphaned cascade from the previous account
     // must not null the memo its successor just installed
     return future.whenComplete(() {
-      if (identical(_refetchInFlight, future)) _refetchInFlight = null;
+      if (identical(_refetchInFlight, future)) {
+        _refetchInFlight = null;
+        _refetchAllModules = false;
+      }
     });
   }
 

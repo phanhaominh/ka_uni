@@ -11,6 +11,7 @@ import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/local_files_storage/files_manager.dart';
 import 'package:kit_mobile/settings/providers/settings_provider.dart';
 import 'notifications/mei_notifications.dart';
+import 'notifications/library_notifications.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:kit_mobile/toasts/models/toasts_provider.dart';
 import 'package:kit_mobile/toasts/views/toasts_overlay.dart';
@@ -68,6 +69,10 @@ void main() async {
     // can run: every scheduling path lives below runApp(), after this
     // awaited cancel+rebuild from the cached timetable
     await MeiNotifications.resyncOnStartup();
+    // AFTER the resync's cancelAll ghost sweep (order matters: replaying
+    // before it would get its pings cancelled): re-arm still-future seat
+    // check-ins the cold-start wipe / device reboot destroyed (R22)
+    unawaited(LibraryNotifications.replayPending());
   } catch (e) {
     if (kDebugMode) print("notifications bootstrap failed: $e");
   }

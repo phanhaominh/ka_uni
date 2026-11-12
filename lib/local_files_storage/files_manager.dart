@@ -135,6 +135,34 @@ class IliasFilesProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// R22: the DISK-side deletes in FilesCachePage removed bytes only -
+  /// PinnedFile prefs entries pointing at the deleted path survived and
+  /// the pinned list rendered dead tiles whose viewer opened an empty
+  /// PDFView (C55's orphan problem mirrored from the other side). Drops
+  /// every entry across all semesters whose fileSystemPath was deleted.
+  Future<void> unpinFilesByPaths(Set<String> deletedPaths) async {
+    if (deletedPaths.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final semesters =
+        prefs.getStringList(semestersListKey) ?? const <String>[];
+    var changed = false;
+    for (final semester in semesters) {
+      final key = _filesKeyForSemester(semester);
+      final stored = prefs.getStringList(key) ?? const <String>[];
+      if (stored.isEmpty) continue;
+      final kept = stored.where((entry) {
+        final decoded = PinnedFile.tryDecode(entry);
+        if (decoded == null) return true; // never destroy unknown entries
+        return !deletedPaths.contains(decoded.fileSystemPath);
+      }).toList();
+      if (kept.length != stored.length) {
+        await prefs.setStringList(key, kept);
+        changed = true;
+      }
+    }
+    if (changed) notifyListeners();
+  }
+
   Future<void> unpinFile({
     required String semesterString,
     required String urlString,

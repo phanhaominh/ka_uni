@@ -169,8 +169,9 @@ void main() {
   });
 
   String rruleEv(String uid, String dtstart, String until, String summary) =>
-      "BEGIN:VEVENT\nUID:$uid\nDTSTART:$dtstart\nRRULE:FREQ=WEEKLY;UNTIL=$until"
-      "235959\nSUMMARY:$summary\nLOCATION:HS1\nEND:VEVENT\n";
+      "BEGIN:VEVENT\nUID:$uid\nDTSTART:$dtstart\n"
+      "RRULE:FREQ=WEEKLY;UNTIL=${until}T235959\n" // real ICS separates by T
+      "SUMMARY:$summary\nLOCATION:HS1\nEND:VEVENT\n";
   test('fingerprint survives the midnight window roll', () {
     // the parse window slides one day per day: an occurrence aged out of
     // it used to flip the fingerprint alone -> "timetable changed" alert
@@ -200,6 +201,51 @@ void main() {
         ics([rruleEv("9@kit", "20261102T160000", "20270125", "AdM V")]),
         now: now)!;
     expect(after.changesSince(before), isEmpty);
+  });
+
+  test('date-only UNTIL really ends the series', () {
+    // R22: Google/Apple/Outlook write UNTIL=YYYYMMDD without time part;
+    // the old regex silently missed it and the +56 d horizon expanded the
+    // series weeks past its end - phantom lectures in grid and weekly
+    // card, plus T-30 alarms for sessions that will never happen
+    final raw = "BEGIN:VCALENDAR\nVERSION:2.0\n"
+        "BEGIN:VEVENT\nUID:8@kit\nDTSTART:20261102T160000\n"
+        "RRULE:FREQ=WEEKLY;UNTIL=20261207\nSUMMARY:Lecture ends early\n"
+        "LOCATION:HS1\nEND:VEVENT\nEND:VCALENDAR\n";
+    final feed =
+        WebcalFeed.parse(raw, now: DateTime(2026, 11, 2, 8))!;
+    final days = feed.occurrences
+        .where((o) => o.title.contains("ends early"))
+        .map((o) => "${o.start.month}.${o.start.day}")
+        .toList();
+    expect(days, contains("11.2"));
+    expect(days, contains("12.7"));
+    expect(days.any((d) => d.startsWith("12.") && int.parse(d.split(".")[1]) > 7),
+        isFalse,
+        reason: '$days leaked past the date-only UNTIL');
+    expect(days.any((d) => d.startsWith("1.")), isFalse);
+  });
+
+  test('UTC and VALUE=DATE EXDATE shapes cancel, not just naive stamps', () {
+    // R22: EXDATE matching was raw-string equality against DTSTART's wall
+    // format - UTC stamps (…T070000Z, what export tools emit for a
+    // UTC-written DTSTART) and date-only stamps (EXDATE;VALUE=DATE) never
+    // matched, so cancelled dates stayed on the grid AND fired alarms
+    final raw = "BEGIN:VCALENDAR\nVERSION:2.0\n"
+        "BEGIN:VEVENT\nUID:9@kit\nDTSTART:20261102T160000\n"
+        "RRULE:FREQ=WEEKLY;UNTIL=20261231T235959\nSUMMARY:Übung U\n"
+        "EXDATE:20261109T150000Z\n" // 16:00 Berlin (CET, UTC+1) = 15:00Z
+        "EXDATE;VALUE=DATE:20261116\n" // cancels the WHOLE day
+        "LOCATION:HS9\nEND:VEVENT\nEND:VCALENDAR\n";
+    final feed =
+        WebcalFeed.parse(raw, now: DateTime(2026, 11, 2, 8))!;
+    final days = feed.occurrences
+        .where((o) => o.title.contains("Übung U"))
+        .map((o) => "${o.start.month}.${o.start.day}")
+        .toList();
+    expect(days, isNot(contains("11.9")), reason: '$days still has 9.11');
+    expect(days, isNot(contains("11.16")), reason: '$days still has 16.11');
+    expect(days, contains("11.2"));
   });
 
   test('multi-value EXDATE line cancels every listed day', () {
@@ -443,6 +489,46 @@ void main() {
     expect(changes.removedOrMovedBlocks(DateTime(2026, 11, 2)), {14 * 60});
     expect(changes.removedOrMovedBlocks(DateTime(2026, 11, 3)), {10 * 60});
     expect(changes.removedOrMovedBlocks(DateTime(2026, 11, 4)), isEmpty);
+  });
+
+  test('blockKeys: repeated edits of ONE session keep the last move', () {
+    // R22: KIT re-writes the SAME occurrence twice (HS1->HS2, then
+    // HS2->HS3) and both deltas carry the identical `when` (the
+    // occurrence start) - isAfter could never replace, so the grid pinned
+    // the stale intermediate HS2 forever; stored order is oldest-first
+    // (IcsChange.decode of DATA_webcalChanges), the tie goes last-wins
+    final changes = [
+      IcsChange(
+          kind: IcsChangeKind.changed,
+          title: 'AdM V',
+          when: DateTime(2026, 11, 2, 16),
+          room: 'HS2',
+          oldRoom: 'HS1'),
+      IcsChange(
+          kind: IcsChangeKind.changed,
+          title: 'AdM V',
+          when: DateTime(2026, 11, 2, 16),
+          room: 'HS3',
+          oldRoom: 'HS2'),
+    ];
+    expect(changes.blockKeys(DateTime(2026, 11, 2))[16 * 60]!.room, 'HS3');
+    // inside ONE block the newer `when` still outranks a stored-later
+    // older delta (the tie rule is >=, not blind last-wins)
+    final mixed = [
+      IcsChange(
+          kind: IcsChangeKind.changed,
+          title: 'AdM V',
+          when: DateTime(2026, 11, 2, 8, 0, 30),
+          room: 'HS3',
+          oldRoom: 'HS2'),
+      IcsChange(
+          kind: IcsChangeKind.changed,
+          title: 'AdM V',
+          when: DateTime(2026, 11, 2, 8),
+          room: 'HS2',
+          oldRoom: 'HS1'),
+    ];
+    expect(mixed.blockKeys(DateTime(2026, 11, 2))[8 * 60]!.room, 'HS3');
   });
 
   test('titleKey folds export noise so delta and row titles match', () {

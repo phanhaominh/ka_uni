@@ -275,7 +275,7 @@ class _IliasPageViewWState extends State<IliasPageView> {
       // an old corrupt cache entry (login-page HTML saved as .pdf before the
       // magic-byte gate existed) must not be reused forever
       var reusable = await file.exists();
-      if (reusable) {
+      if (reusable && filepath.endsWith(".pdf")) {
         final sink = await file.open();
         try {
           final head = Uint8List(4);
@@ -288,6 +288,33 @@ class _IliasPageViewWState extends State<IliasPageView> {
         } finally {
           await sink.close();
         }
+      }
+      // R22: a proved-session non-PDF body is saved as "<stem>.<ext>" by
+      // downloadFile (zip/pptx/docx…), but this probe only ever knew the
+      // guessed ".pdf" name - every re-tap of a saved lecture archive
+      // silently re-downloaded tens of MB, contradicting the file's own
+      // "downloads are only retried when the file is absent" rule. The
+      // name is deterministic (scrubbed title+ref_id), so probe the stem
+      // with ANY extension; the extension written by the header-proved
+      // save is the evidence - no PDF magic check there.
+      if (!reusable) {
+        final stem = filepath.endsWith(".pdf")
+            ? filepath.substring(0, filepath.length - 4)
+            : filepath;
+        try {
+          final dir = File(stem).parent;
+          if (dir.existsSync()) {
+            for (final e in dir.listSync()) {
+              if (e is! File) continue;
+              if (e.path.startsWith("$stem.") &&
+                  e.path.length > stem.length + 1) {
+                file = e;
+                reusable = true;
+                break;
+              }
+            }
+          }
+        } on Object catch (_) {}
       }
 
       if (!reusable) {
@@ -321,10 +348,12 @@ class _IliasPageViewWState extends State<IliasPageView> {
                   moduleTitle: "",
                   addedAt: DateTime.now().toUtc(),
                   customName: "",
-                  fileSystemPath: filepath),
+                  // the ACTUAL bytes: a reused non-PDF save lives at
+                  // <stem>.<ext>, not at the guessed ".pdf" (R22)
+                  fileSystemPath: file.path),
           toastsProvider);
 
-      return filepath;
+      return file.path;
     } on Object catch (e) {
       // a wedged busy overlay makes the whole tab unusable until restart
       if (mounted) setState(() => isBusy = false);
@@ -482,6 +511,11 @@ class _IliasPageViewWState extends State<IliasPageView> {
       // hard re-auth below
     }
     if (session.isEmpty) {
+      // R22: getPHPSESSID above may join an in-flight chain for up to two
+      // minutes; popping the gate during that window used to land
+      // _refreshSession's Provider.of + setState on a disposed State
+      // (every other entry into it is mounted-guarded)
+      if (!mounted) return;
       await _refreshSession();
       return;
     }

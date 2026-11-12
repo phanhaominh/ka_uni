@@ -53,13 +53,32 @@ class IliasManager extends KITLoginManager {
         print("Refetching ilias session...");
       }
       await authorize();
-      _lastUpdate = DateTime.now();
+      // R22: stamp ONLY on success (mirrors _authorize's own discipline):
+      // the unconditional stamp made one transient SSO failure deadlock
+      // every ILIAS open on the auth-failed wall for a full 30 minutes,
+      // although an immediate re-auth would have succeeded
+      if (_phpsessid.isNotEmpty) _lastUpdate = DateTime.now();
     }
 
     return _phpsessid;
   }
 
+  int _authGen = 0;
+
   Future<void>? _authInFlight;
+
+  /// R22 (KITProvider.dropInflightFetches at logout): drop the
+  /// account-bound SSO chain. Its memo used to survive logout, so the
+  /// NEXT account's getPHPSESSID/authorize JOINED the previous user's
+  /// in-flight chain and received THEIR PHPSESSID - A's ILIAS board
+  /// scraped straight into B's agenda card - while A's <30-min freshness
+  /// stamp suppressed B's own re-authorize.
+  void dropAuthInFlight() {
+    _authGen++;
+    _authInFlight = null;
+    _phpsessid = "";
+    _lastUpdate = DateTime(2004);
+  }
 
   /// Single-flight: startup, dead-session recovery and the manual refresh
   /// all hammer this; two concurrent chains would wipe each other's
@@ -78,6 +97,8 @@ class IliasManager extends KITLoginManager {
 
   Future<void> _authorize(
       {required bool retryIfFailed, required bool refreshSession}) async {
+    final gen = _authGen; // R22: logout bumps it - never stamp a torn-down
+    // session's PHPSESSID/freshness back in after the chain settles
     isBusy = true;
     try {
       if (refreshSession) {
@@ -108,6 +129,7 @@ class IliasManager extends KITLoginManager {
 
       // exact cookie lookup; substring surgery on cookiesString throws when
       // PHPSESSID is the last (or missing) jar entry
+      if (gen != _authGen) return; // logged out mid-SSO: stay dropped
       _phpsessid = "";
       for (final c in session.cookieStore.cookies) {
         if (c.name == "PHPSESSID") _phpsessid = c.value;
@@ -329,6 +351,7 @@ class IliasManager extends KITLoginManager {
   }
 
   Future<void> logout() async {
+    dropAuthInFlight(); // R22: memo + freshness stamp are account data too
     _phpsessid = "";
     // the agenda card cache holds this student's course titles and message
     // previews; the login screen renders before any refetch, so a shared

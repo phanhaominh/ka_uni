@@ -74,7 +74,15 @@ class AnnyHttp {
     final req = http.Request(method, u)
       ..headers.addAll(headers(bearer, withBody: payload != null));
     if (payload != null) req.body = payload;
-    final r = await http.Response.fromStream(await _client.send(req));
+    // R22: every third-party call must terminate (house rule): a stalled
+    // b.anny.eu socket used to hang a tapped booking/cancel forever and
+    // leak the manager's single-flight slots for the whole session - the
+    // auth chain already times out via KITLoginManager.netTimeout, the
+    // JSON:API client never did. Kept as a literal: this file's contract
+    // is "no Flutter imports"; keep it in step with netTimeout (30 s).
+    const sendTimeout = Duration(seconds: 30);
+    final streamed = await _client.send(req).timeout(sendTimeout);
+    final r = await http.Response.fromStream(streamed);
     Map<String, dynamic> json = const {};
     Object? decoded;
     try {

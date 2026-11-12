@@ -384,21 +384,55 @@ class WebcalFeed {
       ];
     }
 
+    // R22: raw-string EXDATE matching only ever hit naive stamps written
+    // in exactly DTSTART's wall format. The parser ACCEPTS VALUE=DATE
+    // (`EXDATE;VALUE=DATE:20261112`) and UTC (`20261109T070000Z`) shapes -
+    // precisely what Google/Apple/Outlook exports write - and they could
+    // never match: cancelled dates stayed in grid, agenda and weekly card
+    // AND got T−30 alarms for lectures that will not happen. Normalize
+    // through the very same _dtOf the occurrences use; a date-only EXDATE
+    // cancels the WHOLE day.
+    final exStamps = <DateTime>{};
+    final exDayKeys = <String>{};
+    for (final raw in exdates) {
+      if (raw.length == 8) {
+        exDayKeys.add(raw); // YYYYMMDD, no time part
+      } else {
+        final t = _dtOf(raw);
+        if (t != null) exStamps.add(t);
+      }
+    }
+
     // weekly expansion; UNTIL is naive wall time in the feed
     var until = horizonDefault;
-    final m = RegExp(r"UNTIL=(\d{8}T\d{6}Z?)").firstMatch(rrule);
+    // R22: date-only UNTIL (UNTIL=20270215, emitted by common calendar
+    // tools) missed the old regex entirely -> horizonDefault expanded the
+    // series past its real end (phantom lectures + fingerprint churn)
+    final m = RegExp(r"UNTIL=(\d{8}(?:T\d{6}Z?)?)").firstMatch(rrule);
     if (m != null) {
-      until = _dtOf(m.group(1)!) ?? until;
+      final t = _dtOf(m.group(1)!);
+      if (t != null) {
+        // a DATE-only UNTIL names the LAST DAY of the series, not its
+        // midnight: an afternoon lecture on the final day would vanish if
+        // the bare date were read as 00:00 (RFC5545-comparing exporters
+        // such as Google write the full T235959 form for exactly this)
+        until = m.group(1)!.length == 8
+            ? DateTime(t.year, t.month, t.day, 23, 59, 59)
+            : t;
+      }
     }
-    final interval = int.tryParse(
+    var interval = int.tryParse(
             RegExp(r"INTERVAL=(\d+)").firstMatch(rrule)?.group(1) ?? "1") ??
         1;
+    if (interval <= 0) interval = 1; // INTERVAL=0 used to fill the 400-guard
+    // with identical occurrences -> up to 391 duplicate alarms
 
     final dates = <DateTime>[];
     var d = start;
     var guard = 0;
     while (!d.isAfter(until) && guard++ < 400) {
-      if (!exdates.contains(_fmt(d))) {
+      final fmtD = _fmt(d);
+      if (!exStamps.contains(d) && !exDayKeys.contains(fmtD.substring(0, 8))) {
         dates.add(d);
       }
       // wall-clock stepping: Duration(days: 7) is absolute time and slides
@@ -824,7 +858,11 @@ extension IcsChangeIndex on List<IcsChange> {
       if (!_isOnDay(c.when, day)) continue;
       final k = c.when.hour * 60 + c.when.minute;
       final held = out[k];
-      if (held == null || c.when.isAfter(held.when)) out[k] = c;
+      // R22: same-tie rule as the agenda room-delta picker: two stored
+      // deltas of one session share the SAME when (the occurrence start),
+      // isAfter could never replace -> the stale intermediate room won;
+      // decode order is oldest-first, so >= keeps the latest edit
+      if (held == null || !c.when.isBefore(held.when)) out[k] = c;
     }
     return out;
   }
