@@ -40,7 +40,7 @@ const Map<String, String> de_library = {
   "library.cancelConfirm": "Buchung für {0} wirklich stornieren?",
   "library.justTaken": "Soeben vergeben – bitte eine andere Zeit wählen.",
   "library.identityMissing": "Bitte Vor- und Nachname für die Buchung angeben.",
-  "library.noBookableDays": "Momentan keine buqbaren Tage.",
+  "library.noBookableDays": "Momentan keine buchbaren Tage.",
   "library.canceledFailed": "Stornierung fehlgeschlagen – bitte erneut versuchen.",
   "library.fav": "Favoritenraum",
   "library.refresh": "Aktualisieren",

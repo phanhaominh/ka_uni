@@ -264,6 +264,9 @@ List<_Route> routes({
           checkout ?? () => const _Canned(200, body: _orderDone)),
     ];
 
+/// a plain socket failure for gate-release tests
+class socketERR implements Exception { const socketERR(); }
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -486,6 +489,44 @@ void main() {
               "favorite instead of joining the abandoned one");
     });
 
+    test("the NEWEST favorite's strip survives a late abandoned reply",
+        () async {
+      final f = fx({}, routes());
+      await f.m.refreshAnon();
+      final a = f.m.rooms.first, b = f.m.rooms.last;
+
+      f.stub.routes.insert(
+          0,
+          _Route("GET", "intervals",
+              () {
+                final t = DateTime.now().add(const Duration(minutes: 30));
+                return _Canned(200,
+                    body: '[{"start_date":"${_iso(t)}","available":true,'
+                        '"number_available":22,"quota":138,'
+                        '"unavailability_type":"none"}]');
+              })); // B's fresh data
+      f.stub.holdFor = "resource=${a.slug}"; // only A's fetch is held
+      final gate = Completer<void>();
+      f.stub.hold = gate;
+
+      f.m.setFav(a.slug);
+      final aFut = f.m.refreshFavSlots(); // A's fetch, held in flight
+      await pump();
+      await f.m.setFav(b.slug);
+      await pump(); // B's strip answers freely, fresh data lands
+      expect(f.m.favSlots.every((sl) => sl.free == 22), isTrue,
+          reason: "B's fresh data is on screen while A is still in flight");
+
+      gate.complete();
+      f.stub.hold = null;
+      f.stub.holdFor = null;
+      await aFut;
+      await pump();
+      expect(f.m.favSlots.every((sl) => sl.free == 22), isTrue,
+          reason: "A's LATE reply for the abandoned favorite may not "
+              "overwrite B's strip (R21 second half of the join bug)");
+    });
+
     test("un-favoriting then re-favoriting still fetches", () async {
       final f = fx({}, routes());
       await f.m.refreshAnon();
@@ -505,6 +546,32 @@ void main() {
       expect(f.stub.count("GET", "intervals/start") - c0, 2,
           reason: "re-favoriting after an empty favorite must fetch again "
               "- the no-fetch fav-'' step may not poison the join check");
+    });
+
+    test("a throwing cancel releases the gate (no session-wide lockout)",
+        () async {
+      final f = fx({}, routes());
+      await f.m.signIn("alice", "pw");
+      f.stub.throwing = const socketERR();
+      final ok = await f.m.cancel(AnnyBooking(
+          id: "b1", number: "BB1", status: "accepted",
+          start: DateTime.now().add(const Duration(hours: 1)),
+          end: DateTime.now().add(const Duration(hours: 2)),
+          resource: "x", code: "c1"));
+      f.stub.throwing = null;
+      expect(ok, isFalse, reason: "a dead socket means NOT cancelled");
+      expect(f.m.isBooking, isFalse,
+          reason: "the gate must open again after a failed cancel");
+      // and the NEXT cancel is really attempted, not gate-rejected:
+      f.stub.throwing = null;
+      await f.m.cancel(AnnyBooking(
+          id: "b1", number: "BB1", status: "accepted",
+          start: DateTime.now().add(const Duration(hours: 1)),
+          end: DateTime.now().add(const Duration(hours: 2)),
+          resource: "x", code: "c1"));
+      expect(f.stub.count("GET", "/cancel"), 2,
+          reason: "both cancels reached the server - the first was not a "
+              "silently-swallowed gate rejection");
     });
 
     test("book gate is synchronous: second call cannot open a cart",

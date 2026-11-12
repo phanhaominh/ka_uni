@@ -218,7 +218,10 @@ class _SsoChain {
     // The relay action arrives HTML-entity-escaped
     // ("https://anny.eu&#x2f;federation&#x2f;saml&#x2f;consume") —
     // posting the raw string would 404; unescaping is mandatory.
-    final consume = Uri.parse(_unescapeHtml(saml.group(1)!));
+    // guard the TARGET BEFORE the POST: the SAMLResponse rides in this
+    // request body - an unguarded parse+post let a reshaped IdP page
+    // drink the assertion off-allowlist (R21 hunt)
+    final consume = _guardHost(Uri.parse(_unescapeHtml(saml.group(1)!)));
     final samlFields = _inputValues(creds.body);
     final samlResponse = samlFields["SAMLResponse"];
     if (samlResponse == null) {

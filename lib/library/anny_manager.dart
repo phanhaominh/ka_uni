@@ -179,6 +179,10 @@ class AnnyManager extends ChangeNotifier {
       if (jwt != null && jwt != "pending") {
         await p.remove(AnnyKeys.jwt);
       }
+      // READ the legacy extras BEFORE deleting them (a session restored
+      // mid-app-launch used to lose its uuid/alvo to the scrub order)
+      final String? legacyAlvo = p.getString(AnnyKeys.alvo);
+      final String? legacyUuid = p.getString(AnnyKeys.uuid);
       await p.remove(AnnyKeys.alvo);
       await p.remove(AnnyKeys.uuid);
       if (jwt != null && jwt.isNotEmpty) {
@@ -187,8 +191,8 @@ class AnnyManager extends ChangeNotifier {
         // call re-mints it silently via the keychain password
         _session = AnnySession(
             jwt: jwt,
-            visitToken: p.getString(AnnyKeys.alvo),
-            accountUuid: p.getString(AnnyKeys.uuid),
+            visitToken: legacyAlvo,
+            accountUuid: legacyUuid,
             obtainedAt: DateTime.fromMillisecondsSinceEpoch(0));
       }
       final String? raw = p.getString(AnnyKeys.rooms);
@@ -321,8 +325,13 @@ class AnnyManager extends ChangeNotifier {
       final AnnyRoom? fav = favRoom;
       if (fav == null || fav.serviceId == 0) return;
       try {
-        favSlots =
-            await fetchIntervals(http, fav.slug, fav.serviceId, DateTime.now());
+        final slots = await fetchIntervals(
+            http, fav.slug, fav.serviceId, DateTime.now());
+        // drop a reply for an ABANDONED favorite: A->B mid-fetch used to
+        // let A's later answer overwrite B's strip (R21, second half of
+        // the join-key bug - keying the join is not enough)
+        if (slug != favSlug) return;
+        favSlots = slots;
       } catch (e) {
         _diag("fav slots: $e", _kindFromApi(e));
       }
@@ -639,20 +648,26 @@ class AnnyManager extends ChangeNotifier {
     if (isBooking) return false;
     isBooking = true;
     notifyListeners();
-    final bool ok = await _authed<bool>((String jwt) async {
-          await cancelBooking(http, jwt, bookingId: b.id, accessToken: b.code);
-          return true;
-        }) ==
-        true;
-    if (ok) {
-      bookings = bookings.where((AnnyBooking x) => x.id != b.id).toList();
+    try {
+      final bool ok = await _authed<bool>((String jwt) async {
+            await cancelBooking(http, jwt,
+                bookingId: b.id, accessToken: b.code);
+            return true;
+          }) ==
+          true;
+      if (ok) {
+        bookings = bookings.where((AnnyBooking x) => x.id != b.id).toList();
+        notifyListeners();
+        onCanceled?.call(b);
+        unawaited(refreshAnon(force: true));
+      }
+      return ok;
+    } finally {
+      // an _authed throw used to leave the gate closed until reboot:
+      // one stuck flag locked booking AND cancelling for the session
+      isBooking = false;
       notifyListeners();
-      onCanceled?.call(b);
-      unawaited(refreshAnon(force: true));
     }
-    isBooking = false;
-    notifyListeners();
-    return ok;
   }
 
   /// The confirm-sheet prefill (W4) / checkout body (book) identity.

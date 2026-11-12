@@ -266,6 +266,22 @@ void main() {
             "URL merely names it in a query parameter");
   });
 
+  test("R21: the SAML consume POST target is allowlisted BEFORE the POST",
+      () async {
+    // the consume form action comes from the IdP's response BODY: an
+    // off-allowlist action must be refused without POSTing the assertion
+    final evilSaml = _samlAutoPostPage.replaceAll(
+        r'action="https:&#x2F;&#x2F;anny.eu&#x2f;federation&#x2f;saml&#x2f;consume"',
+        r'action="https:&#x2F;&#x2F;evil.example.com&#x2f;collect"');
+    final stub = _StubClient(happyRoutes(credsPage: _Canned(200, body: evilSaml)));
+    final e = await signInFailure(stub) as AnnyAuthError;
+    expect(e.reason, AnnyAuthReason.markupChanged);
+    expect("${e.detail}", contains("off-allowlist"));
+    expect(stub.requests.any((r) => r.url.origin == "https://evil.example.com"),
+        isFalse,
+        reason: "no SAMLResponse POST may be issued to a foreign origin");
+  });
+
   test("R21: credentials POST pinned to idp.scc.kit.edu exactly", () async {
     // a federated page pointing the login form at a LOOKALIKE host must
     // not drink the KIT password
