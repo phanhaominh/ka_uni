@@ -61,6 +61,12 @@ class MensaManager extends ChangeNotifier {
     translate.onChanged = notifyListeners;
   }
 
+  @override
+  void dispose() {
+    translate.onChanged = null; // in-flight gtx batches must not notify here
+    super.dispose();
+  }
+
   /// test seam - stubbed by unit tests, mirrors the netGet-override
   /// discipline of the campus feed tests
   @visibleForTesting
@@ -203,7 +209,7 @@ class MensaManager extends ChangeNotifier {
         // empty week during semester break is LEGAL (no day stamps);
         // stamps present but unparsed = layout drift = tell someone
         final int stamps = RegExp(
-                r'(?:Mo|Di|Mi|Do|Fr|Sa|So|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}\.\d{1,2}\.')
+                r'(?:Mo|Di|Mi|Do|Fr|Sa|So|Tu|We|Th)\s+\d{1,2}\.\d{1,2}\.')
             .allMatches(body)
             .length;
         final bool layoutDrift = stamps > 0;

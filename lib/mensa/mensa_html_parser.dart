@@ -16,9 +16,11 @@ import 'package:kit_mobile/mensa/models/mensa_models.dart';
 class MensaHtmlParser {
   /// "Mo 11.11." / English twin "We 11.11." day stamps; no year in the
   /// feed - see [_resolveDate]. The DE page uses DE prefixes, the EN
-  /// page EN prefixes; both are accepted so either locale's page parses.
+  /// page EN prefixes print TWO letters ("Th 13.11."), not three - the live
+  /// EN page was verified 2026-11-12; DE prints the same first two letters
+  /// for all seven days, so this alternation accepts both locales.
   static final RegExp _dayStamp = RegExp(
-      r'^(?:Mo|Di|Mi|Do|Fr|Sa|So|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\d{1,2})\.(\d{1,2})\.');
+      r'^(?:Mo|Di|Mi|Do|Fr|Sa|So|Tu|We|Th)\s+(\d{1,2})\.(\d{1,2})\.');
 
   /// Trailing "(Se,We,ML)" allergen suffix on the meal-name cell -
   /// only comma/short-code shaped, so a real "(Mensa) " in a name stays.
@@ -36,27 +38,29 @@ class MensaHtmlParser {
   /// change degrades to "no data" instead of wrong data.
   ///
   /// Pairing is a strict document-order walk over h1/table: a day stamp
-  /// claims the FIRST table that follows it before any newer stamp opens.
-  /// A stamp without a table (weekend/break stamps are printed without
-  /// one) therefore claims nothing - letting it reach further would
-  /// silently pair Thursday's dishes under Wednesday's stamp (measured
-  /// live in the midnight window, when stamps roll off the page). Two
-  /// tables under one stamp (lunch + dinner headers repeating the date)
-  /// merge into one day entry - dayFor must never see duplicates.
+  /// claims ONLY the tables that follow it as DIRECT next siblings
+  /// (consecutive tables = lunch + dinner merge into one day entry).
+  /// A stamp whose own table rolled off the page (midnight window;
+  /// measured live) or which is followed by any other element - a
+  /// "Heute geschlossen" note, another h1 - claims NOTHING: losing a
+  /// day is honest, silently pairing Thursday's dishes under
+  /// Wednesday's stamp is not (audit 2026-11-12: the previous document
+  /// walk paired across intervening content and could misdate a whole
+  /// day's menu). Two same-date stamps merge (dayFor must never see
+  /// duplicates). Never guesses across siblings - the deliberate,
+  /// measured trade.
   List<MensaDay> parseWeek(String html, DateTime ref) {
     final dom.Document doc = html_parser.parse(html);
     final List<MensaDay> days = [];
-    RegExpMatch? pending;
-    for (final dom.Element el in doc.querySelectorAll('h1, table')) {
-      if (el.localName == 'h1') {
-        final RegExpMatch? stamp = _dayStamp.firstMatch(el.text.trim());
-        if (stamp != null) pending = stamp;
-        continue;
+    for (final dom.Element h1 in doc.querySelectorAll('h1')) {
+      final RegExpMatch? stamp = _dayStamp.firstMatch(h1.text.trim());
+      if (stamp == null) continue;
+      final List<MensaLine> lines = [];
+      for (dom.Element? el = h1.nextElementSibling;
+          el != null && el.localName == 'table';
+          el = el.nextElementSibling) {
+        lines.addAll(_parseLines(el));
       }
-      if (pending == null) continue; // table before any stamp (other blocks)
-      final List<MensaLine> lines = _parseLines(el);
-      final RegExpMatch stamp = pending;
-      pending = null;
       if (lines.isEmpty) continue;
       final DateTime date = _resolveDate(
           int.parse(stamp.group(1)!), int.parse(stamp.group(2)!), ref);

@@ -127,6 +127,37 @@ void main() {
     expect(days.single.mealCount, 1);
   });
 
+  test("a stamp separated from a table by any other element claims nothing",
+      () {
+    // audit 2026-11-12 regression: the walk must never pair ACROSS
+    // intervening content. 'Heute geschlossen' note in Mi's slot, Do's
+    // stamp rolled off overnight: its table stays but belongs to nobody
+    // Mi can prove - claiming it would misdate a whole menu
+    const h = "<html><body><h1>Mi 11.11.</h1>"
+        "<p class=\"hinweis\">Heute geschlossen</p>"
+        "<table><tr><td>Linie 1</td><td><table><tr><td></td>"
+        "<td><span>Falsches Datum</span></td><td><span>1,00 €</span></td>"
+        "</tr></table></td></tr></table></body></html>";
+    final days = MensaHtmlParser().parseWeek(h, DateTime(2026, 11, 12, 12));
+    expect(days, isEmpty,
+        reason: "table is not a direct sibling of the stamp - claim nothing");
+  });
+
+  test("consecutive tables under one stamp all merge (lunch + dinner)", () {
+    // adjacent siblings of the stamp belong to it even without a second
+    // stamp; two h1s with the same date still merge too (next test)
+    const h = "<html><body><h1>Mi 11.11.</h1>"
+        "<table><tr><td>Linie 1</td><td><table><tr><td></td>"
+        "<td><span>Mittag</span></td><td><span>1,00 €</span></td>"
+        "</tr></table></td></tr></table>"
+        "<table><tr><td>Abendessen</td><td><table><tr><td></td>"
+        "<td><span>Abendbrot</span></td><td><span>2,00 €</span></td>"
+        "</tr></table></td></tr></table></body></html>";
+    final days = MensaHtmlParser().parseWeek(h, DateTime(2026, 11, 12, 12));
+    expect(days.length, 1);
+    expect(days.single.mealCount, 2);
+  });
+
   test("two tables under the same stamp merge into one day entry", () {
     // lunch and dinner headers can repeat the date stamp; dayFor and the
     // week fence must never face two entries for one calendar day

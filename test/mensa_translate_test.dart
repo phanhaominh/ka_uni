@@ -38,13 +38,13 @@ void main() {
       var notified = 0;
       tr.onChanged = () => notified++;
       tr.request(["Gulasch mit Knödeln"]);
-      await settle();
+      await tr.idle;
       expect(tr.en("Gulasch mit Knödeln"),
           "Braised beef with dumplings");
       expect(calls, 1);
       expect(notified, 1);
       tr.request(["Gulasch mit Knödeln"]);
-      await settle();
+      await tr.idle;
       expect(calls, 1, reason: "cache hit must not re-request");
     });
 
@@ -58,12 +58,19 @@ void main() {
       final p = await SharedPreferences.getInstance();
       expect(p.getString(MensaTranslate.cacheKey), contains("Currywurst"));
 
+      var secondCalls = 0;
       final second = MensaTranslate()
-        ..transport = (u) async => throw StateError("offline expected");
+        ..transport = (u) async {
+          secondCalls++;
+          throw StateError("offline expected");
+        };
       second.request(["Currywurst mit Kartoffeln"]);
-      await settle();
+      await second.idle;
       expect(second.en("Currywurst mit Kartoffeln"),
           "Currywurst with potatoes");
+      expect(secondCalls, 0,
+          reason: "warm cache = zero network even before restore finishes "
+              "(audit: unawaited restore re-queued cached names every boot)");
     });
 
     test("German UI generates zero third-party traffic", () async {
@@ -88,11 +95,11 @@ void main() {
           return http.Response("nope", 429);
         };
       tr.request(["Gulasch"]);
-      await settle();
+      await tr.idle;
       expect(tr.en("Gulasch"), isNull, reason: "failure keeps the German");
       tr.request(["Gulasch"]);
       tr.request(["Gulasch"]);
-      await settle();
+      await tr.idle;
       expect(calls, 1, reason: "failed this session = not asked again");
     });
 
@@ -101,8 +108,24 @@ void main() {
       final tr = MensaTranslate()
         ..transport = (u) async => http.Response("<html>blocked</html>", 200);
       tr.request(["Gulasch"]);
-      await settle();
+      await tr.idle;
       expect(tr.en("Gulasch"), isNull);
+    });
+
+    test("a persistently failing endpoint is given up on", () async {
+      // audit 2026-11-12: an EN week of ~40 names against a blocking
+      // endpoint used to fire every remaining pair anyway; three straight
+      // all-failed batches must silence the session (German stays)
+      var calls = 0;
+      final tr = MensaTranslate()
+        ..transport = (u) async {
+          calls++;
+          return http.Response("rate limited", 429);
+        };
+      tr.request([for (int i = 0; i < 12; i++) "Gericht $i"]);
+      await tr.idle;
+      expect(calls, 6, reason: "3 all-failed batches of 2, then stop");
+      expect(tr.en("Gericht 11"), isNull);
     });
 
     test("requests are queued and drained concurrently-safe", () async {
@@ -117,8 +140,7 @@ void main() {
           return http.Response(gtx("dish ${u.queryParameters['q']}"), 200);
         };
       tr.request([for (int i = 0; i < 6; i++) "Gericht $i"]);
-      await settle();
-      await settle();
+      await tr.idle;
       expect(done, 6);
       expect(peak, lessThanOrEqualTo(2),
           reason: "must stay a polite two-request burst");

@@ -43,32 +43,47 @@ class MensaTranslate {
   final Set<String> _inFlight = {};
   final Set<String> _failed = {};
   final List<String> _queue = [];
-  bool _loaded = false;
+  final List<String> _pending = [];
+  Future<void>? _restoreF;
   bool _running = false;
+  bool _gaveUp = false; // endpoint is blocking us; stay quiet this session
+  int _failedBatches = 0;
 
   static Future<http.Response> _defaultTransport(Uri uri) =>
       http.get(uri, headers: const {"User-Agent": "KA.Uni app"}).timeout(
           const Duration(seconds: 12));
 
-  static String norm(String s) =>
-      s.trim().replaceAll(RegExp(r"\s+"), " ");
+  static final RegExp _ws = RegExp(r"\s+");
+
+  static String norm(String s) => s.trim().replaceAll(_ws, " ");
 
   /// English form of [de] if known; null while unknown (caller keeps German)
   String? en(String de) => _en[norm(de)];
 
   /// Queue every not-yet-known name in [names]. Cheap and idempotent: a
   /// name already cached, in flight or failed this session is skipped, so
-  /// the card may call this on every build of every menu view.
+  /// the card may call this on every build of every menu view. Nothing
+  /// goes online before the persisted cache has been READ - a warm cache
+  /// means zero requests on every later launch (audit 2026-11-12: an
+  /// unawaited restore let each cold start re-queue ~40 cached names).
   void request(Iterable<String> names) {
-    if (!L10n.isEnglish) return;
-    if (!_loaded) {
-      unawaited(_restore());
-    }
-    var added = false;
+    if (!L10n.isEnglish || _gaveUp) return;
+    final restore = _restoreF ??= _restore();
     for (final raw in names) {
       final n = norm(raw);
-      if (n.isEmpty ||
-          _en.containsKey(n) ||
+      if (n.isNotEmpty) _pending.add(n);
+    }
+    // microtask hop also covers the "restore already done" case
+    unawaited(restore.whenComplete(_flush));
+  }
+
+  void _flush() {
+    if (_pending.isEmpty) return;
+    final flush = _pending.toSet();
+    _pending.clear();
+    var added = false;
+    for (final n in flush) {
+      if (_en.containsKey(n) ||
           _queued.contains(n) ||
           _inFlight.contains(n) ||
           _failed.contains(n)) {
@@ -78,20 +93,31 @@ class MensaTranslate {
       _queue.add(n);
       added = true;
     }
-    if (added && !_running) {
+    // queue-non-empty restart also recovers if a throwing listener ever
+    // unwound a previous drain with items left over
+    if (!_running && (added || _queue.isNotEmpty)) {
       unawaited(_run());
     }
   }
 
+  /// test hook: resolves once nothing is pending, queued or in flight
+  @visibleForTesting
+  Future<void> get idle async {
+    while (_pending.isNotEmpty || _running || _queue.isNotEmpty || _inFlight.isNotEmpty) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+  }
+
   Future<void> _restore() async {
-    _loaded = true;
     try {
       final p = await SharedPreferences.getInstance();
       final raw = p.getString(cacheKey);
       if (raw == null) return;
       final map = jsonDecode(raw) as Map<String, dynamic>;
       map.forEach((k, v) {
-        if (v is String && _en.length < _maxCache) _en[k] = v;
+        // never let the (possibly stale) disk copy override a fresher
+        // value that arrived while restore was in flight
+        if (v is String && !_en.containsKey(k) && _en.length < _maxCache) _en[k] = v;
       });
       onChanged?.call();
     } catch (_) {
@@ -100,14 +126,24 @@ class MensaTranslate {
   }
 
   Future<void> _run() async {
+    if (_running) return;
     _running = true;
     try {
       while (_queue.isNotEmpty) {
         // two in flight, small burst: the endpoint tolerates a casual
         // browsing page constantly; a hammering client gets 429s
-        final batch = _queue.take(2).toList();
-        for (final n in batch) {
+        final batch = <String>[];
+        for (final n in _queue.toList()) {
           _queue.remove(n);
+          if (_en.containsKey(n)) {
+            _queued.remove(n); // cached meanwhile (restore flush race) - drop
+            continue;
+          }
+          batch.add(n);
+          if (batch.length == 2) break;
+        }
+        if (batch.isEmpty) continue;
+        for (final n in batch) {
           _inFlight.add(n);
         }
         final results = await Future.wait(batch.map(_translateOne));
@@ -124,8 +160,20 @@ class MensaTranslate {
           }
         }
         if (changed) {
+          _failedBatches = 0;
           await _persist();
           onChanged?.call();
+        } else if (++_failedBatches >= 3) {
+          // three straight all-failed batches = blocked or rate-limited
+          // endpoint; stop hammering it with the rest of the week (the
+          // German names stay on screen, next launch may fare better)
+          _gaveUp = true;
+          _queue.forEach((n) {
+            _failed.add(n);
+            _queued.remove(n);
+          });
+          _queue.clear();
+          break;
         }
       }
     } finally {

@@ -345,11 +345,12 @@ class _MensaTodayCardState extends State<MensaTodayCard> {
           maxLines: maxLines,
           overflow: TextOverflow.ellipsis,
           style: theme.textTheme.bodyMedium);
-      // an English name never loses the German original - the printed
-      // board, the lunch crew and the SW app all speak German
-      return shownName == meal.name
-          ? text
-          : Tooltip(message: meal.name, child: text);
+      // long-press always reveals the full original text: an English name
+      // never loses the German (the printed board, the lunch crew and the
+      // SW app all speak German), and an untranslated name that got
+      // ellipsised stays readable (audit 2026-11-12: the translated-only
+      // tooltip left long German names unrecoverable)
+      return Tooltip(message: meal.name, child: text);
     }
 
     if (scale < 1.4) {

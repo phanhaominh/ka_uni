@@ -351,7 +351,8 @@ class _OwnIcsSection extends StatefulWidget {
 class _OwnIcsSectionState extends State<_OwnIcsSection> {
   final _url = TextEditingController();
   bool _busy = false;
-  String _status = "";
+  int _events = -1; // event count, NOT the translated string - a language
+  // flip re-builds this page in place and the old string must not survive it
 
   @override
   void initState() {
@@ -361,7 +362,7 @@ class _OwnIcsSectionState extends State<_OwnIcsSection> {
       if (mounted) {
         setState(() {
           _url.text = cm.personalIcsUrl;
-          _status = _loadedStatus(cm);
+          _loadStatus(cm);
         });
       }
     });
@@ -373,13 +374,15 @@ class _OwnIcsSectionState extends State<_OwnIcsSection> {
     super.dispose();
   }
 
-  String _loadedStatus(CampusManager cm) {
-    final n =
-        RegExp("BEGIN:VEVENT", dotAll: true).allMatches(cm.personalIcs).length;
-    return n == 0
-        ? L10n.t("settings.ownIcsNone")
-        : L10n.t("settings.ownIcsLoaded", [n]);
+  void _loadStatus(CampusManager cm) {
+    _events = RegExp("BEGIN:VEVENT", dotAll: true)
+        .allMatches(cm.personalIcs)
+        .length;
   }
+
+  String get _statusText => _events == 0
+      ? L10n.t("settings.ownIcsNone")
+      : L10n.t("settings.ownIcsLoaded", [_events]);
 
   Future<void> _run(Future<String?> Function() op, {bool clear = false}) async {
     final cm = context.read<KITProvider>().campusManager;
@@ -403,7 +406,7 @@ class _OwnIcsSectionState extends State<_OwnIcsSection> {
     if (!mounted) return;
     setState(() {
       _busy = false;
-      _status = _loadedStatus(cm);
+      _loadStatus(cm);
       if (clear) _url.text = cm.personalIcsUrl;
     });
     if (clear) {
@@ -429,7 +432,7 @@ class _OwnIcsSectionState extends State<_OwnIcsSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(_status,
+          Text(_statusText,
               style: TextStyle(
                   fontSize: 13,
                   color: Theme.of(context).colorScheme.onSurfaceVariant)),

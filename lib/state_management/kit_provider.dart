@@ -437,4 +437,15 @@ class KITProvider extends ChangeNotifier {
     await campusManager.prepareRelevantModuleRows();
     notifyListeners();
   }
+
+  @override
+  void dispose() {
+    // unwind the mensa relay chain: a late translate arrival after this
+    // provider is gone would notify a dead ChangeNotifier (audit 2026-11-12;
+    // latent while the root provider never unmounts - a future remount or
+    // logout-recreates-provider change would make it a live assert)
+    mensa.removeListener(notifyListeners);
+    mensa.dispose();
+    super.dispose();
+  }
 }
