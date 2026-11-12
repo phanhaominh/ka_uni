@@ -28,6 +28,8 @@ const Map<String, String> de_library = {
   "library.confirm": "Bestätigen",
   "library.checkinHint":
       "Nach der Buchung innerhalb von 15 Minuten vor Ort einchecken, sonst verfällt der Platz.",
+  "library.checkinBody":
+      "Bitte jetzt am Check-in-Schalter einchecken – danach verfällt der Platz.",
   "library.expires15": "Check-in verfällt in {0} Min.",
   "library.cancel": "Stornieren",
   "library.cancelConfirm": "Buchung für {0} wirklich stornieren?",
@@ -66,6 +68,8 @@ const Map<String, String> en_library = {
   "library.confirm": "Confirm",
   "library.checkinHint":
       "After booking, check in on site within 15 minutes or the seat is released.",
+  "library.checkinBody":
+      "Please check in at the desk now – afterwards the seat expires.",
   "library.expires15": "Check-in expires in {0} min",
   "library.cancel": "Cancel",
   "library.cancelConfirm": "Really cancel your booking for {0}?",

@@ -6,6 +6,9 @@ import 'package:fuzzywuzzy/fuzzywuzzy.dart';
 import 'package:kit_mobile/credentials/models/kit_credentials.dart';
 import 'package:kit_mobile/geo/network/KITTopographyManager.dart';
 import 'package:kit_mobile/mensa/mensa_manager.dart';
+import 'package:kit_mobile/library/anny_api.dart' show AnnyBooking;
+import 'package:kit_mobile/library/anny_manager.dart';
+import 'package:kit_mobile/notifications/library_notifications.dart';
 import 'package:kit_mobile/module_info_table/models/module_info_table_cell.dart';
 import 'package:kit_mobile/state_management/ilias/ilias_manager.dart';
 
@@ -38,6 +41,7 @@ class KITProvider extends ChangeNotifier {
   /// SW Karlsruhe canteen menu (public feed, no login) feeding the home
   /// Mensa card
   late final MensaManager mensa;
+  late final AnnyManager anny;
   late final IliasFilesProvider iliasFileManager;
   final SignMeUpManager signMeUpManager = SignMeUpManager();
 
@@ -194,6 +198,24 @@ class KITProvider extends ChangeNotifier {
     if (!Platform.environment.containsKey('FLUTTER_TEST')) {
       unawaited(mensa.restore().then((_) => mensa.fetchWeek()).then((_) =>
           notifyListeners())); // flip the card from pending once settled
+    }
+
+    // library seats (Anny): anon catalog/counts are safe pre-login and
+    // need no account; authed parts (bookings) only after signIn. Same
+    // relay + no-test-harness discipline as mensa above.
+    anny = AnnyManager()
+      ..addListener(notifyListeners)
+      ..onBooked = (AnnyBooking b) {
+        unawaited(LibraryNotifications.scheduleCheckin(
+            bookingId: b.id, start: b.start, room: b.resource));
+      }
+      ..onCanceled = (AnnyBooking b) {
+        unawaited(LibraryNotifications.cancelCheckin(b.id));
+      };
+    if (!Platform.environment.containsKey('FLUTTER_TEST')) {
+      unawaited(anny
+          .boot()
+          .then((_) => notifyListeners())); // cached counts paint first
     }
 
     iliasFileManager = IliasFilesProvider();
@@ -446,6 +468,8 @@ class KITProvider extends ChangeNotifier {
     // logout-recreates-provider change would make it a live assert)
     mensa.removeListener(notifyListeners);
     mensa.dispose();
+    anny.removeListener(notifyListeners);
+    anny.dispose();
     super.dispose();
   }
 }

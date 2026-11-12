@@ -26,6 +26,7 @@ import '../state_management/ilias/ilias_watcher.dart';
 const String channelIdDaily = "mei_daily";
 const String channelIdDeadlines = "mei_deadlines";
 const String channelIdChanges = "mei_changes";
+const String channelIdLibrary = "mei_library";
 
 /// Exact map of notification id bands - every family cancels its own range
 /// before re-arming, so a new family MUST take a fresh gap and join this
@@ -86,6 +87,10 @@ class MeiNotifications {
     await androidPlugin?.createNotificationChannel(AndroidNotificationChannel(
         channelIdChanges, L10n.t("notifs.channelChanges"),
         description: L10n.t("agenda.roomChanges"), importance: Importance.max));
+    await androidPlugin?.createNotificationChannel(AndroidNotificationChannel(
+        channelIdLibrary, L10n.t("notifs.channelLibrary"),
+        description: L10n.t("notifs.channelLibraryDesc"),
+        importance: Importance.max));
     // permission REQUESTS need an attached activity: in the WorkManager
     // isolate mainActivity is null and the plugin NPEs (crash-loop every
     // poll). Only the UI process may prompt; background inits only probe.
@@ -129,6 +134,23 @@ class MeiNotifications {
   @visibleForTesting
   static int changeSlot(int millisecondsSinceEpoch, int rotation) =>
       (millisecondsSinceEpoch ~/ 60000 + rotation) % 20;
+
+  /// One-shot exact reminder on the library channel (seat check-in pings,
+  /// scheduled by LibraryNotifications). Reuses _zoned's exact/inexact and
+  /// payload discipline; channel creation happens in init().
+  static Future<void> scheduleLibraryPing(
+      int id, String title, String body, DateTime whenLocal,
+      {required String payload}) async {
+    if (!supported) return;
+    if (!_ready) await init(requestPermissions: false);
+    await _zoned(id, channelIdLibrary, title, body, whenLocal,
+        deadlines: true, payload: payload);
+  }
+
+  static Future<void> cancelLibraryPing(int id) async {
+    if (!supported || !_ready) return;
+    await _plugin.cancel(id);
+  }
 
   /// Immediate heads-up (used by the background diff job). [payload] routes
   /// the tap: callers whose content has no CHANGED band to point at (ILIAS

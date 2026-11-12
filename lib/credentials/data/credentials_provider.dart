@@ -10,6 +10,7 @@ import 'package:workmanager/workmanager.dart';
 import '../../local_files_storage/local_file_storage_manager.dart';
 import '../../main.dart';
 import '../../notifications/mei_notifications.dart';
+import 'package:kit_mobile/notifications/library_notifications.dart';
 import '../../tutorials/data/tutorial_manager.dart';
 
 /// Thrown by [logout] AFTER the local session was torn down (the UI is
@@ -304,6 +305,9 @@ class CredentialsProvider extends ChangeNotifier {
       failures.add("prefs sweep: $e");
     }
     try {
+      // library family first: explicit per-id cancel, so a partial
+      // plugin failure inside cancelAll can never strand a check-in ping
+      await LibraryNotifications.cancelAll();
       await MeiNotifications.cancelAllScheduled();
     } on Object catch (e) {
       failures.add("notification teardown: $e");
