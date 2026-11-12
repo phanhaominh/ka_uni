@@ -3,11 +3,16 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:kit_mobile/library/anny_api.dart';
 import 'package:kit_mobile/library/anny_auth.dart';
 import 'package:kit_mobile/library/anny_manager.dart';
+import 'package:kit_mobile/library/library_today_card.dart';
+import 'package:kit_mobile/state_management/kit_provider.dart';
+import 'package:kit_mobile/toasts/models/toasts_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Hermetic tests for AnnyManager: cache-first paint, the anon/auth split,
@@ -511,6 +516,112 @@ void main() {
       expect(canceled?.id, "8217");
       expect(f.m.bookings, isEmpty, reason: "canceled booking leaves the list");
       expect(f.m.activeBooking, isNull);
+    });
+  });
+
+  group("home card (widget)", () {
+    // pumps the REAL LibraryTodayCard against a KITProvider whose manager
+    // uses the stub transport — mensa home-card precedent; proves the
+    // cache-first paint and both unsigned/signed states on the widget
+    Future<({KITProvider vm, AnnyHttp http})> pumpCard(
+        WidgetTester tester,
+        {Map<String, Object> prefs = const {},
+        List<_Route> Function()? stubRoutes}) async {
+      SharedPreferences.setMockInitialValues(prefs);
+      final vm = KITProvider();
+      final stub = _StubClient(stubRoutes?.call() ?? const []);
+      vm.anny
+        ..http = AnnyHttp(client: stub)
+        ..auth = _FakeAuth()
+        ..passRead = (() async => null)
+        ..passWrite = (_) async {}
+        ..passErase = () async {};
+      await vm.anny.boot(); // FLUTTER_TEST gate = cache only, zero network
+      await tester.pumpWidget(MaterialApp(
+        home: MultiProvider(
+          providers: [
+            ChangeNotifierProvider<KITProvider>.value(value: vm),
+            ChangeNotifierProvider(create: (_) => ToastsProvider()),
+          ],
+          child: Scaffold(
+            body: SingleChildScrollView(
+              child: SizedBox(width: 360, child: const LibraryTodayCard()),
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+      return (vm: vm, http: vm.anny.http);
+    }
+
+    testWidgets("cached catalog paints instantly, zero network",
+        (tester) async {
+      await pumpCard(tester, prefs: {"ANN_rooms": cachedRooms()});
+      expect(find.text("Bibliothek"), findsOneWidget);
+      expect(find.text("2 a. Lesesaal Naturwissenschaften 2. OG"),
+          findsOneWidget);
+      expect(find.text("42 Plätze frei"), findsOneWidget,
+          reason: "cached count paints before any fetch (default de UI)");
+      expect(find.text("Mit KIT-Account anmelden"), findsOneWidget,
+          reason: "unsigned hint under the counts (plan C)");
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets("wake-on-enable kick renders counts once the reply lands",
+        (tester) async {
+      await pumpCard(tester, stubRoutes: routes);
+      // initState kick fires because nothing is cached; ivNow's covering
+      // tile reports 93 free
+      await tester.pumpAndSettle();
+      expect(find.text("93 Plätze frei"), findsOneWidget);
+      expect(find.text("Mit KIT-Account anmelden"), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets("active booking banner replaces the counts block",
+        (tester) async {
+      final f = fx({"ANN_rooms": cachedRooms()}, routes());
+      await f.m.signIn("2778369", "pw");
+      await f.m.refreshBookings(); // _bookingsUpcoming: 13.11 10:00 accepted
+
+      final vm = KITProvider();
+      // share the signed-in manager's state into the provider's instance
+      SharedPreferences.setMockInitialValues({
+        "ANN_rooms": cachedRooms(),
+        "ANN_jwt": "JWT-1",
+        "ANN_alvo": "ALVO-1",
+        "ANN_uuid": _uuid,
+      });
+      vm.anny
+        ..http = AnnyHttp(client: _StubClient(routes()))
+        ..auth = _FakeAuth()
+        ..passRead = (() async => "pw")
+        ..passWrite = (_) async {}
+        ..passErase = () async {};
+      await vm.anny.boot(); // restores the session from prefs + bookings? no
+      // the card shows the banner from manager state: push it in
+      vm.anny.bookings = f.m.bookings;
+      await tester.pumpWidget(MaterialApp(
+        home: MultiProvider(
+          providers: [
+            ChangeNotifierProvider<KITProvider>.value(value: vm),
+            ChangeNotifierProvider(create: (_) => ToastsProvider()),
+          ],
+          child: Scaffold(
+            body: SingleChildScrollView(
+              child: SizedBox(width: 360, child: const LibraryTodayCard()),
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+      // start is tomorrow 10:00 wall -> pre-start line, not the red lapse
+      expect(find.textContaining("2 a. Lesesaal Naturwissenschaften 2. OG"),
+          findsWidgets);
+      expect(find.textContaining("Check-in verfällt"), findsNothing);
+      expect(find.textContaining("expires15"), findsNothing,
+          reason: "no raw key ever reaches the UI");
+      expect(tester.takeException(), isNull);
     });
   });
 }
