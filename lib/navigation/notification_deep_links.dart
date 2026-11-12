@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../agenda/views/agenda_page.dart';
+import '../grades/views/grades_page.dart';
 import '../library/library_page.dart';
 import '../state_management/kit_provider.dart';
 import 'logic/push_page.dart';
@@ -11,7 +12,14 @@ import '../exams/views/exams_page.dart';
 import '../notifications/notification_payload.dart';
 
 /// Destinations reachable through a notification deep link.
-enum NotificationDeepLink { agenda, agendaToday, agendaChanges, exams, library }
+enum NotificationDeepLink {
+  agenda,
+  agendaToday,
+  agendaChanges,
+  exams,
+  library,
+  grades
+}
 
 /// Pure payload -> destination mapping. An unknown or absent payload maps
 /// to null: the tap stays a silent no-op (OS-restore spew and notifications
@@ -25,6 +33,7 @@ NotificationDeepLink? deepLinkForPayload(String? payload) => switch (payload) {
       // (audit R21: the payload was emitted but never registered here,
       // so the tap was a silent no-op)
       NotificationPayload.library => NotificationDeepLink.library,
+      NotificationPayload.grades => NotificationDeepLink.grades,
       _ => null,
     };
 
@@ -154,6 +163,7 @@ class NotificationDeepLinkRouter {
         AgendaPage.routeName,
       NotificationDeepLink.exams => ExamsPage.routeName,
       NotificationDeepLink.library => LibraryPage.routeName,
+      NotificationDeepLink.grades => GradesPage.routeName,
     };
     final stale = _pushed;
     final mineStale = stale != null && stale.navigator == nav && stale.isActive;
@@ -190,6 +200,11 @@ class NotificationDeepLinkRouter {
           // the booking is already server-side; the page just re-reads
           // the cached manager (its initState kick is cached-first)
           break;
+        case NotificationDeepLink.grades:
+          // R29 (D2): the ledger renders from already-fetched moduleRows;
+          // a re-fetch would be a second full Studienverlauf scrape for a
+          // tap whose whole job is "show me what changed"
+          break;
       }
       return;
     }
@@ -213,6 +228,7 @@ class NotificationDeepLinkRouter {
                 const AgendaPage(highlightChanges: true),
               NotificationDeepLink.exams => const ExamsPage(),
               NotificationDeepLink.library => const LibraryPage(),
+              NotificationDeepLink.grades => const GradesPage(),
             });
     ActivePages.track(nav, routeName, route);
     nav.push(route);

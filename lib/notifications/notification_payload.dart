@@ -26,4 +26,8 @@ class NotificationPayload {
   /// Library seat check-in ping -> the library page (the 15-min check-in
   /// safety net must land where the booking lives).
   static const library = 'library:checkin';
+
+  /// R29 (D2): grade-published push -> the grades page (Studienverlauf),
+  /// where the announced row is visible.
+  static const grades = 'grades';
 }

@@ -9,7 +9,9 @@ import '../../l10n/l10n.dart';
 import '../../state_management/campus/campus_manager.dart';
 import '../../state_management/kit_provider.dart';
 import '../../toasts/models/toasts_provider.dart';
+import '../logic/grade_sim.dart';
 import '../models/grade_book.dart';
+import 'what_if_sheet.dart';
 
 /// Grades overview: SOP (30 CP) progress + the whole Studienverlauf tree
 /// grouped into failed / passed / not-yet-graded modules.
@@ -25,6 +27,14 @@ class GradesPage extends StatelessWidget {
     final book = GradeBook.fromRows(cm.moduleRows,
         ectsAcquiredTotal: cm.student.ectsAcquired,
         avgMark: cm.student.avgMark);
+    // R29 (D1): one fold for the weighted stat AND the what-if sheets;
+    // pure math over the same rows the cards below already render
+    final sim = simulate(
+        entries: book.modules, officialAverage: book.average);
+    // R29 (D2): grade-publish chips mirror the push - the exact titleKeys
+    // the last diff announced, on whichever section the reclassified row
+    // now sits in
+    final newKeys = cm.ledgerNewKeys.toSet();
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -67,16 +77,17 @@ class GradesPage extends StatelessWidget {
               const SizedBox(height: 8),
               _ampelCard(context, book, scheme),
               const SizedBox(height: 8),
-              _summaryCard(context, book, scheme),
+              _summaryCard(context, book, sim, scheme),
               // failed first: those are the attempts the student must act on
               if (book.failed.isNotEmpty)
                 _section(context, L10n.t("grades.sectionFailed"), book.failed,
-                    danger: true),
+                    danger: true, sim: sim, newKeys: newKeys),
               if (book.passed.isNotEmpty)
-                _section(context, L10n.t("grades.sectionPassed"), book.passed),
+                _section(context, L10n.t("grades.sectionPassed"), book.passed,
+                    newKeys: newKeys),
               if (book.pending.isNotEmpty)
                 _section(context, L10n.t("grades.sectionPending"), book.pending,
-                    pending: true),
+                    pending: true, sim: sim),
             ],
           ],
         ),
@@ -253,8 +264,8 @@ class GradesPage extends StatelessWidget {
     );
   }
 
-  Widget _summaryCard(
-      BuildContext context, GradeBook book, ColorScheme scheme) {
+  Widget _summaryCard(BuildContext context, GradeBook book, GradeSim sim,
+      ColorScheme scheme) {
     final green =
         CupertinoDynamicColor.resolve(CupertinoColors.systemGreen, context);
     final average = book.average;
@@ -274,8 +285,25 @@ class GradesPage extends StatelessWidget {
                           ? L10n.t("grades.valueNone")
                           : _deDecimal(average),
                       scheme)),
+              // R29 (D1): own CP-weighted figure next to the official one -
+              // same card, so a difference cannot be hidden by scroll
+              Expanded(
+                  child: _stat(
+                      L10n.t("grades.simWeightedLabel"),
+                      sim.selfAverage == null
+                          ? L10n.t("grades.valueNone")
+                          : _deDecimal(sim.selfAverage!),
+                      scheme)),
             ],
           ),
+          // loud honesty whenever the two averages disagree: our view is
+          // PARTIAL (pending and "bestanden" modules carry no number), so
+          // a divergence must never read as "the portal is wrong"
+          if (sim.divergesFromOfficial) ...[
+            const SizedBox(height: 6),
+            Text(L10n.t("grades.simDiverges"),
+                style: TextStyle(fontSize: 11, color: scheme.tertiary)),
+          ],
           const SizedBox(height: 10),
           Wrap(
             spacing: 6,
@@ -310,7 +338,10 @@ class GradesPage extends StatelessWidget {
       );
 
   Widget _section(BuildContext context, String title, List<GradeEntry> entries,
-      {bool danger = false, bool pending = false}) {
+      {bool danger = false,
+      bool pending = false,
+      GradeSim? sim,
+      Set<String> newKeys = const {}}) {
     final scheme = Theme.of(context).colorScheme;
     final accent = danger
         ? scheme.error
@@ -333,12 +364,34 @@ class GradesPage extends StatelessWidget {
             children: [
               for (var i = 0; i < entries.length; i++) ...[
                 if (i > 0) const Divider(height: 1, thickness: 1),
-                _row(context, entries[i],
-                    accent: accent,
-                    tinted: danger,
-                    label: pending
-                        ? L10n.t("grades.pendingState")
-                        : entries[i].gradeLabel.trim()),
+                // R29 (D1): rows WITHOUT a grade are exactly the ones a
+                // what-if question makes sense for - pending modules and
+                // recorded fails awaiting a retake. Passed rows stay inert:
+                // swapping a finished 1,3 is arithmetic, not a decision.
+                if (sim == null)
+                  _row(context, entries[i],
+                      accent: accent,
+                      tinted: danger,
+                      isNew: newKeys.contains(entries[i].titleKey),
+                      label: pending
+                          ? L10n.t("grades.pendingState")
+                          : entries[i].gradeLabel.trim())
+                else
+                  InkWell(
+                    onTap: () => showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        showDragHandle: true,
+                        builder: (_) =>
+                            WhatIfSheet(sim: sim, entry: entries[i])),
+                    child: _row(context, entries[i],
+                        accent: accent,
+                        tinted: danger,
+                        isNew: newKeys.contains(entries[i].titleKey),
+                        label: pending
+                            ? L10n.t("grades.pendingState")
+                            : entries[i].gradeLabel.trim()),
+                  ),
               ],
             ],
           ),
@@ -348,7 +401,10 @@ class GradesPage extends StatelessWidget {
   }
 
   Widget _row(BuildContext context, GradeEntry e,
-      {required Color accent, required bool tinted, required String label}) {
+      {required Color accent,
+      required bool tinted,
+      required String label,
+      bool isNew = false}) {
     final scheme = Theme.of(context).colorScheme;
     // pending rows may not carry CP yet -> null or 0: omit the trailing unit
     final ects = e.moduleEcts;
@@ -365,6 +421,12 @@ class GradesPage extends StatelessWidget {
                     const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
           ),
           const SizedBox(width: 8),
+          // R29 (D2): "neu" = the grade on THIS row was announced by the
+          // last ledger diff (the same event that fired the push). Tertiary
+          // tint, sibling of the grade chip - quieter than the red the
+          // failed section already owns, so a pass reads as news not alarm
+          if (isNew) _chip(L10n.t("grades.newBadge"), scheme.tertiary),
+          if (isNew) const SizedBox(width: 6),
           // Flexible: the grade cell is arbitrary unvalidated text from the
           // scrape ("nicht bestanden (2. Versuch)" overflows a bare chip on
           // a 360dp phone); ellipsize instead of RenderFlex-crashing

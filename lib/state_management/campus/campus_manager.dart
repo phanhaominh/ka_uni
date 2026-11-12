@@ -6,6 +6,7 @@ import 'package:async_locks/async_locks.dart';
 import 'package:flutter/foundation.dart';
 import 'package:html/parser.dart';
 import 'package:http/http.dart' as http;
+import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/module_info_table/models/module_info_table.dart';
 import 'package:kit_mobile/state_management/kit_login_manager.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
@@ -21,6 +22,8 @@ import '../../notifications/mei_notifications.dart';
 import '../../timetable/models/webcal.dart';
 import '../../exams/models/exam_list.dart';
 import '../../exams/models/exam_synth.dart';
+import '../../grades/logic/ledger_diff.dart';
+import '../../grades/models/grade_book.dart';
 import '../../ilias/due_parse.dart';
 import '../../ilias/models/ilias_models.dart';
 import '../../utils/string_prettifiers.dart';
@@ -29,6 +32,12 @@ const _studentDataKey = "DATA_student";
 
 class CampusManager extends KITLoginManager {
   List<HierarchicTableRow> moduleRows = [];
+
+  /// R29 (D2): titleKeys announced by the LAST ledger diff - rendered as
+  /// "neu" chips on the grades page until the next publication cycle
+  /// replaces them. Pushed grades and visible chips must answer the same
+  /// event; like every DATA_ key this dies with the logout sweep.
+  List<String> ledgerNewKeys = [];
   Map<String, KITModule> rowModules = {}; // INDEXING AS row_id: module
   // C12: a module page fetch is a full scrape; while one runs for a row,
   // every other caller (double tap, prefetch sweep) joins THIS future
@@ -301,6 +310,9 @@ class CampusManager extends KITLoginManager {
     scheduleFetchingTimer?.cancel();
     scheduleFetchingTimer = null;
     moduleRows = [];
+    // R29 (D2): the "neu" chips mark THIS account's published grades;
+    // the prefs copy dies in the DATA_* sweep, the memory one dies here
+    ledgerNewKeys = [];
     rowModules.clear();
     _moduleRefreshInProgress.clear();
     timetable = TimetableWeekly();
@@ -638,6 +650,11 @@ class CampusManager extends KITLoginManager {
     ready = true;
     notificationCallback();
 
+    // R29 (D2): grade-publish detection rides the very page this fetch
+    // just parsed - no second request. Fire-and-forget: a slow prefs or a
+    // notification failure must never delay `ready` or the login flow.
+    unawaited(_diffLedgerAndNotify());
+
     if (kDebugMode) {
       print("Got profile data!");
     }
@@ -648,6 +665,70 @@ class CampusManager extends KITLoginManager {
       // scheduleFetchingTimer ??= Timer(const Duration(minutes: 1), forceRefetchEverything);
     }
   }
+
+  /// R29 (D2): grade-publish detector for one freshly parsed Studienverlauf.
+  /// Diffs the deduplicated tree against the last fetch's compact snapshot
+  /// (DATA_ledgerSnapshot, jsonEncode of `ledgerSnapshot`) and pushes each
+  /// publication. Seed run (empty/undecodable snapshot) announces NOTHING
+  /// and only stores - 30 already-graded modules are not 30 announcements,
+  /// they are just the state the app learned about. Logout purges DATA_*,
+  /// so the next account re-seeds instead of inheriting the old ledger's
+  /// "news". Burst cap 3: the campus publishes whole term batches at once
+  /// and five pushes in a row teach the user to mute the app.
+  Future<void> _diffLedgerAndNotify() async {
+    try {
+      // epoch captured BEFORE the first await: captured after it, a
+      // logout during getInstance would land on the already-incremented
+      // value and the fence below could never fire
+      final epoch = _teardownEpoch;
+      final prefs = await SharedPreferences.getInstance();
+      Map<String, String> previous = const {};
+      final raw = prefs.getString(_ledgerSnapshotKey);
+      if (raw != null && raw.isNotEmpty) {
+        try {
+          previous = {
+            for (final e in (jsonDecode(raw) as Map).entries)
+              if (e.key is String && e.value is String)
+                e.key as String: e.value as String,
+          };
+        } on Object {
+          previous = const {}; // poisoned snapshot -> seed run, not spam
+        }
+      }
+      final book = GradeBook.fromRows(moduleRows,
+          ectsAcquiredTotal: student.ectsAcquired, avgMark: student.avgMark);
+      final snapshot = ledgerSnapshot(book.modules);
+      final events = ledgerDiff(now: book.modules, previous: previous);
+      // FENCE before ANY write: logout is invisible below this line's
+      // first await otherwise, and storing the snapshot after the
+      // teardown would re-seed the swept DATA_ledger* keys with the old
+      // account's grades (the exact C81 hazard the poll tail documents)
+      if (epoch != _teardownEpoch) return; // logout mid-flight
+      // snapshot advances BEFORE the pushes: at-most-once announcements,
+      // the same trade the CHANGED heads-up made (a push lost to a plugin
+      // throw must never re-fire on the next refresh as "news")
+      await prefs.setString(_ledgerSnapshotKey, jsonEncode(snapshot));
+      // the chips mirror the SAME events the pushes were built from
+      // (replaced, not merged: "neu" means since the last publish, not
+      // ever); cleared to [] on a quiet fetch so the chip never outlives
+      // the news cycle it marks
+      ledgerNewKeys = [for (final e in events) e.titleKey];
+      await prefs
+          .setString(_ledgerAnnouncedKey, jsonEncode(ledgerNewKeys));
+      for (final e in events.take(3)) {
+        await MeiNotifications.notifyGradePublished(
+            L10n.t(e.changed
+                ? "notifs.gradeChangedTitle"
+                : "notifs.gradePublishedTitle"),
+            L10n.t("notifs.gradePublishedBody", [e.title, e.gradeLabel]));
+      }
+    } on Object catch (e) {
+      if (kDebugMode) print("ledger diff failed: $e");
+    }
+  }
+
+  static const _ledgerSnapshotKey = "DATA_ledgerSnapshot";
+  static const _ledgerAnnouncedKey = "DATA_ledgerAnnounced";
 
   Future<bool> fetchModulesForRows(List<HierarchicTableRow> rowsToFetch,
       {inParallel = true}) async {
@@ -1984,6 +2065,7 @@ class CampusManager extends KITLoginManager {
       rememberEnrolledTitles(feed);
       unawaited(MeiNotifications.scheduleLectureReminders(feed));
       unawaited(MeiNotifications.scheduleMorningDigest(feed));
+      unawaited(MeiNotifications.scheduleEveningDigest(feed)); // R29
     }
     notificationCallback();
   }
@@ -2029,6 +2111,7 @@ class CampusManager extends KITLoginManager {
       // digest must see the injected tutorials too: without this, the
       // "Today: N classes · First at ..." body kept the pre-SignMeUp set
       unawaited(MeiNotifications.scheduleMorningDigest(feed));
+      unawaited(MeiNotifications.scheduleEveningDigest(feed)); // R29
       notificationCallback();
     }
   }
@@ -2072,6 +2155,7 @@ class CampusManager extends KITLoginManager {
       rememberEnrolledTitles(feed);
       unawaited(MeiNotifications.scheduleLectureReminders(feed));
       unawaited(MeiNotifications.scheduleMorningDigest(feed));
+      unawaited(MeiNotifications.scheduleEveningDigest(feed)); // R29
       notificationCallback();
     }
   }
@@ -2698,6 +2782,7 @@ class CampusManager extends KITLoginManager {
       }
       unawaited(MeiNotifications.scheduleLectureReminders(merged ?? feed));
       unawaited(MeiNotifications.scheduleMorningDigest(merged ?? feed));
+      unawaited(MeiNotifications.scheduleEveningDigest(merged ?? feed)); // R29
 
       // the subscription is fresh; give the personal calendar its quiet
       // top-up (throttled internally, keeps the old copy on any failure)

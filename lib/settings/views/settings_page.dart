@@ -14,8 +14,10 @@ import 'package:kit_mobile/settings/providers/settings_provider.dart';
 import 'package:kit_mobile/settings/types/multiple_choice_setting.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../credentials/data/credentials_provider.dart';
+import '../../diagnostics/support_state.dart';
 import '../../info/views/info_page.dart';
 import '../../l10n/l10n.dart';
 import '../../local_files_storage/views/pages/files_cache_page.dart';
@@ -46,6 +48,8 @@ class _SettingsPageState extends State<SettingsPage> {
     final vm = Provider.of<KITProvider>(context);
     final credsVM = Provider.of<CredentialsProvider>(context);
     final settingsVM = Provider.of<SettingsProvider>(context);
+    final cm = vm.campusManager;
+    final scheme = Theme.of(context).colorScheme;
 
     // final theme = Theme.of(context);
 
@@ -246,6 +250,113 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ),
                 ],
+
+                // R29 (X1): support bundle - the paste that makes a dead
+                // feed debuggable from the outside. In release builds the
+                // Debug card above is compiled out, so this is the only
+                // diagnostics exit; shares plain text through the OS sheet.
+                SettingsSectionTitle(title: L10n.t("settings.sectionSupport")),
+                BlockContainer(
+                  child: Semantics(
+                    button: true,
+                    label: L10n.t("settings.shareBundle"),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () async {
+                        final bundle = await SupportState.buildBundle();
+                        if (!mounted) return;
+                        await SharePlus.instance
+                            .share(ShareParams(text: bundle));
+                      },
+                      child: ConstrainedBox(
+                        // >= 48 dp tap target
+                        constraints: const BoxConstraints(minHeight: 48),
+                        child: SettingRow(
+                          title: L10n.t("settings.shareBundle"),
+                          trailing: const Icon(CupertinoIcons.share),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // R29 (X4): the two silent opt-ins - personal ICS and Anny
+                // sign-in - used to have no visible state anywhere except
+                // their own pages; a "why is my own calendar missing from
+                // the agenda" now answers itself here. Read-only status:
+                // the opt-in UI stays on the owning pages.
+                SettingsSectionTitle(title: L10n.t("settings.sectionSetup")),
+                BlockContainer(
+                  child: Column(
+                    children: [
+                      SettingRow(
+                        title: L10n.t("settings.setupPersonalIcs"),
+                        trailing: Text(
+                            cm.personalIcs.trim().isNotEmpty
+                                ? L10n.t("settings.setupOn")
+                                : L10n.t("settings.setupOff"),
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: cm.personalIcs.trim().isNotEmpty
+                                    ? scheme.tertiary
+                                    : scheme.outline)),
+                      ),
+                      SettingRow(
+                        title: L10n.t("settings.setupAnny"),
+                        trailing: Text(
+                            vm.anny.signedIn
+                                ? L10n.t("settings.setupOn")
+                                : L10n.t("settings.setupOff"),
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: vm.anny.signedIn
+                                    ? scheme.tertiary
+                                    : scheme.outline)),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // R29 (X3): the storage story existed only in code
+                // comments - here it is the user's. Every claim checked
+                // against the manifest (allowBackup=false,
+                // dataExtractionRules), the logout sweep (DATA_*) and the
+                // secure-storage credentials; the crash tail is the one
+                // survivor of logout precisely because it holds no
+                // personal data (scrubbed before storage).
+                SettingsSectionTitle(
+                    title: L10n.t("settings.sectionStorage")),
+                BlockContainer(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(L10n.t("settings.storageIntro"),
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              color: scheme.onSurfaceVariant)),
+                      const SizedBox(height: 6),
+                      for (final item in const [
+                        "settings.storageCreds",
+                        "settings.storageCache",
+                        "settings.storagePrefs",
+                        "settings.storageBundle",
+                      ])
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Text("•  ${L10n.t(item)}",
+                              style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: scheme.onSurfaceVariant)),
+                        ),
+                      const SizedBox(height: 6),
+                      Text(L10n.t("settings.storageOutro"),
+                          style: TextStyle(
+                              fontSize: 11, color: scheme.outline)),
+                    ],
+                  ),
+                ),
 
                 const SizedBox(height: 16),
                 OutlinedButton(

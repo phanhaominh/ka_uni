@@ -20,6 +20,18 @@ const Map<String, String> de_grades = {
   "grades.sectionPending": "Ohne Note",
   "grades.pendingState": "offen",
   "grades.cp": "{0} CP",
+  // R29 (D1/D2): grade simulator + publish markers
+  "grades.newBadge": "neu",
+  "grades.simWeightedLabel": "Gewichtet (CP)",
+  "grades.simDiverges":
+      "Gewichteter Schnitt berücksichtigt nur bewertete Module – "
+      "verbindlich bleibt der amtliche Notenschnitt.",
+  "grades.simTarget": "Ziel-Schnitt",
+  "grades.simNeeded": "Nötige Note: {0}",
+  "grades.simImpossible": "Auch mit 1,0 nicht erreichbar",
+  "grades.simNoCp": "Ohne CP-Angabe nicht berechenbar",
+  "grades.simNote":
+      "Rechnerische Prognose – amtlich bleibt der angezeigte Notenschnitt.",
   "grades.empty": "Noch keine Noten vorhanden.\n"
       "(Nicht angemeldet oder Studienverlauf noch nicht geladen.)",
   "grades.ampelTitle": "MEI-Fortschritt (SPO 2024)",
@@ -55,6 +67,18 @@ const Map<String, String> en_grades = {
   "grades.sectionPending": "In progress",
   "grades.pendingState": "open",
   "grades.cp": "{0} CP",
+  // R29 (D1/D2): grade simulator + publish markers
+  "grades.newBadge": "new",
+  "grades.simWeightedLabel": "Weighted (CP)",
+  "grades.simDiverges":
+      "Weighted average counts only graded modules – the official "
+      "average stays authoritative.",
+  "grades.simTarget": "Target average",
+  "grades.simNeeded": "Grade needed: {0}",
+  "grades.simImpossible": "Out of reach even with a 1,0",
+  "grades.simNoCp": "Cannot compute without a CP value",
+  "grades.simNote":
+      "Projected estimate – the displayed official average stays authoritative.",
   "grades.empty": "No grades yet.\n"
       "(Not signed in, or the study record has not loaded yet.)",
   "grades.ampelTitle": "MEI progress (SPO 2024)",

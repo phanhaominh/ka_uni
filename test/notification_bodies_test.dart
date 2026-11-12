@@ -80,4 +80,38 @@ void main() {
     expect(deduped.map((o) => o.title),
         ["Analysis I", "Analysis I (Übung)", "Analysis I"]);
   });
+
+  // R29 (R2): evening digest wording - the frame says "Morgen", so no
+  // body may claim "Heute"; the lecture taxonomy must match the morning
+  // digest exactly (Due rows are no classes, Klausur-only days say Klausur)
+  test("evening digest frames tomorrow, never 'Heute'", () {
+    final (title, body) = MeiNotifications.eveningTexts(
+        [_occ("Analysis I", 8), _occ("Mechanik A", 10)]);
+    expect(title, "Morgen");
+    expect(body, contains("08:00"));
+    expect(body, contains("Analysis I"));
+    expect(body, contains("+1 weitere"));
+    expect(body, isNot(contains("Heute")));
+  });
+
+  test("evening digest keeps morning taxonomy for due/exam/free days", () {
+    final due = MeiNotifications.eveningTexts([_occ("Due: Abgabe", 12)]);
+    expect(due.$1, "Morgen");
+    expect(due.$2, isNot(contains("Veranstaltung")));
+    expect(due.$2, contains("Fällig"));
+
+    final exam =
+        MeiNotifications.eveningTexts([_occ("Klausur: Analysis I", 9)]);
+    expect(exam.$2, contains("Klausur"));
+
+    final free = MeiNotifications.eveningTexts([]);
+    expect(free.$1, "Morgen");
+    expect(free.$2, contains("Keine Veranstaltungen"));
+    expect(free.$2, isNot(contains("Heute")));
+
+    final cancelled =
+        MeiNotifications.eveningTexts([], const ["Thermodynamik"]);
+    expect(cancelled.$2, contains("Thermodynamik"));
+    expect(cancelled.$2, isNot(contains("Heute")));
+  });
 }

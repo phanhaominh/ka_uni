@@ -8,6 +8,8 @@ import '../../l10n/l10n.dart';
 import '../../state_management/campus/campus_manager.dart';
 import '../../toasts/models/toasts_provider.dart';
 import '../../state_management/kit_provider.dart';
+import '../logic/exam_clash.dart';
+import '../logic/exam_countdown.dart';
 import '../models/exam_list.dart';
 
 /// Exam registration overview: Anmeldung windows, status, red flag for
@@ -121,6 +123,13 @@ class ExamsPage extends StatelessWidget {
                         padding: const EdgeInsets.only(top: 200),
                         child: Center(child: Text(L10n.t("exams.empty"))),
                       ),
+                    // R29: counters first - "how long until each Klausur"
+                    // is the page's headline question, and a real time
+                    // collision outranks everything below it
+                    if (registered.isNotEmpty) ...[
+                      _clashCard(context, exams, now),
+                      _countdownCard(context, exams, now),
+                    ],
                     if (open.isNotEmpty)
                       _section(
                           context, L10n.t("exams.sectionActNow"), open, now,
@@ -252,6 +261,130 @@ class ExamsPage extends StatelessWidget {
                       style: TextStyle(fontSize: 11, color: scheme.outline)),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// R29: day counter for every registered sitting ("in 12 Tagen ·
+  /// Analysis I · 23.03.2027 09:00"). All wording/math comes from
+  /// [examCountdowns] + the app's shared relative-date helper, so the
+  /// agenda's next-exam card and this list can never disagree.
+  Widget _countdownCard(
+      BuildContext context, List<ExamEntry> exams, DateTime now) {
+    final list = examCountdowns(exams, now, limit: 6);
+    if (list.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(L10n.t("exams.countdownTitle"),
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            for (final c in list)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 96,
+                      child: Text(
+                        // room, when ambiguous, is deliberately absent:
+                        // two pool sittings share the start and showing
+                        // one room would misattribute the sibling's
+                        L10n.dayOffset(c.at, now),
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: scheme.tertiary),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(c.exam.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              color: scheme.onSurfaceVariant)),
+                    ),
+                    Text(L10n.stamp(c.at),
+                        style:
+                            TextStyle(fontSize: 11, color: scheme.outline)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// R29 (D4): CasCampus silently registers two exams at the same hour -
+  /// a collision the student only notices at the door. RED needs provable
+  /// time overlap (both spans parsed, strict intersection); same-day is
+  /// amber only, and unknown spans are reported as UNCHECKABLE, never
+  /// folded into an "all clear" the app cannot guarantee.
+  Widget _clashCard(
+      BuildContext context, List<ExamEntry> exams, DateTime now) {
+    final report = findExamClashes(exams, now);
+    if (report.clashes.isEmpty && report.uncomparable == 0) {
+      return const SizedBox.shrink();
+    }
+    final scheme = Theme.of(context).colorScheme;
+    final overlap =
+        report.clashes.any((c) => c.kind == ClashKind.overlap);
+    final color = overlap ? scheme.error : scheme.tertiary;
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side:
+            BorderSide(color: color.withValues(alpha: 0.6), width: 1.2),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(overlap ? Icons.error_outline : Icons.warning_amber,
+                    size: 18, color: color),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                      L10n.t(overlap
+                          ? "exams.clashOverlapTitle"
+                          : "exams.clashSameDayTitle"),
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600, color: color)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            for (final c in report.clashes.take(3))
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Text(
+                    L10n.t("exams.clashLine",
+                        [c.a.title, c.b.title, L10n.stamp(c.when)]),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 12.5, color: scheme.onSurfaceVariant)),
+              ),
+            if (report.uncomparable > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(L10n.t("exams.clashUnknown",
+                    [report.uncomparable]),
+                    style: TextStyle(fontSize: 11, color: scheme.outline)),
+              ),
           ],
         ),
       ),

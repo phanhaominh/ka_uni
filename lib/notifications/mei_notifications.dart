@@ -36,7 +36,10 @@ const String channelIdLibrary = "mei_library";
 /// list: 10-400 lecture T−30 · 410-499 T−15 re-arm for CHANGED lectures
 /// (R12) · 500-600 exam registration deadlines · 700-799 SignMeUp
 /// deadlines · 800-819 library seat check-in pings (LibraryNotifications)
-/// · 900-999 morning digest · 1000-1019 CHANGED heads-up rotation.
+/// · 900-999 morning digest · 1000-1019 CHANGED heads-up rotation ·
+/// 1100-1199 evening digest (R29, id = 1100 + day-of-month of TOMORROW) ·
+/// 1200-1239 grade-published pushes (R29, immediate, wall-clock slot like
+/// [changeSlot]).
 class MeiNotifications {
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -61,6 +64,17 @@ class MeiNotifications {
   /// navigate to and a dispatch must be a no-op.
   static void Function(String? payload)? onTapPayload;
 
+  /// R29 (P3): notification ACTION-button hook (distinct from taps: an
+  /// action tap arrives with a non-null actionId). Wired once by main()
+  /// next to [onTapPayload]; null in the poll isolate -> actions are a
+  /// no-op there, which is honest (the button that clears a badge needs
+  /// the UI process to redraw that badge).
+  static void Function(String actionId, String? payload, int id)?
+      onActionPayload;
+
+  /// R29 (P3): the one action button we post - "seen" on CHANGED heads-ups.
+  static const actionSeen = "seen";
+
   /// C66: inputs of the last [scheduleExamReminders] rebuild; replayed by
   /// [resyncOnStartup] so the deadline family tracks last-known state.
   static const _examSnapshotKey = "DATA_examReminderSnapshot";
@@ -71,6 +85,11 @@ class MeiNotifications {
 
   static bool _canScheduleExact = true;
 
+  /// R29 (X1): the support bundle reports honest exact-alarm state; the
+  /// private flag plus its inexact fallback already handle every denial,
+  /// this getter only exists for the bundle.
+  static bool get canScheduleExact => _canScheduleExact;
+
   static Future<void> init({bool requestPermissions = true}) async {
     if (_ready || !supported) return;
     tzdata.initializeTimeZones();
@@ -78,9 +97,22 @@ class MeiNotifications {
         const InitializationSettings(
             android: AndroidInitializationSettings("@mipmap/ic_launcher")),
         // taps dispatch through the routing hook; set at registration
-        // time already, so main()'s wiring can never be too late
-        onDidReceiveNotificationResponse: (response) =>
-            onTapPayload?.call(response.payload));
+        // time already, so main()'s wiring can never be too late. R29:
+        // an ACTION-button press reports through the same callback with
+        // actionId set - route it to the action hook, never to deep
+        // links (a "seen" press must not also push the agenda)
+        onDidReceiveNotificationResponse: (response) {
+          final actionId = response.actionId;
+          if (actionId != null) {
+            // NotificationResponse.id is nullable (OS-restore spew); a
+            // missing id still gets dispatched - the seen handler's
+            // cancel(-1) is a harmless no-op and the prefs clear stands
+            onActionPayload?.call(
+                actionId, response.payload, response.id ?? -1);
+            return;
+          }
+          onTapPayload?.call(response.payload);
+        });
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.createNotificationChannel(AndroidNotificationChannel(
@@ -225,7 +257,16 @@ class MeiNotifications {
         NotificationDetails(
             android: AndroidNotificationDetails(
                 channelIdChanges, L10n.t("notifs.channelChanges"),
-                importance: Importance.max)),
+                importance: Importance.max,
+                // R29 (P3): the lock screen is where a change gets
+                // acknowledged - [acknowledgeChanges] clears the same
+                // prefs key the agenda dismiss button writes, and
+                // cancelNotification drops the shade entry on press
+                actions: [
+                  AndroidNotificationAction(
+                      actionSeen, L10n.t("notifs.actionSeen"),
+                      cancelNotification: true),
+                ])),
         // v19 carries the payload on the show/schedule call itself, it comes
         // back verbatim in the tap's NotificationResponse
         payload: payload ?? NotificationPayload.agendaChanges);
@@ -577,6 +618,127 @@ class MeiNotifications {
           [List<String> cancelledTitles = const []]) =>
       DayDecision.digestTexts(occ, cancelledTitles);
 
+  /// R29 (R2): evening digest - ONE planning notification at 20:30 about
+  /// TOMORROW. The "is it worth traveling to campus tomorrow" decision is
+  /// made in the evening; the 07:30 digest arrives after it. Same discipline
+  /// as [scheduleMorningDigest]: epoch fence before writes, cancelRange then
+  /// re-arm, permission-free init for the poll isolate, and noData/staleFeed
+  /// days are SKIPPED - never assert a plan off data we do not trust.
+  /// Scheduling note: 20:30 of TODAY is the only candidate; a re-arm that
+  /// first happens after 20:30 (app asleep all day) skips that evening
+  /// rather than firing a stale planning line at 23:00 - every actively
+  /// used day re-arms via the 30-min poll well before the slot.
+  static Future<void> scheduleEveningDigest(WebcalFeed feed) async {
+    if (!MeiNotifications.supported) return;
+    // C61: contained fire-and-forget scheduler (see the lecture family).
+    try {
+      if (!_ready) await init(requestPermissions: false);
+      final epoch = teardownEpoch;
+      await _cancelRange(1100, 1199);
+      final now = DateTime.now();
+      final pendingChanges = IcsChange.decode(await SharedPreferencesAsync()
+              .getString(WebcalKeys.changes) ??
+          "");
+      final day = DateTime(now.year, now.month, now.day + 1);
+      final decision = DayDecision.compute(
+          feed: feed, day: day, feedFresh: true, changes: pendingChanges);
+      if (decision.kind == DayDecisionKind.noData ||
+          decision.kind == DayDecisionKind.staleFeed) {
+        return;
+      }
+      final at = DateTime(now.year, now.month, now.day, 20, 30);
+      if (!at.isAfter(now)) return; // evening already past - see doc above
+      final (title, body) =
+          eveningTexts(decision.lectures, decision.cancelledTitles);
+      if (epoch != teardownEpoch) return; // logout mid-flight
+      await _zoned(1100 + day.day, channelIdDaily, title, body, at,
+          deadlines: false,
+          // NOT agendaToday: at 20:30 the "today" section is the wrong
+          // answer to "Morgen ..." - open the agenda top and let the user
+          // scroll into tomorrow
+          payload: NotificationPayload.agenda);
+    } on Object catch (e) {
+      if (kDebugMode) print("evening digest failed: $e");
+    }
+  }
+
+  /// Title/body pair for the evening digest (pure, testable). Same lecture
+  /// taxonomy as [DayDecision.digestTexts] (a "Due:" row is no class, a
+  /// day of only "Klausur:" rows says Klausur) - only the frame differs:
+  /// the title is "Morgen", so the bodies must not claim "Heute".
+  @visibleForTesting
+  static (String, String) eveningTexts(List<IcsOccurrence> occ,
+      [List<String> cancelledTitles = const []]) {
+    final morning = DayDecision.digestTexts(occ, cancelledTitles);
+    String hm(DateTime d) =>
+        "${d.hour.toString().padLeft(2, "0")}:${d.minute.toString().padLeft(2, "0")}";
+    final title = L10n.t("notifs.eveningTitle");
+    if (occ.isEmpty) return (title, morning.$2); // free / cancelled: fits
+    final lectureList = occ.where((o) => !o.title.startsWith("Due: ")).toList();
+    if (lectureList.isEmpty) return (title, morning.$2); // due-only day
+    final first = lectureList.first;
+    if (lectureList.every((o) => o.title.startsWith("Klausur: "))) {
+      return (title, morning.$2); // "Klausur um ..." needs no rewrite
+    }
+    final more = lectureList.length > 1
+        ? L10n.t("notifs.eveningMore", [lectureList.length - 1])
+        : "";
+    final cancelHint = cancelledTitles.isEmpty
+        ? ""
+        : " · " + L10n.t("notifs.digestCancelHint", [cancelledTitles.first]);
+    return (
+      title,
+      L10n.t("notifs.eveningLecture",
+          [hm(first.start), first.displayTitle, "$more$cancelHint"]),
+    );
+  }
+
+  /// R29 (P3): "seen" press on a CHANGED heads-up - the lock screen IS the
+  /// place the change gets acknowledged; until now the badge only cleared
+  /// by opening the agenda. Mirrors agenda_page._dismissChanges exactly:
+  /// the platform prefs key is the single source (the poll isolate reads
+  /// it LIVE), and the caller additionally repaints via notificationCallback
+  /// from the UI wiring. Cancelling the pressed id (plus the OS-side
+  /// cancelNotification on the action) clears the shade; the rotation band
+  /// reuses ids, so a stale entry could otherwise outlive the dismissal.
+  static Future<void> acknowledgeChanges(int id) async {
+    if (!supported) return;
+    if (!_ready) await init(requestPermissions: false);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(WebcalKeys.changes);
+      await _plugin.cancel(id);
+    } on Object catch (e) {
+      if (kDebugMode) print("acknowledgeChanges failed: $e");
+    }
+  }
+
+  /// R29 (D2): grade-published push - one per published grade, fired from
+  /// the ledger diff at the next fetch. Immediate like [notifyChange]
+  /// (wall-clock minute bucket, rotation spreads bursts); deadlines channel
+  /// because a new grade is exactly the kind of news the user mutes least.
+  static Future<void> notifyGradePublished(String title, String body) async {
+    if (!MeiNotifications.supported) return;
+    if (!_ready) await init(requestPermissions: false);
+    try {
+      await _plugin.show(
+          1200 +
+              changeSlot(
+                  DateTime.now().millisecondsSinceEpoch, _gradeSlotRotation++),
+          title,
+          body,
+          NotificationDetails(
+              android: AndroidNotificationDetails(
+                  channelIdDeadlines, L10n.t("notifs.channelDeadlines"),
+                  importance: Importance.max)),
+          payload: NotificationPayload.grades);
+    } on Object catch (e) {
+      if (kDebugMode) print("grade push failed: $e");
+    }
+  }
+
+  static int _gradeSlotRotation = 0;
+
   /// Full reminder + background-job teardown for logout.
   static Future<void> cancelAllScheduled() async {
     teardownEpoch++;
@@ -623,6 +785,8 @@ class MeiNotifications {
     if (feed != null) {
       await scheduleLectureReminders(feed);
       await scheduleMorningDigest(feed);
+      // R29 (R2): survives reboot like its morning sibling
+      await scheduleEveningDigest(feed);
     }
     await _replayExamReminders(prefs);
   }
@@ -948,6 +1112,9 @@ void meiBackgroundCallback() {
       final mergedFeed = WebcalFeed.parse(mergedRaw) ?? feed;
       await MeiNotifications.scheduleLectureReminders(mergedFeed);
       await MeiNotifications.scheduleMorningDigest(mergedFeed);
+      // R29 (R2): evening digest rides the same re-arm - the 30-min poll is
+      // what guarantees a 20:30 alarm exists before 20:30, app open or not
+      await MeiNotifications.scheduleEveningDigest(mergedFeed);
     } catch (e) {
       if (kDebugMode) {
         print("background poll failed: $e");

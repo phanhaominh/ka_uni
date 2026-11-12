@@ -24,6 +24,31 @@ const Map<String, String> de_settings = {
   "settings.sectionFileCache": "Dateicache",
   "settings.cacheSize": "Größe",
   "settings.manage": "Verwalten",
+  "settings.sectionSupport": "Support",
+  "settings.shareBundle": "Support-Infos teilen",
+  // R29 (X4): visible state of the silent opt-ins
+  "settings.sectionSetup": "Einrichtung",
+  "settings.setupPersonalIcs": "Persönlicher Kalender",
+  "settings.setupAnny": "Bibliothek (Anny)",
+  "settings.setupOn": "aktiv",
+  "settings.setupOff": "nicht eingerichtet",
+  // R29 (X3): storage manifest - claims verified against manifest,
+  // logout sweep and secure storage
+  "settings.sectionStorage": "Daten auf diesem Gerät",
+  "settings.storageIntro":
+      "Diese App hat keine eigenen Server. Alles Folgende liegt nur auf "
+      "diesem Gerät:",
+  "settings.storageCreds":
+      "Zugangsdaten – systemsicher Speicher (Keychain/Keystore)",
+  "settings.storageCache":
+      "Geladene Inhalte: Stundenplan, Noten, Prüfungen, ILIAS, Mensa, "
+      "Karten",
+  "settings.storagePrefs": "Ansichts- und Karteneinstellungen",
+  "settings.storageBundle":
+      "Anonymisierte Fehlerprotokolle (für den Support-Export)",
+  "settings.storageOutro":
+      "Kein Cloud-Backup, keine Telemetrie. Beim Ausloggen werden alle "
+      "personenbezogenen Daten gelöscht.",
   "settings.logout": "Ausloggen",
   "settings.loggedOut": "Ausgeloggt, alle Daten gelöscht",
   "settings.logoutFailed": "Ausloggen fehlgeschlagen – bitte erneut versuchen",
@@ -114,6 +139,30 @@ const Map<String, String> en_settings = {
   "settings.sectionFileCache": "File cache",
   "settings.cacheSize": "Size",
   "settings.manage": "Manage",
+  "settings.sectionSupport": "Support",
+  "settings.shareBundle": "Share support info",
+  // R29 (X4): visible state of the silent opt-ins
+  "settings.sectionSetup": "Setup",
+  "settings.setupPersonalIcs": "Personal calendar",
+  "settings.setupAnny": "Library (Anny)",
+  "settings.setupOn": "active",
+  "settings.setupOff": "not set up",
+  // R29 (X3): storage manifest - claims verified against manifest,
+  // logout sweep and secure storage
+  "settings.sectionStorage": "Data on this device",
+  "settings.storageIntro":
+      "This app has no servers of its own. All of the following lives "
+      "only on this device:",
+  "settings.storageCreds":
+      "Credentials – system secure storage (Keychain/Keystore)",
+  "settings.storageCache":
+      "Loaded content: timetable, grades, exams, ILIAS, mensa, maps",
+  "settings.storagePrefs": "View and map preferences",
+  "settings.storageBundle":
+      "Anonymized error logs (for the support export)",
+  "settings.storageOutro":
+      "No cloud backup, no telemetry. Logging out deletes all personal "
+      "data.",
   "settings.logout": "Log out",
   "settings.loggedOut": "Logged out, all data deleted",
   "settings.logoutFailed": "Logout failed - please try again",

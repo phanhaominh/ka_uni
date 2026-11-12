@@ -264,6 +264,15 @@ class L10n {
     "notifs.digestBodyFree": " Keine Veranstaltungen – gute Lernzeit.",
     "notifs.digestBodyCancelled": " Alles entfällt: {0}",
     "notifs.digestCancelHint": "{0} entfällt",
+    // R29: evening digest (plan tomorrow at 20:30), lock-screen "seen"
+    // action, grade-published push
+    "notifs.eveningTitle": "Morgen",
+    "notifs.eveningLecture": "{0} · {1}{2}",
+    "notifs.eveningMore": " +{0} weitere",
+    "notifs.actionSeen": "Verstanden",
+    "notifs.gradePublishedTitle": "Neue Note",
+    "notifs.gradeChangedTitle": "Note geändert",
+    "notifs.gradePublishedBody": "{0} · {1}",
     "notifs.reminderFrom": "ab {0}",
     // round 3: travel hints
     "agenda.walkOk": "Fußweg ca. {0} Min",
@@ -410,6 +419,15 @@ class L10n {
     "notifs.digestBodyFree": " Nothing scheduled – good studying day.",
     "notifs.digestBodyCancelled": " All cancelled: {0}",
     "notifs.digestCancelHint": "{0} cancelled",
+    // R29: evening digest (plan tomorrow at 20:30), lock-screen "seen"
+    // action, grade-published push
+    "notifs.eveningTitle": "Tomorrow",
+    "notifs.eveningLecture": "{0} · {1}{2}",
+    "notifs.eveningMore": " +{0} more",
+    "notifs.actionSeen": "Seen",
+    "notifs.gradePublishedTitle": "New grade",
+    "notifs.gradeChangedTitle": "Grade updated",
+    "notifs.gradePublishedBody": "{0} · {1}",
     "notifs.reminderFrom": "from {0}",
     "agenda.walkOk": "~{0} min walk",
     "agenda.walkTight": "Only {0} min break – ~{1} min walk",

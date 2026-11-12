@@ -16,6 +16,13 @@ const Map<String, String> de_exams = {
   "exams.detailDeadline": "Anmelden bis: {0}",
   "exams.detailExaminers": "Prüfer: {0}",
   "exams.chipRegistered": "angemeldet",
+  // R29: countdown card + exam-clash warner
+  "exams.countdownTitle": "Countdown",
+  "exams.clashOverlapTitle": "Zeitgleiche Prüfungen",
+  "exams.clashSameDayTitle": "Prüfungen am selben Tag",
+  "exams.clashLine": "{0} + {1} · {2}",
+  "exams.clashUnknown":
+      "{0} Prüfungen ohne Uhrzeit – Überschneidung nicht prüfbar",
   "exams.chipNotRegisteredNow": "NICHT angemeldet",
   "exams.chipNotRegistered": "nicht angemeldet",
 };
@@ -36,6 +43,13 @@ const Map<String, String> en_exams = {
   "exams.detailDeadline": "Register by: {0}",
   "exams.detailExaminers": "Examiner: {0}",
   "exams.chipRegistered": "registered",
+  // R29: countdown card + exam-clash warner
+  "exams.countdownTitle": "Countdown",
+  "exams.clashOverlapTitle": "Overlapping exams",
+  "exams.clashSameDayTitle": "Exams on the same day",
+  "exams.clashLine": "{0} + {1} · {2}",
+  "exams.clashUnknown":
+      "{0} exams without a time – overlap cannot be checked",
   "exams.chipNotRegisteredNow": "NOT registered",
   "exams.chipNotRegistered": "not registered",
 };

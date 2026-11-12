@@ -22,6 +22,7 @@ import 'package:provider/provider.dart';
 
 import 'constants/view_constants.dart';
 import 'credentials/views/login_view.dart';
+import 'diagnostics/support_state.dart';
 import 'navigation/notification_deep_links.dart';
 import 'navigation/views/kit_nav_container.dart';
 
@@ -53,6 +54,26 @@ void main() async {
     // registered inside can dispatch straight through to the router
     MeiNotifications.onTapPayload =
         NotificationDeepLinkRouter.instance.handleTap;
+    // R29 (P3): the "seen" button on a CHANGED heads-up. Clearing the
+    // prefs key + the shade entry is process-free; the badge repaint needs
+    // the live provider, so route through the navigator key's context.
+    // A logged-out heads-up (logout cleared the data but the notification
+    // still sits on the lock screen) must still clear quietly - the
+    // `late` campusManager access is fenced for exactly that case.
+    MeiNotifications.onActionPayload =
+        (String actionId, String? payload, int id) async {
+      if (actionId != MeiNotifications.actionSeen) return;
+      await MeiNotifications.acknowledgeChanges(id);
+      try {
+        final ctx = NotificationDeepLinkRouter
+            .instance.navigatorKey.currentContext;
+        if (ctx != null) {
+          Provider.of<KITProvider>(ctx, listen: false)
+              .campusManager
+              .notificationCallback();
+        }
+      } on Object catch (_) {}
+    };
     await MeiNotifications.init();
     // cold start: the tap that LAUNCHED the app never reaches the callback
     // above; harvest its payload from the launch details. The main shell
@@ -77,7 +98,20 @@ void main() async {
     if (kDebugMode) print("notifications bootstrap failed: $e");
   }
 
-  runApp(const MyApp());
+  // R29 (X1): release builds used to die silently - no zone, no
+  // FlutterError handler, no trail; a user's "the exam list is empty
+  // again" left us with nothing. Every uncaught framework or zone error
+  // now lands in the persisted, scrubbed crash tail (see SupportState)
+  // that the settings export ships; debug still prints through
+  // presentError. runApp must stay INSIDE the zone: pre-runApp failures
+  // are caught by the surrounding try blocks or crash visibly by design.
+  await SupportState.load();
+  FlutterError.onError = (details) {
+    unawaited(SupportState.record(details.exception, "flutter"));
+    FlutterError.presentError(details);
+  };
+  runZonedGuarded(() => runApp(const MyApp()),
+      (e, _) => unawaited(SupportState.record(e)));
 }
 
 class MyApp extends StatelessWidget {
