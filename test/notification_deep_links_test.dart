@@ -86,6 +86,9 @@ void main() {
     });
     test("exam registration deadline -> exams", () {
       expect(deepLinkForPayload('exams'), NotificationDeepLink.exams);
+      // R21: the check-in ping's payload must route to the library page
+      expect(deepLinkForPayload('library:checkin'),
+          NotificationDeepLink.library);
     });
     test("signmeup deadline -> agenda (card only renders there)", () {
       // SignMeUp reminders post the plain agenda payload: /exams shows

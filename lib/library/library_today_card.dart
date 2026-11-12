@@ -62,7 +62,8 @@ class _LibraryTodayCardState extends State<LibraryTodayCard> {
 
   void _openPage() {
     unawaited(pushPageOnce<void>(Navigator.of(context),
-        routeName: "/library", page: (_) => const LibraryPage()));
+        routeName: LibraryPage.routeName,
+        page: (_) => const LibraryPage()));
   }
 
   /// the KIT library's 15-minute check-in rule (live capture + room
