@@ -272,6 +272,16 @@ class CredentialsProvider extends ChangeNotifier {
     } on Object catch (e) {
       failures.add("ilias logout: $e");
     }
+    // The library (Anny) session is the ONE login this app holds besides
+    // the KIT campus account: without this, logout left ANN_jwt/email +
+    // the ANNY_pass keychain copy behind, and the next authed call would
+    // silently re-mint a JWT for the LOGGED-OUT account on a shared device
+    // (audit R21, critical). signOut() itself clears triple+keychain+pings.
+    try {
+      await vm.anny.signOut();
+    } on Object catch (e) {
+      failures.add("library sign-out: $e");
+    }
     // Kill the background ICS poll BEFORE the sweep so no further run
     // starts against the dying token; the already-running poll lives in a
     // separate isolate and cannot be awaited from here - its own
@@ -297,7 +307,10 @@ class CredentialsProvider extends ChangeNotifier {
               k.startsWith("DATA_") ||
               k.startsWith("RMR ") ||
               k.startsWith("module_cache_") ||
-              k.startsWith("MIL "))
+              k.startsWith("MIL ") ||
+              // belt-and-braces for the library session (signOut above is
+              // the real teardown): no ANN_* may survive the sweep
+              k.startsWith("ANN_"))
           .toList()) {
         await prefs.remove(key);
       }

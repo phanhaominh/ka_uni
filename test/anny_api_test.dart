@@ -120,7 +120,7 @@ const _startDates = '['
 const _draft = '{"data":{"type":"orders","id":"82176221","attributes":{'
     '"access_token":"oat-7f3a","status":"draft","number":"469411"}},'
     '"included":[{"type":"bookings","id":"8217","attributes":{'
-    '"status":"reserved","number":"BB469411363",'
+    '"status":"reserved","number":"BB000000000",'
     '"start_date":"2026-11-13T10:00:00+01:00","end_date":"2026-11-13T11:00:00+01:00",'
     '"code":"!TIX5f0a"},"meta":{"cancelable_until":"2026-11-13T09:00:00+01:00"}},'
     '{"type":"resources","id":"3416","attributes":{"name":"A2.004"}}]}';
@@ -128,7 +128,7 @@ const _draft = '{"data":{"type":"orders","id":"82176221","attributes":{'
 const _orderDone = '{"data":{"type":"orders","id":"82176221","attributes":{'
     '"status":"completed","number":"469411"}},'
     '"included":[{"type":"bookings","id":"8217","attributes":{'
-    '"status":"accepted","number":"BB469411363"}}]}';
+    '"status":"accepted","number":"BB000000000"}}]}';
 
 // ---- stub client (pattern copied from test/anny_auth_test.dart) ----------
 
@@ -387,6 +387,20 @@ void main() {
           reason: "no UTC-shifted keys");
     });
 
+    test("freeNow: the open tail past the LAST start is NOT zeroed (R21)",
+        () async {
+      // room open now, but every selectable start is behind us (booking
+      // grid ends before closing time): the last tile covers now and its
+      // count is the honest answer - 0 here lied "closed"
+      final h = AnnyHttp(client: browseClient(intervals: () {
+        final past = DateTime.now().subtract(const Duration(minutes: 40));
+        return _Canned(200,
+            body: '[{"start_date":"${isoBerlin(past)}",'
+                '"available":true,"number_available":7,"unavailability_type":"none"}]');
+      }));
+      expect(await freeNow(h, _slug, 452), 7);
+    });
+
     test("freeNow reads the tile COVERING now (relative slots)", () async {
       final h = AnnyHttp(
           client:
@@ -599,7 +613,7 @@ void main() {
           end: DateTime.utc(2026, 11, 13, 10, 0));
 
       expect((got.oid, got.oat, got.bookingId, got.number),
-          ("82176221", "oat-7f3a", "8217", "BB469411363"),
+          ("82176221", "oat-7f3a", "8217", "BB000000000"),
           reason: "oid from data.id, oat from attributes.access_token, "
               "bookingId+BB number from the included booking");
 
@@ -677,9 +691,9 @@ void main() {
           oat: "oat-7f3a",
           givenName: "Ada",
           familyName: "Lovelace",
-          email: "ujpuu@student.kit.edu",
+          email: "alice@student.kit.edu",
           visitToken: "alvo-9");
-      expect(number, "BB469411363",
+      expect(number, "BB000000000",
           reason: "BB from included beats digit sub-order");
 
       final req = stub.call("POST", "/order?")!;
@@ -694,7 +708,7 @@ void main() {
         "customer": {
           "given_name": "Ada",
           "family_name": "Lovelace",
-          "email": "ujpuu@student.kit.edu",
+          "email": "alice@student.kit.edu",
         },
         "accept_terms": true,
         "payment_method": "",
@@ -837,7 +851,7 @@ void main() {
         () async {
       const body = '{"data":['
           '{"type":"bookings","id":"8217","attributes":{'
-          '"number":"BB469411363","status":"accepted",'
+          '"number":"BB000000000","status":"accepted",'
           '"start_date":"2026-11-13T10:00:00+01:00",'
           '"end_date":"2026-11-13T11:00:00+01:00",'
           '"code":"!TIX5f0a","cancelable_until":"2026-11-13T09:00:00+01:00"},'
@@ -862,7 +876,7 @@ void main() {
 
       expect(list.length, 1, reason: "canceled + start-less rows never show");
       final b = list.single;
-      expect((b.id, b.number, b.status), ("8217", "BB469411363", "accepted"));
+      expect((b.id, b.number, b.status), ("8217", "BB000000000", "accepted"));
       expect(b.isActive, isTrue);
       expect(b.start, DateTime(2026, 11, 13, 10),
           reason: "+01:00 instants surface as Berlin wall times");

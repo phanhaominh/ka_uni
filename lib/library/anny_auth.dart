@@ -237,12 +237,15 @@ class _SsoChain {
     var next = relay.headers["location"] == null
         ? consume
         : consume.resolve(relay.headers["location"]!);
+    _guardHost(next); // R21: the JWT-bearing walk is allowlisted from
+    // its very first hop — pre-fix the 302 answer of the consume POST
+    // was fetched before any guard could see it
     for (var hop = 0; hop < 8 && !_cookies.has("anny_shop_jwt"); hop++) {
       final hopResp = await _get(next, headers: _browser);
       _guardBlocked(hopResp, "SSO redirect chain");
       final loc = hopResp.headers["location"];
       if (loc == null) break;
-      next = next.resolve(loc);
+      next = _guardHost(next.resolve(loc));
     }
     final jwt = _cookies["anny_shop_jwt"];
     if (jwt == null) {
@@ -343,16 +346,33 @@ class _SsoChain {
 
   Future<({Uri url, http.Response response})> _follow(Uri start,
       {int maxHops = 6}) async {
-    var url = start;
+    var url = _guardHost(start);
     var resp = await _get(url, headers: _browser);
     for (var hop = 0; hop < maxHops; hop++) {
       if (!_isRedirect(resp.statusCode)) break;
       final loc = resp.headers["location"];
       if (loc == null) break;
-      url = url.resolve(loc);
+      url = _guardHost(url.resolve(loc));
       resp = await _get(url, headers: _browser);
     }
     return (url: url, response: resp);
+  }
+
+  /// The SAML assertion + session cookies may only ever travel inside
+  /// the KIT federation and anny's own domains: an off-allowlist or
+  /// plaintext-HTTP hop aborts the chain instead of leaking it (R21).
+  static Uri _guardHost(Uri url) {
+    final h = url.host;
+    final ok = url.isScheme("https") &&
+        (h == "anny.eu" ||
+            h.endsWith(".anny.eu") ||
+            h == "kit.edu" ||
+            h.endsWith(".kit.edu"));
+    if (!ok) {
+      throw AnnyAuthError(
+          AnnyAuthReason.markupChanged, "off-allowlist hop: ${url.origin}");
+    }
+    return url;
   }
 
   static bool _isRedirect(int status) =>
@@ -389,13 +409,14 @@ class _SsoChain {
       final action = _unescapeHtml(m.group(1)!);
       if (!action.contains("/idp/")) continue;
       final uri = pageUrl.resolve(action);
-      // The password POST must never leave KIT https — same pin as
-      // kitHttps() in kit_login_manager: an action escaping it means a
-      // hijacked/reshaped page, and credentials are already in hand.
-      if (uri.scheme != "https" ||
-          !(uri.host == "kit.edu" || uri.host.endsWith(".kit.edu"))) {
-        throw AnnyAuthError(AnnyAuthReason.ssoUnavailable,
-            "credential form action escapes KIT https (${uri.host})");
+      // The password POST goes to ONE host over https: an action
+      // escaping it means a hijacked/reshaped page, and credentials are
+      // already in hand. (R21: this used to trust every *.kit.edu sub —
+      // a single compromised campus host was enough to drink the KIT
+      // password of every user running this chain.)
+      if (uri.scheme != "https" || uri.host != "idp.scc.kit.edu") {
+        throw AnnyAuthError(AnnyAuthReason.markupChanged,
+            "credentials form moved to ${uri.host}");
       }
       return uri;
     }

@@ -83,9 +83,13 @@ class _LibraryTodayCardState extends State<LibraryTodayCard> {
     final DateTime now = DateTime.now();
     final AnnyBooking? active = anny.activeBooking;
 
-    // the countdown only ticks while a booking is pre-start or lapsing
-    final counting = active != null &&
+    // the countdown only ticks while a booking is pre-start or lapsing —
+    // and so does the BANNER: past start+15 the booking is lost, keeping
+    // "check in now!" lit on a dead booking for the rest of the day was
+    // the opposite of the alarm's point (R21)
+    final bool showBanner = active != null &&
         (_inLapseWindow(active, now) || _beforeStart(active, now));
+    final counting = showBanner;
     if (counting && _ticker == null) {
       _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
         if (mounted) setState(() {});
@@ -139,10 +143,22 @@ class _LibraryTodayCardState extends State<LibraryTodayCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (active != null) _bookingBanner(theme, active, now),
-                if (active != null) const SizedBox(height: spaceSm),
+                if (showBanner) _bookingBanner(theme, active, now),
+                if (showBanner) const SizedBox(height: spaceSm),
                 _favLine(theme, anny, now),
                 const SizedBox(height: spaceSm),
+                if (anny.fetchedAt case final DateTime at)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: spaceXs),
+                    child: Text(
+                      L10n.t("library.updatedAt", [
+                        "${at.hour.toString().padLeft(2, "0")}:"
+                            "${at.minute.toString().padLeft(2, "0")}"
+                      ]),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.outline),
+                    ),
+                  ),
                 if (!anny.signedIn)
                   FilledButton.tonal(
                     onPressed: () => showLibrarySignInDialog(context),
@@ -167,10 +183,13 @@ class _LibraryTodayCardState extends State<LibraryTodayCard> {
     }
 
     final Widget trailing = Row(mainAxisSize: MainAxisSize.min, children: [
-      CupertinoButton(
-        padding: const EdgeInsets.all(10),
-        onPressed: () => _refresh(anny, toasts),
-        child: const Icon(CupertinoIcons.arrow_clockwise),
+      Tooltip(
+        message: L10n.t("library.refresh"),
+        child: CupertinoButton(
+          padding: const EdgeInsets.all(10),
+          onPressed: () => _refresh(anny, toasts),
+          child: const Icon(CupertinoIcons.arrow_clockwise),
+        ),
       ),
       const SizedBox(width: spaceSm),
     ]);

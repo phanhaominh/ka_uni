@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../l10n/l10n.dart';
 import 'mei_notifications.dart';
+import 'notification_payload.dart';
 
 /// Check-in reminders for library seat bookings (plan W5).
 ///
@@ -38,16 +39,26 @@ class LibraryNotifications {
     if (!when.isAfter(DateTime.now().add(const Duration(seconds: 30)))) {
       return; // starts (almost) now or earlier: card countdown covers it
     }
-    final hhmm = '${when.hour.toString().padLeft(2, '0')}:'
-        '${when.minute.toString().padLeft(2, '0')}';
+    // the banner's {1} is the check-in DEADLINE (start + 15 min rule) —
+    // printing the start read as "already expired" at the moment it fired
+    final deadline = start.add(const Duration(minutes: 15));
+    final hhmm = '${deadline.hour.toString().padLeft(2, '0')}:'
+        '${deadline.minute.toString().padLeft(2, '0')}';
+    // logout-during-await fence (house rule on every _zoned caller): if a
+    // global logout tears the session down while the platform call is in
+    // flight, cancel what we just posted instead of resurrecting a ping
+    final epoch = MeiNotifications.teardownEpoch;
     try {
       await MeiNotifications.scheduleLibraryPing(
         idFor(bookingId),
         L10n.t("library.checkinBanner", [room, hhmm]),
         L10n.t("library.checkinHint"),
         when,
-        payload: "library:checkin",
+        payload: NotificationPayload.library,
       );
+      if (epoch != MeiNotifications.teardownEpoch) {
+        await cancelCheckin(bookingId);
+      }
     } on Object catch (e) {
       if (kDebugMode) print("library checkin schedule failed: $e");
     }

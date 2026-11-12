@@ -188,10 +188,18 @@ class MeiNotifications {
           tz.TZDateTime.from(whenLocal, tz.local),
           NotificationDetails(
               android: AndroidNotificationDetails(
-                  deadlines ? channelIdDeadlines : channelIdDaily,
-                  deadlines
-                      ? L10n.t("notifs.channelDeadlines")
-                      : L10n.t("notifs.channelTimetable"),
+                  // the CHANNEL argument wins (audit R21: it used to be
+                  // ignored — library pings landed on "Deadlines" while
+                  // their own channel sat empty; muting one family must
+                  // never silence another)
+                  channel,
+                  channel == channelIdLibrary
+                      ? L10n.t("notifs.channelLibrary")
+                      : channel == channelIdChanges
+                          ? L10n.t("notifs.channelChanges")
+                          : deadlines
+                              ? L10n.t("notifs.channelDeadlines")
+                              : L10n.t("notifs.channelTimetable"),
                   importance: Importance.high)),
           // Android 14 denies SCHEDULE_EXACT_ALARM by default; a throw here
           // used to abandon the whole family AFTER its cancelRange - zero

@@ -91,7 +91,7 @@ const _wrongPasswordPage = """<!DOCTYPE html>
 <form id="loginform" method="post" action="&#x2f;idp&#x2f;profile&#x2f;SAML2&#x2f;Redirect&#x2f;SSO;JSESSIONID=node01abc?execution=e1s2">
 <input type="hidden" name="execution" value="e1s2" />
 <input type="hidden" name="csrf_token" value="9f8e7d6c-csrf-token" />
-<input type="text" name="j_username" value="ujpuu" autocomplete="username" />
+<input type="text" name="j_username" value="alice" autocomplete="username" />
 <input type="password" name="j_password" autocomplete="current-password" />
 <button name="_eventId_proceed" value="login">Anmelden</button>
 </form>
@@ -230,7 +230,7 @@ List<_Route> happyRoutes({
     ];
 
 Future<Object?> signInFailure(_StubClient stub) => AnnyAuth(client: stub)
-    .signIn(kitUser: "ujpuu", password: pw)
+    .signIn(kitUser: "alice", password: pw)
     .then<Object?>((_) => null, onError: (Object e) => e);
 
 Future<AnnyAuthReason> failReason(_StubClient stub) async {
@@ -242,10 +242,52 @@ Future<AnnyAuthReason> failReason(_StubClient stub) async {
 // ---- tests ---------------------------------------------------------------
 
 void main() {
+  test("R21: an off-allowlist redirect hop aborts the chain", () async {
+    // the minting chain gets a 302 to a FOREIGN host: it must die there,
+    // carrying no assertion and no cookie across - and the foreign URL
+    // must never even be requested
+    final stub = _StubClient(happyRoutes(
+      consumeRelay: const _Canned(302, headers: {
+        "location": "https://anny.eu/steer?to=https%3A%2F%2Fevil.example.com%2Fsteal"
+      }),
+    ))
+      ..routes.insert(
+          0,
+          _Route("GET", "steer?to", () => const _Canned(302,
+              headers: {"location": "https://evil.example.com/steal"})));
+    final e = await signInFailure(stub) as AnnyAuthError;
+    expect(e.reason, AnnyAuthReason.markupChanged);
+    expect("${e.detail}", contains("off-allowlist"));
+    expect(
+        stub.requests
+            .any((r) => r.url.origin == "https://evil.example.com"),
+        isFalse,
+        reason: "the foreign ORIGIN must never be requested - the steer "
+            "URL merely names it in a query parameter");
+  });
+
+  test("R21: credentials POST pinned to idp.scc.kit.edu exactly", () async {
+    // a federated page pointing the login form at a LOOKALIKE host must
+    // not drink the KIT password
+    final evilForm = _idpFormPage.replaceAll(
+        r'action="&#x2F;idp&#x2f;profile',
+        r'action="https:&#x2F;&#x2F;idp.scc.kit.edu.sso-secure.example&#x2F;idp&#x2f;profile');
+    final stub = _StubClient(
+        happyRoutes(idpPage: _Canned(200, body: evilForm)));
+    final e = await signInFailure(stub) as AnnyAuthError;
+    expect(e.reason, AnnyAuthReason.markupChanged);
+    expect("${e.detail}", contains("credentials form moved"));
+    expect(stub.count("POST", "sso-secure.example"), 0,
+        reason: "the password POST is refused before it is built");
+    // and the password never appears in any recorded request
+    expect(stub.requests.map((r) => "${r.url}${r.body}").join(),
+        isNot(contains(pw)));
+  });
+
   test("happy path: full chain mints a proven session", () async {
     final stub = _StubClient(happyRoutes());
     final s =
-        await AnnyAuth(client: stub).signIn(kitUser: "ujpuu", password: pw);
+        await AnnyAuth(client: stub).signIn(kitUser: "alice", password: pw);
 
     expect(s.jwt, _jwt);
     expect(s.visitToken, "9d2f-visit-77");
@@ -274,7 +316,7 @@ void main() {
     expect(creds.headers["content-type"], "application/x-www-form-urlencoded");
     final f = Uri.splitQueryString(creds.body);
     expect(f["csrf_token"], "9f8e7d6c-csrf-token");
-    expect(f["j_username"], "ujpuu");
+    expect(f["j_username"], "alice");
     expect(f["j_password"], pw);
     expect(f["_eventId_proceed"], "");
     expect(f["fudis_web_authn_assertion_input"], "fudispreset%3D1");
@@ -304,7 +346,7 @@ void main() {
     final stub = _StubClient(happyRoutes(
         bookings: const _Canned(200, body: '{"data":[],"meta":{}}')));
     final s =
-        await AnnyAuth(client: stub).signIn(kitUser: "ujpuu", password: pw);
+        await AnnyAuth(client: stub).signIn(kitUser: "alice", password: pw);
     expect(s.jwt, _jwt);
     expect(s.accountUuid, null);
   });
@@ -314,7 +356,7 @@ void main() {
     final captureShape = _StubClient(
         happyRoutes(bookings: const _Canned(200, body: _bookingsCaptureShape)));
     final s1 = await AnnyAuth(client: captureShape)
-        .signIn(kitUser: "ujpuu", password: pw);
+        .signIn(kitUser: "alice", password: pw);
     expect(s1.accountUuid, _uuid);
 
     final relShape = _StubClient(happyRoutes(
@@ -323,7 +365,7 @@ void main() {
                 '{"customer":{"data":{"type":"customer-accounts","id":"$_uuid"}}'
                 '}}}]}')));
     final s2 =
-        await AnnyAuth(client: relShape).signIn(kitUser: "ujpuu", password: pw);
+        await AnnyAuth(client: relShape).signIn(kitUser: "alice", password: pw);
     expect(s2.accountUuid, _uuid);
   });
 
@@ -333,7 +375,7 @@ void main() {
     final stub = _StubClient(routes);
     // bookings route missing → stub StateError inside the scrape → swallowed
     final s =
-        await AnnyAuth(client: stub).signIn(kitUser: "ujpuu", password: pw);
+        await AnnyAuth(client: stub).signIn(kitUser: "alice", password: pw);
     expect(s.jwt, _jwt);
     expect(s.accountUuid, null);
   });
@@ -345,7 +387,7 @@ void main() {
     final err = await signInFailure(stub) as AnnyAuthError;
     expect(err.reason, AnnyAuthReason.badCredentials);
     expect(err.toString(), isNot(contains(pw)));
-    expect(err.toString(), isNot(contains("ujpuu")));
+    expect(err.toString(), isNot(contains("alice")));
   });
 
   test("no SAML consume form after credentials → markupChanged", () async {

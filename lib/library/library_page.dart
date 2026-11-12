@@ -28,6 +28,9 @@ import '../toasts/models/toasts_provider.dart';
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
 
+  /// route identity for the notification deep link router
+  static const String routeName = '/library';
+
   @override
   State<LibraryPage> createState() => _LibraryPageState();
 }
@@ -110,10 +113,13 @@ class _LibraryPageState extends State<LibraryPage> {
             if (anny.signedIn) ...[
               PaddedTitle(
                   title: L10n.t("library.myBookings"),
-                  trailing: CupertinoButton(
-                    padding: const EdgeInsets.all(10),
-                    onPressed: () => anny.refreshBookings(),
-                    child: const Icon(CupertinoIcons.arrow_clockwise),
+                  trailing: Tooltip(
+                    message: L10n.t("library.refresh"),
+                    child: CupertinoButton(
+                      padding: const EdgeInsets.all(10),
+                      onPressed: () => anny.refreshBookings(),
+                      child: const Icon(CupertinoIcons.arrow_clockwise),
+                    ),
                   )),
               _bookingsSection(theme, anny, toasts),
             ],
@@ -195,14 +201,20 @@ class _LibraryPageState extends State<LibraryPage> {
                       ? theme.colorScheme.outline
                       : null),
             ),
-            CupertinoButton(
-              padding: const EdgeInsets.all(spaceXs),
-              onPressed: () => anny.setFav(r.slug),
-              child: Icon(
-                fav ? CupertinoIcons.star_fill : CupertinoIcons.star,
-                size: 20,
-                color:
-                    fav ? theme.colorScheme.primary : theme.colorScheme.outline,
+            // tooltip + 44pt-ish target: an unlabeled 20px star is
+            // undiscoverable and hard to hit (R21)
+            Tooltip(
+              message: L10n.t("library.fav"),
+              child: CupertinoButton(
+                padding: const EdgeInsets.all(spaceSm),
+                onPressed: () => anny.setFav(r.slug),
+                child: Icon(
+                  fav ? CupertinoIcons.star_fill : CupertinoIcons.star,
+                  size: 20,
+                  color: fav
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.outline,
+                ),
               ),
             ),
             Icon(CupertinoIcons.chevron_right,
@@ -293,7 +305,7 @@ class _LibraryPageState extends State<LibraryPage> {
     if (yes != true) return;
     final ok = await anny.cancel(b);
     toasts.showTextToast(
-        L10n.t(ok ? "library.canceledOk" : "library.bookingFailed"));
+        L10n.t(ok ? "library.canceledOk" : "library.canceledFailed"));
   }
 
   Future<void> _openRoomSheet(
@@ -334,6 +346,8 @@ class _RoomSheetState extends State<_RoomSheet> {
   AnnySlot? _slot;
   int? _minutes;
   bool _error = false;
+  bool _slotsError = false;
+  int _slotsGen = 0;
 
   @override
   void initState() {
@@ -354,28 +368,41 @@ class _RoomSheetState extends State<_RoomSheet> {
           .where((e) => e.value != 0)
           .map((e) => e.key)
           .fold<DateTime?>(null, (a, b) => a == null || b.isBefore(a) ? b : a);
+      if (!mounted) return;
       setState(() {
         _days = days;
         _day = first;
-        _error = days.isEmpty;
+        // EMPTY is a result, not a fetch failure: the grid's retry row
+        // used to swallow "no bookable days" into a bare load error
+        _error = false;
       });
       if (_day != null) _loadSlots(_day!);
     } catch (_) {
+      if (!mounted) return;
       setState(() => _error = true);
     }
   }
 
   Future<void> _loadSlots(DateTime day) async {
+    final int gen = ++_slotsGen; // generation guard: two quick day taps
     setState(() {
       _slots = null;
       _slot = null;
+      _slotsError = false;
     });
     try {
       final slots = await fetchIntervals(
           widget.anny.http, widget.room.slug, widget.room.serviceId, day);
+      if (!mounted || gen != _slotsGen) return; // reply for a discarded day
       setState(() => _slots = slots);
     } catch (_) {
-      setState(() => _slots = const []);
+      if (!mounted || gen != _slotsGen) return;
+      // an EMPTY list that is really a FETCH failure used to render as
+      // "Closed · —": the user could not retry a network hiccup (R21)
+      setState(() {
+        _slots = const [];
+        _slotsError = true;
+      });
     }
   }
 
@@ -461,8 +488,31 @@ class _RoomSheetState extends State<_RoomSheet> {
                   ),
                 ),
                 const SizedBox(height: spaceSm),
-                if (slots == null)
+                if (_days != null && _days!.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: spaceSm),
+                    child: Text(L10n.t("library.noBookableDays"),
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: theme.colorScheme.outline)),
+                  )
+                else if (slots == null)
                   KITProgressIndicator(semanticsLabel: L10n.t("library.title"))
+                else if (slots.isEmpty && _slotsError)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(L10n.t("library.loadFailed"),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.outline)),
+                      ),
+                      CupertinoButton(
+                        padding: const EdgeInsets.all(10),
+                        onPressed:
+                            _day == null ? null : () => _loadSlots(_day!),
+                        child: Text(L10n.t("library.retry")),
+                      ),
+                    ],
+                  )
                 else if (slots.isEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: spaceSm),
@@ -550,7 +600,12 @@ class _RoomSheetState extends State<_RoomSheet> {
           start: start,
           minutes: minutes),
     );
-    if (go == true && mounted) Navigator.of(context).pop();
+    if (go == true && mounted) {
+      Navigator.of(context).pop();
+    } else if (go == false && mounted && _day != null) {
+      // "just taken" - refetch: the slot we advertised no longer exists
+      _loadSlots(_day!);
+    }
   }
 }
 
@@ -599,6 +654,14 @@ class _ConfirmSheetState extends State<_ConfirmSheet> {
 
   Future<void> _book() async {
     if (_busy) return;
+    // an empty name used to reach book(), get killed by its identity
+    // guard, and surface as a generic "Booking failed" (audit R21: the
+    // first booking ALWAYS fails until the user guesses that the empty
+    // "Nachname" field is fatal) - validate here and say so
+    if (_first.text.trim().isEmpty || _last.text.trim().isEmpty) {
+      widget.toasts.showTextToast(L10n.t("library.identityMissing"));
+      return;
+    }
     setState(() => _busy = true);
     await widget.anny.setCheckoutNames(_first.text.trim(), _last.text.trim());
     final b = await widget.anny.book(widget.room, widget.start, widget.minutes);
@@ -607,9 +670,17 @@ class _ConfirmSheetState extends State<_ConfirmSheet> {
       Navigator.of(context).pop(true); // closes the room sheet too
       widget.toasts.showTextToast(L10n.t("library.bookedOk", [b.number]));
     } else if (widget.anny.error == AnnyErrorKind.none) {
-      // just taken: this slot is gone, the sheet may not retry it
+      // just taken: this slot is gone, the sheet may not retry it — the
+      // room sheet behind re-pulls the day so the grid tells the truth
+      // instead of keeping a dead chip tappable (R21)
       Navigator.of(context).pop(false);
       widget.toasts.showTextToast(L10n.t("library.justTaken"));
+    } else if (widget.anny.error == AnnyErrorKind.auth) {
+      // the session died mid-booking; "signedIn" is false again, so the
+      // page behind will show the sign-in CTA once this sheet closes
+      setState(() => _busy = false);
+      Navigator.of(context).pop(false);
+      widget.toasts.showTextToast(L10n.t("library.signInFailed"));
     } else {
       // keep the sheet open - the user can fix the identity or retry
       setState(() => _busy = false);
@@ -644,7 +715,8 @@ class _ConfirmSheetState extends State<_ConfirmSheet> {
                 "${widget.start.day.toString().padLeft(2, "0")}."
                 "${widget.start.month.toString().padLeft(2, "0")}."
                 " · ${hh(widget.start)}–"
-                "${hh(end)} · ${widget.minutes} min",
+                "${hh(end)} · "
+                "${widget.minutes % 60 == 0 && widget.minutes >= 60 ? L10n.t("library.durH", [widget.minutes ~/ 60]) : L10n.t("library.durMin", [widget.minutes])}",
                 style: theme.textTheme.bodyMedium),
             const SizedBox(height: spaceXs),
             Text(L10n.t("library.checkinHint"),
@@ -738,42 +810,57 @@ Future<void> showLibrarySignInDialog(BuildContext context) async {
   final TextEditingController user = TextEditingController();
   final TextEditingController pass = TextEditingController();
 
-  final bool? go = await showDialog<bool>(
-    context: context,
-    builder: (dialogCtx) => AlertDialog(
-      title: Text(L10n.t("library.signInTitle")),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CupertinoTextField(
-            controller: user,
-            placeholder: L10n.t("settings.usernamePlaceholder"),
-            autocorrect: false,
-            style: theme.textTheme.bodyMedium,
-          ),
-          const SizedBox(height: spaceSm),
-          CupertinoTextField(
-            controller: pass,
-            placeholder: L10n.t("settings.password"),
-            obscureText: true,
-            keyboardType: TextInputType.visiblePassword,
-            style: theme.textTheme.bodyMedium,
-          ),
+  final bool? go;
+  String kitUser = "";
+  String password = "";
+  try {
+    go = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => CupertinoAlertDialog(
+        title: Text(L10n.t("library.signInTitle")),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoTextField(
+              controller: user,
+              placeholder: L10n.t("settings.usernamePlaceholder"),
+              autocorrect: false,
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: spaceSm),
+            CupertinoTextField(
+              controller: pass,
+              placeholder: L10n.t("settings.password"),
+              obscureText: true,
+              keyboardType: TextInputType.visiblePassword,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+        ),
+        actions: [
+          CupertinoDialogAction(
+              onPressed: () => Navigator.of(dialogCtx).pop(false),
+              child: Text(L10n.t("settings.cancel"))),
+          CupertinoDialogAction(
+              onPressed: () => Navigator.of(dialogCtx).pop(true),
+              child: Text(L10n.t("settings.login"))),
         ],
       ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(false),
-            child: Text(L10n.t("settings.cancel"))),
-        TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(true),
-            child: Text(L10n.t("settings.login"))),
-      ],
-    ),
-  );
+    );
+    kitUser = user.text.trim();
+    password = pass.text;
+  } finally {
+    // R21: the plaintext password must not outlive the dialog inside a
+    // controller the frame dropped (values are captured above first)
+    pass.clear();
+    user.dispose();
+    pass.dispose();
+  }
   if (go != true) return;
-  final String kitUser = user.text.trim();
-  if (kitUser.isEmpty) return;
-  final bool ok = await anny.signIn(kitUser, pass.text);
+  if (kitUser.isEmpty) {
+    toasts.showTextToast(L10n.t("settings.usernamePlaceholder"));
+    return;
+  }
+  final bool ok = await anny.signIn(kitUser, password);
   if (!ok) toasts.showTextToast(L10n.t("library.signInFailed"));
 }

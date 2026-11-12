@@ -125,7 +125,11 @@ class AnnyManager extends ChangeNotifier {
   /// the session, and the ANN_* prefs stay minimal per the privacy rule)
   String? diag;
 
-  bool isFetching = false; // anonymous half
+  bool isFetching = false;
+
+  /// when the anonymous catalog last SUCCEEDED; the home card prints it so
+  /// a stale cache is visible instead of silently wrong (R21)
+  DateTime? get fetchedAt => _anonFetchedAt; // anonymous half
   bool isSigningIn = false;
   bool isLoadingBookings = false;
   bool isBooking = false; // book + cancel share the exclusive gate
@@ -133,7 +137,12 @@ class AnnyManager extends ChangeNotifier {
   DateTime? _anonFetchedAt;
   AnnySession? _session;
 
-  bool get signedIn => _session != null;
+  /// A session whose silent re-mint FAILED (rotated password, revoked
+  /// grant) is dead even though the object is still cached: the UI must
+  /// offer sign-in again instead of claiming "Signed in as …" forever
+  /// (audit R21). [reauthFailed] resets on the next signIn/_silentReauth.
+  bool get signedIn => _session != null && !reauthFailed;
+  bool reauthFailed = false;
   bool get hasData => rooms.isNotEmpty;
 
   String favSlug = "";
@@ -165,6 +174,13 @@ class AnnyManager extends ChangeNotifier {
       final SharedPreferences p = await SharedPreferences.getInstance();
       favSlug = p.getString(AnnyKeys.fav) ?? "";
       final String? jwt = p.getString(AnnyKeys.jwt);
+      // older builds persisted the REAL token here; scrub it on sight
+      // (R21) — the "pending" marker is all the restore may keep
+      if (jwt != null && jwt != "pending") {
+        await p.remove(AnnyKeys.jwt);
+      }
+      await p.remove(AnnyKeys.alvo);
+      await p.remove(AnnyKeys.uuid);
       if (jwt != null && jwt.isNotEmpty) {
         // obtain a persisted JWT at the epoch: older than its 1 h lifetime
         // with near-certainty, so isExpired is true and the first authed
@@ -231,6 +247,13 @@ class AnnyManager extends ChangeNotifier {
     notifyListeners();
     try {
       final List<AnnyRoom> rs = await fetchRooms(http);
+      if (rs.isEmpty) {
+        // An empty catalog is NEVER truth: it would blank the card AND
+        // overwrite the good ANN_rooms cache, so a transient envelope
+        // drift turns into an unrecoverable retry loop. boot() guards the
+        // same way (rs.isNotEmpty); keep the cache, report the anomaly.
+        throw AnnyError(200, "empty room catalog");
+      }
       // seed with the PREVIOUS counts of the same rooms: a freeNow that
       // fails must keep the last good number (mensa discipline) — only a
       // SUCCESSFUL fetch overwrites, and its 0 is honest ("closed")
@@ -281,13 +304,19 @@ class AnnyManager extends ChangeNotifier {
   }
 
   Future<void>? _favSlotsInFlight;
+  String _favSlotsSlug = "";
 
   /// Refresh [favSlots] for today (the card's next-free chip).
   /// Single-flight; keeps the previous strip on failure.
   Future<void> refreshFavSlots() {
+    // join an in-flight fetch ONLY while it still belongs to the current
+    // favorite: fav A -> fav B used to short-circuit into A's fetch and
+    // advertise A's times under B until the next network pass (R21)
     final Future<void>? inflight = _favSlotsInFlight;
-    if (inflight != null) return inflight;
+    if (inflight != null && _favSlotsSlug == favSlug) return inflight;
     late final Future<void> fut;
+    final String slug = favSlug;
+    _favSlotsSlug = slug;
     fut = () async {
       final AnnyRoom? fav = favRoom;
       if (fav == null || fav.serviceId == 0) return;
@@ -301,7 +330,13 @@ class AnnyManager extends ChangeNotifier {
     }();
     _favSlotsInFlight = fut;
     return fut.whenComplete(() {
-      if (identical(_favSlotsInFlight, fut)) _favSlotsInFlight = null;
+      if (identical(_favSlotsInFlight, fut)) {
+        // the slug KEEPS its value: it describes which fetch the joined
+        // future belongs to, and a later switch to the same slug after
+        // completion must still re-fetch (fresh data), while an
+        // ABANDONED fetch's completion never clears a live fetch's key
+        _favSlotsInFlight = null;
+      }
     });
   }
 
@@ -328,13 +363,10 @@ class AnnyManager extends ChangeNotifier {
       final AnnySession s =
           await auth.signIn(kitUser: kitUser, password: password);
       _session = s;
+      reauthFailed = false;
       final SharedPreferences p = await SharedPreferences.getInstance();
-      await _persistSession(p, s);
+      await _persistSession(p, s); // marker only, never the token
       await p.setString(AnnyKeys.email, "$kitUser@student.kit.edu");
-      // prefill placeholder until the confirm sheet captures real names
-      if ((p.getString(AnnyKeys.first) ?? "").isEmpty) {
-        await p.setString(AnnyKeys.first, kitUser);
-      }
       try {
         await passWrite(password);
       } catch (_) {
@@ -377,6 +409,11 @@ class AnnyManager extends ChangeNotifier {
       await p.remove(AnnyKeys.jwt);
       await p.remove(AnnyKeys.alvo);
       await p.remove(AnnyKeys.uuid);
+      // names + KIT email are personal data too: the NEXT user's confirm
+      // sheet must never prefill them (audit R21)
+      await p.remove(AnnyKeys.email);
+      await p.remove(AnnyKeys.first);
+      await p.remove(AnnyKeys.last);
     } catch (_) {}
     try {
       await passErase();
@@ -402,7 +439,8 @@ class AnnyManager extends ChangeNotifier {
   bool _reauthInFlight = false;
 
   /// ONE silent re-auth at a time, ONE attempt per request: no recursion,
-  /// no loop (plan rule).
+  /// no loop (plan rule). A FAILED re-mint marks the session dead
+  /// ([signedIn] flips) so the UI can offer sign-in again.
   Future<String?> _silentReauth() async {
     if (_reauthInFlight) {
       _diag("re-auth already running", AnnyErrorKind.auth);
@@ -421,12 +459,14 @@ class AnnyManager extends ChangeNotifier {
       try {
         final AnnySession s = await auth.signIn(kitUser: kitUser, password: pw);
         _session = s;
-        await _persistSession(p, s);
+        reauthFailed = false;
         return s.jwt;
       } on AnnyAuthError catch (e) {
+        reauthFailed = true;
         _failAuth(e.reason, "$e");
         return null;
       } catch (e) {
+        reauthFailed = true;
         _diag(
             "re-auth: $e",
             KITLoginManager.isNetworkError(e)
@@ -505,20 +545,36 @@ class AnnyManager extends ChangeNotifier {
   /// (delete-all lesson). Returns the booking on success, null on failure
   /// ([error] set, or "just taken" = empty seats).
   Future<AnnyBooking?> book(AnnyRoom room, DateTime start, int minutes) async {
+    // synchronous gate (cancel() pattern): the old check->await->set order
+    // let a second call slip in during the identity await and ran two
+    // overlapping carts (R21). A rejected caller leaves error=none, which
+    // the sheet renders as "just taken" - the only state a human can race.
     if (isBooking) return null;
+    isBooking = true;
+    notifyListeners();
+    try {
+      return await _bookInner(room, start, minutes);
+    } finally {
+      isBooking = false;
+      notifyListeners();
+    }
+  }
+
+  Future<AnnyBooking?> _bookInner(
+      AnnyRoom room, DateTime start, int minutes) async {
     if (room.serviceId == 0) {
       _diag("book: room ${room.slug} has no service id", AnnyErrorKind.markup);
       return null;
     }
     final id = await checkoutIdentity();
     if (id.first.isEmpty || id.last.isEmpty || id.email.isEmpty) {
-      _diag("book: checkout identity incomplete", AnnyErrorKind.auth);
+      // validation, NOT auth: labeling it auth made the sheet sit on the
+      // sign-in path while the real fix was one empty text field
+      _diag("book: checkout identity incomplete", AnnyErrorKind.markup);
       return null;
     }
-    isBooking = true;
-    notifyListeners();
     final Map<String, String> draftCart = {}; // oid/oat while a cart may exist
-    try {
+    {
       final AnnyBooking? b = await _authed<AnnyBooking?>((String jwt) async {
         final DateTime end = start.add(Duration(minutes: minutes));
         final List<String> seats = await childSeats(http, room.slug,
@@ -575,9 +631,6 @@ class AnnyManager extends ChangeNotifier {
       unawaited(refreshBookings()); // server truth replaces the sketch
       unawaited(refreshAnon(force: true)); // the seat just left the pool
       return b;
-    } finally {
-      isBooking = false;
-      notifyListeners();
     }
   }
 
@@ -627,17 +680,14 @@ class AnnyManager extends ChangeNotifier {
 
   // ---- shared plumbing ----
 
+  /// Persists only THAT a library session exists - never the token.
+  /// The restored session is stamped at the epoch and therefore always
+  /// expired, so the first authed call re-mints a fresh JWT from the
+  /// keychain password; keeping the real one here would put a live Bearer
+  /// in plaintext shared_prefs for its whole hour of validity.
   static Future<void> _persistSession(
       SharedPreferences p, AnnySession s) async {
-    await p.setString(AnnyKeys.jwt, s.jwt);
-    final String? alvo = s.visitToken;
-    if (alvo != null && alvo.isNotEmpty) {
-      await p.setString(AnnyKeys.alvo, alvo);
-    }
-    final String? uuid = s.accountUuid;
-    if (uuid != null && uuid.isNotEmpty) {
-      await p.setString(AnnyKeys.uuid, uuid);
-    }
+    await p.setString(AnnyKeys.jwt, "pending");
   }
 
   /// Quota-lock release, best effort: on failure the draft entry stays in

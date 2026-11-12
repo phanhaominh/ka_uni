@@ -43,7 +43,7 @@ Rules (from resource descriptions): max 3 days ahead, max 20 open bookings, max 
 - `GET /customer-accounts/{uuid}/all-resources?page[number]=1&page[size]=5` — "my bookings" list
 - `GET /bookings/{id}` — single booking (status accepted/reserved/canceled, code "!TIX…", cancelable_until)
 
-## Booking flow — PROVEN end-to-end (booking #BB469411363 created + canceled)
+## Booking flow — PROVEN end-to-end (booking #BB000000000 created + canceled)
 1. `POST /order/bookings?include=<big include list>&stateless=1` (Bearer)
    body: `{"resource_id":["3416"],"service_id":{"452":1},"timeslot_series_id":null,
            "start_date":"2026-11-13T10:00:00+01:00","end_date":"2026-11-13T11:00:00+01:00",
@@ -53,7 +53,7 @@ Rules (from resource descriptions): max 3 days ahead, max 20 open bookings, max 
       included:[booking status:"reserved", meta.cancelable_until]}`
    (optional pre-step: `POST /order/bookings/calculate?check_availability=0`)
 2. `POST /order?visit_token={anny_shop_alvo}&oid={orderId}&oat={access_token}&stateless=1` (Bearer)
-   body: `{"customer":{"given_name":"…","family_name":"…","email":"ujpuu@student.kit.edu"},
+   body: `{"customer":{"given_name":"…","family_name":"…","email":"alice@student.kit.edu"},
            "accept_terms":true,"payment_method":"","success_url":"https://anny.eu/…","cancel_url":"…","meta":{"timezone":"Europe/Berlin"}}`
    → order completed, booking `status:"accepted"`
 3. Cancel: `GET /bookings/{id}/cancel?access_token={booking.code}` → status "canceled"

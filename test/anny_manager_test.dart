@@ -87,17 +87,17 @@ const _children = '{"data":['
 const _draft = '{"data":{"type":"orders","id":"82176221","attributes":{'
     '"access_token":"oat-7f3a","status":"draft","number":"469411"}},'
     '"included":[{"type":"bookings","id":"8217","attributes":{'
-    '"status":"reserved","number":"BB469411363","code":"!TIX5f0a"}}]}';
+    '"status":"reserved","number":"BB000000000","code":"!TIX5f0a"}}]}';
 
 const _orderDone = '{"data":{"type":"orders","id":"82176221","attributes":{'
     '"status":"completed","number":"469411"}},'
     '"included":[{"type":"bookings","id":"8217","attributes":{'
-    '"status":"accepted","number":"BB469411363"}}]}';
+    '"status":"accepted","number":"BB000000000"}}]}';
 
 /// GET bookings?filter[upcoming_only]=1 — one accepted booking (server truth)
 const _bookingsUpcoming =
     '{"data":[{"type":"bookings","id":"8217","attributes":{'
-    '"status":"accepted","number":"BB469411363",'
+    '"status":"accepted","number":"BB000000000",'
     '"start_date":"2026-11-13T10:00:00+01:00","end_date":"2026-11-13T11:00:00+01:00",'
     '"code":"!TIX5f0a","cancelable_until":"2026-11-13T09:00:00+01:00"},'
     '"relationships":{"resource":{"data":{"type":"resources","id":"3404"}}}}],'
@@ -346,21 +346,27 @@ void main() {
   group("sign-in", () {
     test("success persists the session triple, never the password", () async {
       final f = fx({}, routes());
-      final ok = await f.m.signIn("ujpuu", "s3cr3t!");
+      final ok = await f.m.signIn("alice", "s3cr3t!");
       expect(ok, isTrue);
       expect(f.m.signedIn, isTrue);
       expect(f.m.error, AnnyErrorKind.none);
 
       final p = await SharedPreferences.getInstance();
-      expect(p.getString("ANN_jwt"), "JWT-1");
-      expect(p.getString("ANN_alvo"), "ALVO-1");
-      expect(p.getString("ANN_uuid"), _uuid);
-      expect(p.getString("ANN_email"), "ujpuu@student.kit.edu");
-      expect(p.getString("ANN_first"), "ujpuu",
-          reason: "placeholder prefill until the sheet captures the name");
+      expect(p.getString("ANN_jwt"), "pending",
+          reason: "R21: prefs keep a signed-in MARKER, never the live "
+              "token - a stolen prefs file must not carry a usable JWT");
+      expect(p.getString("ANN_alvo"), isNull,
+          reason: "the alvo token is not persisted at all");
+      expect(p.getString("ANN_uuid"), isNull);
+      expect(p.getString("ANN_email"), "alice@student.kit.edu");
+      expect(p.getString("ANN_first"), isNull,
+          reason: "the placeholder prefill was removed (P1: it made the "
+              "first booking fail until the user guessed the field)");
       for (final k in p.getKeys()) {
         expect("${p.get(k)}", isNot(contains("s3cr3t!")),
             reason: "the password must never reach prefs (key: $k)");
+        expect("${p.get(k)}", isNot(contains("JWT-")),
+            reason: "no live token may reach prefs (key: $k)");
       }
       expect(f.pwLog, ["s3cr3t!"], reason: "keychain write happened once");
 
@@ -371,7 +377,7 @@ void main() {
     test("401 during refreshBookings: EXACTLY one silent re-auth, then auth",
         () async {
       final f = fx({}, routes(bookings: () => const _Canned(401)));
-      final ok = await f.m.signIn("ujpuu", "pw");
+      final ok = await f.m.signIn("alice", "pw");
       expect(ok, isTrue, reason: "sign-in itself worked; the list failed");
       expect(f.auth.calls.length, 2,
           reason: "1 sign-in + exactly ONE silent re-auth (no loops)");
@@ -381,20 +387,149 @@ void main() {
       expect(f.m.bookings, isEmpty);
 
       final p = await SharedPreferences.getInstance();
-      expect(p.getString("ANN_jwt"), "JWT-2",
-          reason: "the re-minted session replaced the dead one");
+      expect(p.getString("ANN_jwt"), "pending",
+          reason: "re-mints stay in memory only (R21); the marker stays "
+              "the single persisted truth");
     });
 
     test("bad credentials map AnnyAuthReason -> error=auth, no session",
         () async {
       final f = fx({}, routes());
       f.auth.throwing = const AnnyAuthError(AnnyAuthReason.badCredentials);
-      final ok = await f.m.signIn("ujpuu", "wrong");
+      final ok = await f.m.signIn("alice", "wrong");
       expect(ok, isFalse);
       expect(f.m.signedIn, isFalse);
       expect(f.m.error, AnnyErrorKind.auth);
       expect(f.stub.requests, isEmpty,
           reason: "no booking traffic after a rejected sign-in");
+    });
+  });
+
+  group("R21 lifecycle regressions", () {
+    // drain the microtask + event queue so unawaited fetches land
+    Future<void> pump() => Future<void>(() {});
+
+    test("sign-out clears identity PII, not just the token triple",
+        () async {
+      final f = fx({}, routes());
+      await f.m.signIn("alice", "pw");
+      await f.m.setCheckoutNames("Bob", "Maier");
+      final p = await SharedPreferences.getInstance();
+      expect(p.getString("ANN_first"), "Bob", reason: "set first");
+
+      await f.m.signOut();
+
+      for (final k in ["ANN_jwt", "ANN_email", "ANN_first", "ANN_last"]) {
+        expect(p.getString(k), isNull, reason: "$k must not survive signOut");
+      }
+      expect(f.m.signedIn, isFalse);
+      expect(await f.m.passRead(), isNull,
+          reason: "the keychain copy of the KIT password dies with signOut");
+      // the NEXT user's confirm sheet reads exactly these keys: it must
+      // see an empty form, not Bob's identity
+      final id = await f.m.checkoutIdentity();
+      expect("${id.first}|${id.last}|${id.email}", "||");
+    });
+
+    test("boot scrubs a legacy live JWT from prefs on sight", () async {
+      // a pre-fix install persisted the real token; updating the app
+      // must not leave it readable until the next sign-out
+      final f = fx({"ANN_jwt": "REAL-OLD-TOKEN", "ANN_email": "alice@student.kit.edu"}, routes());
+      final p = await SharedPreferences.getInstance();
+      await f.m.boot();
+      expect(p.getString("ANN_jwt"), isNull,
+          reason: "the legacy token is erased on boot");
+      expect(f.m.favSlug, isEmpty);
+    });
+
+    test("empty catalog is never truth: cache stays, anomaly reported",
+        () async {
+      // warm the cache first
+      final f = fx({}, routes());
+      await f.m.refreshAnon();
+      expect(f.m.rooms.length, 2);
+
+      f.stub.routes.insert(
+          0,
+          _Route("GET", "all-resources",
+              () => const _Canned(200, body: '{"data":[]}')));
+      await f.m.refreshAnon(force: true);
+      expect(f.m.rooms.length, 2,
+          reason: "a 200-with-empty-array glitch must not blank the card");
+      expect(f.m.error, AnnyErrorKind.markup,
+          reason: "but it must be reported, not swallowed");
+    });
+
+    test("favorite switched mid-fetch: new room's slots still arrive",
+        () async {
+      final f = fx({}, routes());
+      await f.m.refreshAnon();
+      final a = f.m.rooms.first, b = f.m.rooms.last;
+
+      f.stub.holdFor = "intervals/start";
+      final gate = Completer<void>();
+      f.stub.hold = gate;
+      f.m.setFav(a.slug);
+      final first = f.m.refreshFavSlots();
+      await Future<void>(() {});
+      await Future<void>(() {});
+
+      f.m.setFav(b.slug); // switch WHILE A's fetch is in flight
+      gate.complete();
+      f.stub.hold = null;
+      f.stub.holdFor = null;
+      await first;
+      await Future<void>(() {});
+      await Future<void>(() {});
+      expect(f.stub.count("GET", "intervals/start") >= 3, isTrue,
+          reason: "the switch must trigger a SECOND fetch for the new "
+              "favorite instead of joining the abandoned one");
+    });
+
+    test("un-favoriting then re-favoriting still fetches", () async {
+      final f = fx({}, routes());
+      await f.m.refreshAnon();
+      final a = f.m.rooms.first;
+      // per-stage counters FIRST (data, then assertion)
+      final c0 = f.stub.count("GET", "intervals/start");
+      await f.m.setFav(a.slug);
+      await pump();
+      expect(f.stub.count("GET", "intervals/start") - c0, 1,
+          reason: "favorite set -> its strip fetches");
+      await f.m.setFav("");
+      await pump();
+      expect(f.stub.count("GET", "intervals/start") - c0, 1,
+          reason: "empty favorite -> no strip fetch");
+      await f.m.setFav(a.slug);
+      await pump();
+      expect(f.stub.count("GET", "intervals/start") - c0, 2,
+          reason: "re-favoriting after an empty favorite must fetch again "
+              "- the no-fetch fav-'' step may not poison the join check");
+    });
+
+    test("book gate is synchronous: second call cannot open a cart",
+        () async {
+      final f = fx({}, routes());
+      await f.m.signIn("alice", "pw");
+      await f.m.setCheckoutNames("Eva", "Maier");
+      await f.m.refreshAnon(); // rooms feed the gate flow, like signedInFx
+      final room = f.m.rooms.first;
+
+      f.stub.holdFor = "order/bookings";
+      final gate = Completer<void>();
+      f.stub.hold = gate;
+      final first = f.m.book(room, DateTime.now(), 60);
+      await Future<void>(() {});
+      // old code: identity await sat BETWEEN check and set - this second
+      // call slipped through and ran a second overlapping cart
+      final second = await f.m.book(room, DateTime.now(), 60);
+      expect(second, isNull, reason: "gate must reject synchronously");
+      gate.complete();
+      f.stub.hold = null;
+      f.stub.holdFor = null;
+      await first;
+      expect(f.stub.count("POST", "order/bookings"), 1,
+          reason: "exactly one draft cart for two calls");
     });
   });
 
@@ -410,7 +545,7 @@ void main() {
               bookings: serverTruth
                   ? () => const _Canned(200, body: _bookingsUpcoming)
                   : null));
-      await f.m.signIn("ujpuu", "pw");
+      await f.m.signIn("alice", "pw");
       await f.m.setCheckoutNames("Ada", "Lovelace");
       await f.m.refreshAnon(); // real rooms through the stub
       return f;
@@ -429,7 +564,7 @@ void main() {
       final got = await f.m.book(room, DateTime(2026, 11, 13, 10, 0), 60);
 
       expect(got, isNotNull);
-      expect(got!.number, "BB469411363");
+      expect(got!.number, "BB000000000");
       expect(got.id, "8217");
       expect(got.status, "accepted");
       expect(booked, same(got), reason: "W5 hook fired with the booking");
@@ -458,7 +593,7 @@ void main() {
       expect(jsonDecode(checkoutReq.body)["customer"], {
         "given_name": "Ada",
         "family_name": "Lovelace",
-        "email": "ujpuu@student.kit.edu",
+        "email": "alice@student.kit.edu",
       });
 
       expect(f.stub.count("GET", "delete-all"), 0,
@@ -496,7 +631,7 @@ void main() {
         () async {
       final f = fx({},
           routes(bookings: () => const _Canned(200, body: _bookingsUpcoming)));
-      await f.m.signIn("ujpuu", "pw");
+      await f.m.signIn("alice", "pw");
       expect(await f.m.refreshBookings(), isTrue);
       final b = f.m.bookings.single;
       expect(b.id, "8217");

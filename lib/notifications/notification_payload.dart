@@ -22,4 +22,8 @@ class NotificationPayload {
   /// Exam-registration deadline -> exams page. (SignMeUp registration ->
   /// agenda via [agenda]; /exams renders no SignMeUp content.)
   static const exams = 'exams';
+
+  /// Library seat check-in ping -> the library page (the 15-min check-in
+  /// safety net must land where the booking lives).
+  static const library = 'library:checkin';
 }

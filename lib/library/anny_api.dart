@@ -120,15 +120,26 @@ class AnnyHttp {
 
   static String _detail(String raw, Map<String, dynamic> json) {
     final errs = json['errors'];
+    String text;
     if (errs is List && errs.isNotEmpty && errs.first is Map) {
       final e = errs.first as Map;
-      if (e['detail'] != null) {
-        return '${e['detail']}';
-      } else if (e['title'] != null) {
-        return '${e['title']}';
-      }
+      text = e['detail'] != null
+          ? '${e['detail']}'
+          : e['title'] != null
+              ? '${e['title']}'
+              : raw;
+    } else {
+      text = raw;
     }
-    return raw.length > 160 ? raw.substring(0, 160) : raw;
+    // error text travels into diag/possibly crash reports: scrub
+    // URL-shaped and token-shaped payloads before truncating (R21)
+    text = text
+        .replaceAll(RegExp(r'https?://\S+'), '[url]')
+        .replaceAll(
+            RegExp(r'(token|jwt|secret|password|alvo)=?\S*',
+                caseSensitive: false),
+            '[redacted]');
+    return text.length > 160 ? text.substring(0, 160) : text;
   }
 
   /// numeric resource id for a slug (capture keys on resource_id; slugs resolve
@@ -297,7 +308,12 @@ Future<int> freeNow(AnnyHttp h, String slug, int serviceId) async {
           : 0;
     }
   }
-  return 0; // whole day behind us
+  if (slots.isEmpty) return 0;
+  // open tail: "now" sits past the LAST selectable start but the room is
+  // demonstrably open (tiles run to close) — the last tile is the
+  // covering one; answering 0 here lied about open rooms (R21)
+  final last = slots.last;
+  return last.available ? last.free : 0;
 }
 
 /// cart draft POST order/bookings — body byte-identical to the live capture
