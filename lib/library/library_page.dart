@@ -640,7 +640,10 @@ class _ConfirmSheetState extends State<_ConfirmSheet> {
                 style: theme.textTheme.titleMedium),
             const SizedBox(height: spaceSm),
             Text(
-                "${L10n.stamp(widget.start)} · ${hh(widget.start)}–"
+                "${L10n.weekday(widget.start.weekday)}, "
+                "${widget.start.day.toString().padLeft(2, "0")}."
+                "${widget.start.month.toString().padLeft(2, "0")}."
+                " · ${hh(widget.start)}–"
                 "${hh(end)} · ${widget.minutes} min",
                 style: theme.textTheme.bodyMedium),
             const SizedBox(height: spaceXs),
