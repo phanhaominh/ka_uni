@@ -69,6 +69,58 @@ void main() {
     expect(NextUp.onDay(null, morning), isEmpty);
   });
 
+  test("guessed-end deadline at 23:45 stays on its own day", () {
+    // a synth due (no DTEND) gets the parser's +90 guessed end, which
+    // crosses midnight; tomorrow must NOT re-list yesterday's deadline
+    final late = IcsOccurrence(
+        start: DateTime(2026, 11, 3, 23, 45),
+        end: DateTime(2026, 11, 4, 0, 15),
+        title: "Due: AdvMath (Blatt 5)",
+        room: "",
+        uid: "kauni-due-1-x",
+        endGuessed: true);
+    final real = IcsOccurrence(
+        start: DateTime(2026, 11, 3, 22, 0),
+        end: DateTime(2026, 11, 4, 0, 15),
+        title: "Klausur spaet",
+        room: "HS",
+        uid: "kauni-exam-1-a");
+    final feed = WebcalFeed(occurrences: [late, real], raw: "");
+    expect(NextUp.onDay(feed, DateTime(2026, 11, 3)).map((o) => o.uid),
+        unorderedEquals(["kauni-due-1-x", "kauni-exam-1-a"]));
+    // real ends keep the historic straddle (unchanged behavior);
+    // invented ends never bleed
+    expect(NextUp.onDay(feed, DateTime(2026, 11, 4)).map((o) => o.uid),
+        ["kauni-exam-1-a"]);
+  });
+
+  test("expired deadline never claims to be running", () {
+    // due 18:00, now 18:05: the +90 guessed end must not make the hero
+    // announce "läuft · bis 19:30" - a deadline is a point, it just died
+    final due = IcsOccurrence(
+        start: DateTime(2026, 11, 12, 18),
+        end: DateTime(2026, 11, 12, 19, 30),
+        title: "Due: AM I (Blatt 3)",
+        room: "",
+        uid: "kauni-due-1-x",
+        endGuessed: true);
+    expect(NextUp.compute([due], DateTime(2026, 11, 12, 18, 5)), isNull);
+    // before it is due it still counts down honestly
+    final up = NextUp.compute([due], DateTime(2026, 11, 12, 17, 30))!;
+    expect(up.running, isFalse);
+    // and a guessed-span lecture that already started is never "running
+    // until <invented>" either (kills the pre-existing all-day leak)
+    final allDay = IcsOccurrence(
+        start: DateTime(2026, 11, 12),
+        end: DateTime(2026, 11, 12, 1, 30),
+        title: "Ganztags",
+        room: "",
+        uid: "p-1",
+        endGuessed: true);
+    expect(NextUp.compute([allDay], DateTime(2026, 11, 12, 9))?.running,
+        isNot(isTrue));
+  });
+
   test("heroWindow spans today into tomorrow", () {
     final feed = WebcalFeed(occurrences: [
       _occ("Heute", DateTime(2026, 11, 3, 16, 0)),

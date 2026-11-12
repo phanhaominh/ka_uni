@@ -57,6 +57,17 @@ void main() {
     expect(body, isNot(contains("geändert"))); // C65: stale hint dropped
   });
 
+  test("due-only day is an assignment, not '1 classes'", () {
+    final (title, body) = MeiNotifications.digestTexts(
+        [_occ("Due: AM I (Blatt 3)", 18, guessed: true)]);
+    expect(title, "Heute: Abgabe fällig");
+    expect(body, contains("Fällig um 18:00"));
+    // a real lecture sharing the day is no longer counted around the due
+    final mixed = MeiNotifications.digestTexts(
+        [_occ("Due: AM I (Blatt 3)", 18, guessed: true), _occ("Analysis I (V)", 10)]);
+    expect(mixed.$1, "Heute: 1 Veranstaltungen");
+  });
+
   test("mirrored lectures (same title+start) get exactly one alarm slot", () {
     final mirrored = [
       _occ("Analysis I", 8),

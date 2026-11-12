@@ -35,17 +35,23 @@ class PrepBundle {
 
 /// Course name carried in a synth due event's SUMMARY
 /// ("Due: <course> (<announcement>)"); null for non-due titles.
+/// Split at the FIRST " (": course names with parens are a KIT rarity,
+/// announcement titles with them ("Übungsblatt (Musterlösung)") are the
+/// everyday case, and splitting at the LAST one mis-cut the course and
+/// silently dropped such dues from the prep sheet.
 String? dueCourseOf(String summary) {
   if (!summary.startsWith("Due: ")) return null;
   final rest = summary.substring(5);
-  final open = rest.lastIndexOf(" (");
+  final open = rest.indexOf(" (");
   return open <= 0 ? rest : rest.substring(0, open);
 }
 
 String dueWhatOf(String summary) {
-  final open = summary.lastIndexOf(" (");
+  final open = summary.startsWith("Due: ") ? summary.indexOf(" (") : -1;
   if (!summary.startsWith("Due: ") || open <= 0) return summary;
-  return summary.substring(open + 2).replaceAll(RegExp(r"\)$"), "");
+  var what = summary.substring(open + 2);
+  if (what.endsWith(")")) what = what.substring(0, what.length - 1);
+  return what;
 }
 
 PrepBundle prepBundleFor(
@@ -62,7 +68,8 @@ PrepBundle prepBundleFor(
   final dues = <PrepDue>[];
   for (final o in occurrences) {
     if (!o.uid.startsWith(dueSynthUidPrefix)) continue;
-    if (!o.end.isAfter(now)) continue; // past deadline: nothing to prep
+    // a deadline died at its START (its end is the invented +90)
+    if (o.start.isBefore(now)) continue;
     final course = dueCourseOf(o.title);
     if (course == null) continue;
     if (!CampusManager.moduleKeyMatchesLectureKey(

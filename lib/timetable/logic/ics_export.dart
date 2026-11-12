@@ -30,6 +30,8 @@ const _sentinelMarkers = [
   "X-SIGNMEUP-SYNTH-END",
   "X-EXAM-SYNTH-BEGIN",
   "X-EXAM-SYNTH-END",
+  "X-DUE-SYNTH-BEGIN",
+  "X-DUE-SYNTH-END",
 ];
 
 /// Feed header properties that describe WHO publishes the source calendar;
@@ -80,6 +82,7 @@ IcsExport? buildIcsExport(String mergedIcs, {DateTime? now}) {
   // became "publish my appointments"). Excluded wholesale now. The exam /
   // SignMeUp synth blocks are university data and stay shareable.
   var inPersonalBlock = false;
+  var inEvent = false;
   for (final line in _unfold(mergedIcs)) {
     if (line.startsWith("X-PERSONAL-ICS-BEGIN")) {
       inPersonalBlock = true;
@@ -90,8 +93,17 @@ IcsExport? buildIcsExport(String mergedIcs, {DateTime? now}) {
       continue;
     }
     if (inPersonalBlock) continue;
-    if (_isSentinel(line) || _isSourceInfo(line)) continue;
-    if (line == "BEGIN:VEVENT") eventCount++;
+    if (line == "BEGIN:VEVENT") {
+      eventCount++;
+      inEvent = true;
+    } else if (line == "END:VEVENT") {
+      inEvent = false;
+    }
+    // inside a VEVENT only the KNOWN publisher properties are dropped:
+    // an announcement title legitimately carries an ILIAS link
+    // ("SUMMARY:Abgabe https://ilias…"), and the URL catch-all silently
+    // exported such deadlines TITLELESS
+    if (_isSentinel(line) || _isSourceInfo(line, inEvent: inEvent)) continue;
     out.add(line);
   }
   // empty cache (or one whose only content was stripped): the caller
@@ -138,12 +150,17 @@ String _propName(String line) {
   return (cut < 0 ? line : line.substring(0, cut)).toUpperCase();
 }
 
-bool _isSourceInfo(String line) {
+bool _isSourceInfo(String line, {bool inEvent = false}) {
   final name = _propName(line);
   // X-*-TOKEN / WEBCAL-TOKEN style leftovers, whatever wrote them
   if (name.contains("TOKEN") || _sourceProperties.contains(name)) return true;
   // Lines carrying ANY absolute URL (http, webcal, ...) - unfolded first,
-  // so a URL split across fold continuations cannot hide
+  // so a URL split across fold continuations cannot hide. INSIDE a VEVENT
+  // the catch-all stays for privacy (DESCRIPTION/ATTACH can smuggle a
+  // personal webcal:// token into the share) but SUMMARY is exempt: an
+  // announcement title legitimately quotes an ILIAS link, and dropping
+  // the line exported such deadlines TITLELESS
+  if (inEvent && name == "SUMMARY") return false;
   return _urlPattern.hasMatch(line.toLowerCase());
 }
 

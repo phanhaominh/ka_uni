@@ -323,16 +323,21 @@ void main() {
       const poisoned = "BEGIN:VCALENDAR\r\n"
           "X-WR-CALNAME:X-EXAM-SYNTH-END meeting\r\n"
           "X-EXAM-SYNTH-BEGIN\r\n"
+          "X-DUE-SYNTH-BEGIN\r\n"
           "BEGIN:VEVENT\r\nUID:mine@ka_uni\r\nEND:VEVENT\r\n"
+          "X-DUE-SYNTH-END\r\n"
           "X-EXAM-SYNTH-END\r\n"
           "END:VCALENDAR\r\n";
       final clean = CampusManager.sanitizeSentinels(poisoned);
       expect(clean, isNot(contains("X-EXAM-SYNTH")));
+      expect(clean, isNot(contains("X-DUE-SYNTH")));
       expect(clean, contains("UID:mine@ka_uni"));
       expect(
           clean, isNot(contains("X-WR-CALNAME"))); // aggressive even mid-value
       expect(CampusManager.extractExamSynth(clean), isEmpty);
+      expect(CampusManager.extractDueSynth(clean), isEmpty);
       expect(CampusManager.stripExamSynth(clean), clean);
+      expect(CampusManager.stripDueSynth(clean), clean);
     });
 
     test("mid-value markers before the block are no splice anchors", () {

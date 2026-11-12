@@ -36,6 +36,16 @@ class NextUp {
     IcsOccurrence? running;
     IcsOccurrence? next;
     for (final o in candidates) {
+      // a GUESSED end (no DTEND in the feed; the +90 parser fallback)
+      // is a display default, not a fact: never announce "running until
+      // <invented>", and never keep a point event (23:45 deadline,
+      // all-day sitting) "live" for 90 minutes after it started/passed.
+      // Real-end events keep the historic rules untouched.
+      if (o.endGuessed) {
+        if (next == null && o.start.isAfter(now)) next = o;
+        if (next != null && running != null) break;
+        continue;
+      }
       if (!o.end.isAfter(now)) continue;
       if (running == null && !o.start.isAfter(now)) running = o;
       if (next == null && o.start.isAfter(now)) next = o;
@@ -75,8 +85,14 @@ class NextUp {
     return feed.occurrences
         .where((o) =>
             // include a lecture that started yesterday but still runs past
-            // midnight: it belongs to today's list and the running hero
-            (o.start.isBefore(nextStart) && o.end.isAfter(dayStart)) &&
+            // midnight: it belongs to today's list and the running hero.
+            // A GUESSED end (parser +90, e.g. a 23:45 ILIAS deadline with
+            // no DTEND) must never bleed into the next day's list - the
+            // tail is invented and would re-list yesterday's deadline
+            // under tomorrow as if it were due then
+            (o.start.isBefore(nextStart) &&
+                o.end.isAfter(dayStart) &&
+                !(o.endGuessed && o.start.isBefore(dayStart))) &&
             // one row per lecture; the room is part of the key so two
             // genuinely parallel groups of one family keep their own rows
             seen.add("${o.title}|${o.start.toIso8601String()}|${o.room}"))

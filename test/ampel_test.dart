@@ -157,6 +157,12 @@ void main() {
     final codes = modules.map((m) => m.code).toSet();
     for (final m in modules) {
       expect(m.titleKey, isNotEmpty);
+      // PDF page-number tokens must never be baked into catalogue titles
+      // (extraction scrub): a contaminated title silently reads the
+      // passed module as "planned" (ledger key mismatch) AND shows the
+      // garbled string to the user
+      expect(m.title, isNot(matches(RegExp(r"\.\s\d{2,3}\s"))),
+          reason: "page artifact in title: ${m.title}");
       for (final g in m.gates) {
         expect(g.page, greaterThan(0), reason: "${m.code} gate page-less");
       }

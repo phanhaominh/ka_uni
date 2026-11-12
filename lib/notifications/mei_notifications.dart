@@ -690,8 +690,9 @@ class MeiNotifications {
 /// live-URL probe: the main isolate's teardownEpoch bump is invisible in
 /// this isolate, platform prefs are the only cross-isolate fence.
 Future<void> _iliasBackgroundDiff() async {
-  if ((await SharedPreferencesAsync().getString(WebcalKeys.url) ?? "")
-      .isEmpty) {
+  final issuedUrl =
+      await SharedPreferencesAsync().getString(WebcalKeys.url) ?? "";
+  if (issuedUrl.isEmpty) {
     return; // logged out (or never provisioned)
   }
   // options MUST mirror CredentialsProvider's (iOS keychain account!)
@@ -718,7 +719,15 @@ Future<void> _iliasBackgroundDiff() async {
   // (and with it agenda rows + T-30 deadline reminders) is rebuilt and
   // merged into the live cache; empty boards never reach here, so proven
   // dues are never retracted by an unproven board
-  await CampusManager(Student.empty, () {}).publishDueBlock(fresh);
+  Map<int, String> names = const {};
+  try {
+    names = {for (final c in await mgr.fetchCourses()) c.refId: c.title};
+  } catch (_) {} // label-only join: the deadline stands without it
+  await CampusManager(Student.empty, () {}).publishDueBlock(fresh,
+      courses: names,
+      // rotation A->B during the SAML chain would otherwise splice A's
+      // deadlines into B's cache (epoch bumps do not cross isolates)
+      issuedUrl: issuedUrl);
 }
 
 /// WorkManager entry: cookieless ICS poll + fingerprint diff -> push.
@@ -795,9 +804,10 @@ void meiBackgroundCallback() {
       // instead of losing it forever.
       final prefsLive = SharedPreferencesAsync();
       final cacheLive = await prefsLive.getString("DATA_webcalIcsCache");
-      final strippedOld = WebcalFeed.parse(CampusManager.stripPersonalIcs(
-          CampusManager.stripSignMeUpSynth(
-              CampusManager.stripExamSynth(cacheLive ?? ""))));
+      final strippedOld = WebcalFeed.parse(CampusManager.stripDueSynth(
+          CampusManager.stripPersonalIcs(
+              CampusManager.stripSignMeUpSynth(
+                  CampusManager.stripExamSynth(cacheLive ?? "")))));
       // feed-source guard mirrors the foreground fetch: never diff a
       // baseline that belongs to a different calendar URL
       final previousSource = prefs.getString("DATA_webcalFeedSource");

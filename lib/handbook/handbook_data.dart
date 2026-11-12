@@ -111,29 +111,34 @@ class Handbook {
       {required this.version, required this.source, required this.modules});
 
   static Handbook? _cached;
+  static Future<Handbook?>? _inFlight;
 
   /// Load-once asset read; a corrupt/missing asset yields null and the
-  /// UI hides itself — the handbook is an enhancement, never a crash path.
-  static Future<Handbook?> load() async {
-    if (_cached != null) return _cached;
-    try {
-      final raw =
-          await rootBundle.loadString("assets/mei/handbook_spo2024.json");
-      final j = Map<String, dynamic>.from(jsonDecode(raw) as Map);
-      final meta = Map<String, dynamic>.from(j["meta"] as Map);
-      final h = Handbook(
-        version: meta["version"] as String? ?? "?",
-        source: meta["source"] as String? ?? "",
-        modules: [
-          for (final m in (j["modules"] as List? ?? const []))
-            HandbookModule.fromJson(Map<String, dynamic>.from(m as Map)),
-        ],
-      );
-      if (h.modules.isEmpty) return null;
-      return _cached = h;
-    } catch (_) {
-      return null;
-    }
+  /// UI hides itself — the handbook is an enhancement, never a crash
+  /// path. The FUTURE is memoized, not just the result: _ampelCard calls
+  /// this from build, and an unmemoized future re-parses concurrently
+  /// for every rebuild that lands while the first read is in flight.
+  static Future<Handbook?> load() {
+    if (_cached != null) return Future.value(_cached);
+    return _inFlight ??= () async {
+      try {
+        final raw =
+            await rootBundle.loadString("assets/mei/handbook_spo2024.json");
+        final j = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+        final meta = Map<String, dynamic>.from(j["meta"] as Map);
+        final h = Handbook(
+          version: meta["version"] as String? ?? "?",
+          source: meta["source"] as String? ?? "",
+          modules: [
+            for (final m in (j["modules"] as List? ?? const []))
+              HandbookModule.fromJson(Map<String, dynamic>.from(m as Map)),
+          ],
+        );
+        return _cached = h.modules.isEmpty ? null : h;
+      } catch (_) {
+        return null;
+      }
+    }();
   }
 
   /// Test hook: bypass the bundle without clearing real caches.
@@ -141,6 +146,12 @@ class Handbook {
 }
 
 /// Shared title→ledger-key normalization (GradeBook._ledgerTitleKey minus
-/// HTML entities, which handbook JSON never carries).
-String handbookKey(String raw) =>
-    raw.replaceAll(RegExp(r"\s+"), " ").trim().toLowerCase();
+/// HTML entities, which handbook JSON never carries). Typographic dashes
+/// fold to ASCII: the handbook PDF renders "Do it! – Service-Learning…"
+/// with an en-dash where CampusKIT's tree uses a hyphen, and an unfixed
+/// mismatch would silently read a PASSED module as "planned".
+String handbookKey(String raw) => raw
+    .replaceAll(RegExp("[\u2013\u2014\u2212]"), "-")
+    .replaceAll(RegExp(r"\s+"), " ")
+    .trim()
+    .toLowerCase();

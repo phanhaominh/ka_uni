@@ -112,19 +112,31 @@ class DayDecision {
                   [cancelledTitles.take(2).join(", ")])
             );
     }
-    final examOnly =
-        occ.isNotEmpty && occ.every((o) => o.title.startsWith("Klausur: "));
-    final first = hm(occ.first.start);
+    // a submission deadline is no "Veranstaltung"/class: a due-only day
+    // must not read "Today: 1 classes", mixed days must not count it in
+    // the class total, and the stated time must name a real lecture
+    // (the due time itself was always honest)
+    final lectureList =
+        occ.where((o) => !o.title.startsWith("Due: ")).toList();
+    final examOnly = lectureList.isNotEmpty &&
+        lectureList.every((o) => o.title.startsWith("Klausur: "));
+    final first = hm((lectureList.isEmpty ? occ.first : lectureList.first).start);
     final cancelHint = cancelledTitles.isEmpty
         ? ""
         : " · " + L10n.t("notifs.digestCancelHint", [cancelledTitles.first]);
+    if (lectureList.isEmpty) {
+      return (
+        L10n.t("notifs.digestTitleDue"),
+        L10n.t("notifs.digestBodyDue", [first, cancelHint]),
+      );
+    }
     return examOnly
         ? (
             L10n.t("notifs.digestTitleExam"),
             L10n.t("notifs.digestBodyExam", [first, cancelHint]),
           )
         : (
-            L10n.t("notifs.digestTitle", [occ.length]),
+            L10n.t("notifs.digestTitle", [lectureList.length]),
             L10n.t("notifs.digestBody", [first, cancelHint]),
           );
   }

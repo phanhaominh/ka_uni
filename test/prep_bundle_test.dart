@@ -64,6 +64,47 @@ void main() {
     expect(bundle.exam, same(exam));
   });
 
+  test("announcement titles with parentheses still match", () {
+    // split at the FIRST " (": the audit's counterexample
+    final lecture = occ("am1@kit", DateTime(2026, 11, 12, 12),
+        "Advanced Mathematics I");
+    final bundle = prepBundleFor(lecture,
+        iliasUrl: null,
+        occurrences: [
+          due(DateTime(2026, 11, 20, 18), "Advanced Mathematics I",
+              "Übungsblatt 3 (Musterlösung) – Abgabe bis 20.11."),
+        ],
+        exams: [],
+        now: now);
+    expect(bundle.dues.single.what,
+        "Übungsblatt 3 (Musterlösung) – Abgabe bis 20.11.");
+    expect(dueCourseOf("Due: Statistik (Übungsblatt (v2) Abgabe bis 20.11.)"),
+        "Statistik");
+  });
+
+  test("expired deadline leaves the prep sheet at its start", () {
+    // the +90 guessed end must not keep a 23:45 zombie in the sheet
+    // for another hour and a half
+    final lecture = occ("am1@kit", DateTime(2026, 11, 21, 12),
+        "Advanced Mathematics I");
+    final occurrences = [
+      lecture,
+      due(DateTime(2026, 11, 20, 23, 45), "Advanced Mathematics I", "Blatt 3"),
+    ];
+    final after = prepBundleFor(lecture,
+        iliasUrl: null,
+        occurrences: occurrences,
+        exams: [],
+        now: DateTime(2026, 11, 21, 0, 30));
+    expect(after.dues, isEmpty);
+    final before = prepBundleFor(lecture,
+        iliasUrl: null,
+        occurrences: occurrences,
+        exams: [],
+        now: DateTime(2026, 11, 20, 23, 40));
+    expect(before.dues.single.what, "Blatt 3");
+  });
+
   test("nothing at all -> isEmpty", () {
     final lecture =
         occ("x@kit", DateTime(2026, 11, 12, 14), "Some Elective X");

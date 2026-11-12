@@ -443,3 +443,49 @@ green, 0 analyzer errors.
   bind (manual map only, auto-guess never deep-links), that course's open
   dues (guarded lecture-key match — EM I never borrows EM III) and the
   exam registration state.
+
+## R28 — two-pool review wave over R25-R27 (7 review lenses + 3 adversarial verify lenses)
+- Due parser hardened (lens-2 HIGHs): date candidates are ALL scanned and
+  must be real calendar dates — KIT room codes ("Raum 20.11/30.20") can
+  no longer bind as the deadline nor abort the item; the keyword BEFORE
+  the date wins; times attach only AFTER the chosen date (a lecture
+  "16:15 Uhr" ahead of "Abgabe bis 20.11." moved the T−15 reminder hours
+  early); "12.10 Uhr" is a time; 31.02 dies instead of rolling to 01.03;
+  first-paren due-course split (announcement parens no longer cut the
+  course); UID gained a full-title checksum + URL salt (24-char key-cap
+  collisions dropped deadlines silently); recall keywords + abgeben/
+  Abgabetermin/-schluss/Nachfrist; DTSTART now TZID=Europe/Berlin like
+  the exam family; empty course prints the announcement ONCE.
+- publishDueBlock (verify-1): undo NEVER removes the shared cache body
+  (that severed the next account's fingerprint<->body pair and swallowed
+  its first real change forever) — it strips only OUR byte-identical
+  splice via extract/stripDueSynth, both stores; issuedUrl fence closes
+  the cross-isolate epoch blindspot (poll captures the URL before
+  scraping; rotation A->B mid-cycle = refuse).
+- Course join: SUMMARY reads "Due: <course> (<ann>)" — callers pass an
+  ILIAS fetchCourses refId->title map (label-only; a failed join never
+  loses the deadline).
+- Point-in-time honesty for DTEND-less dues (verify-3): hero never
+  says "running until <+90 invented>" (also kills the pre-existing
+  all-day-event leak); agenda rows print "bis 18:00"/"ab HH:MM" and dim
+  at the deadline, not 90 min after; prep sheet drops expired dues at
+  their start; onDay never bleeds a guessed end into tomorrow; digest
+  due-only day says "Abgabe fällig", mixed days count lectures only
+  and name the first lecture's time.
+- Cockpit: dues are never evicted by the 8-row cap (a Klaus phase with
+  8 sittings lost every deadline row); signup-opens row requires a
+  known window status.
+- Export: a SUMMARY carrying an ILIAS URL no longer exports the event
+  titleless (catch-all now exempts SUMMARY only; DESCRIPTION/ATTACH
+  token privacy unchanged).
+- Ampel/handbook: PDF page-number artifacts scrubbed from asset titles
+  (contaminated keys silently read passed modules as "planned");
+  handbookKey folds en/em-dashes (handbook "Do it! – …" vs ledger
+  hyphen); load() future memoized; blocked section = planned-only
+  (no duplicate rows).
+- publish/fetch fingerprint chain: poll diff strips the due block on the
+  OLD side too (was: every feed change after a publish re-announced
+  every due as CHANGED); logout-trip live probe via SharedPreferences
+  Async; asset load + dash + ledger-carry fixes from the UI lens;
+  _AgendaLoad carries `occurrences` through ALL four setState sites
+  (cockpit dues + prep hero died on every ILIAS-settling rebuild).

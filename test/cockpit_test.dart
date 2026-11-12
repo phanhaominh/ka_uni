@@ -160,4 +160,29 @@ void main() {
     expect(plan.length, 4);
     expect(plan.last.when, DateTime(2026, 11, 16, 18));
   });
+
+  test("8 sittings never evict an in-horizon due", () {
+    // the constructed crowd-out from the audit: Klaus phase, one late due
+    final plan = cockpitPlan(
+      occurrences: [
+        for (final d in [1, 3, 5, 7, 9, 11, 13, 15])
+          occ("kauni-exam-1-$d", DateTime(2027, 1, 25).add(Duration(days: d)),
+              "Klausur $d"),
+        occ("kauni-due-9-z", DateTime(2027, 2, 20, 23, 45),
+            "Due: Last Course (blatt)"),
+      ],
+      exams: [],
+      procedures: [],
+      registeredProcedureIds: {},
+      smuProven: true,
+      now: DateTime(2027, 1, 25),
+      maxItems: 8,
+    );
+    expect(plan.any((i) => i.kind == CockpitKind.due), isTrue);
+    // due-first reservation still renders in date order
+    for (var i = 1; i < plan.length; i++) {
+      expect(plan[i - 1].when.isBefore(plan[i].when) ||
+          plan[i - 1].when == plan[i].when, isTrue);
+    }
+  });
 }

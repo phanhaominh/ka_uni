@@ -17,6 +17,8 @@ const personalBegin = "X-PERSONAL-ICS-BEGIN\r\n";
 const personalEnd = "X-PERSONAL-ICS-END\r\n";
 const synthBegin = "X-SIGNMEUP-SYNTH-BEGIN\r\n";
 const synthEnd = "X-SIGNMEUP-SYNTH-END\r\n";
+const dueBegin = "X-DUE-SYNTH-BEGIN\r\n";
+const dueEnd = "X-DUE-SYNTH-END\r\n";
 
 String _ev(String uid, String summary, String dtstart) =>
     "BEGIN:VEVENT\r\nUID:$uid\r\nSUMMARY:$summary\r\n"
@@ -64,14 +66,19 @@ void main() {
         "END:VCALENDAR",
         "$personalBegin${_ev("p1@own", "Eigene Vorlesung", "20261106T140000")}$personalEnd"
             "$synthBegin${_ev("s1@smu", "Tutorium Synth", "20261106T160000")}$synthEnd"
+            "$dueBegin"
+            "BEGIN:VEVENT\r\nUID:kauni-due-1-x\r\nSUMMARY:Due: AM I (Blatt 3)\r\n"
+            "DTSTART;TZID=Europe/Berlin:20261120T180000\r\nEND:VEVENT\r\n"
+            "$dueEnd"
             "END:VCALENDAR");
 
     final e = buildIcsExport(merged, now: DateTime(2026, 10, 31))!;
     // R24: 30 feed + 1 synth — the PERSONAL block (1 event) is dropped
     // wholesale: sharing the timetable must never publish private
     // appointments (the old code only stripped the sentinel lines and
-    // exported the private VEVENT itself)
-    expect(e.eventCount, 31);
+    // exported the private VEVENT itself). R25: the DUE block is
+    // university data -> event stays, sentinel lines go.
+    expect(e.eventCount, 32);
 
     final text = _text(e);
     expect(text, isNot(contains("Eigene Vorlesung")),
@@ -79,6 +86,9 @@ void main() {
     expect(text, isNot(contains("p1@own")));
     expect(text, isNot(contains("X-PERSONAL-ICS")));
     expect(text, isNot(contains("X-SIGNMEUP-SYNTH")));
+    expect(text, isNot(contains("X-DUE-SYNTH")),
+        reason: "R25 deadline sentinel leaked into a share sheet");
+    expect(text, contains("Due: AM I (Blatt 3)"));
     expect(text.toLowerCase(), isNot(contains("http")));
     expect(text.toUpperCase(), isNot(contains("TOKEN")));
     expect(text, isNot(contains("PRODID")));
@@ -92,14 +102,18 @@ void main() {
     expect(header, isNot(contains("cascampus")));
     expect(header, isNot(contains("campus.studium.kit.edu")));
 
-    // the exported document holds feed + synth events only — never the
-    // personal block
-    expect(RegExp("BEGIN:VEVENT").allMatches(text).length, 31);
+    // the exported document holds feed + synth + due events only — never
+    // the personal block
+    expect(RegExp("BEGIN:VEVENT").allMatches(text).length, 32);
     // and the app parser renders the injected synth one like the feed's own
     final feed = WebcalFeed.parse(text, now: DateTime(2026, 10, 30, 18));
     expect(feed, isNotNull);
     expect(feed!.occurrences.any((o) => o.title == "Eigene Vorlesung"), isFalse);
     expect(feed.occurrences.any((o) => o.title == "Tutorium Synth"), isTrue);
+    // the point-in-time due survives export without DTEND and re-parses
+    // flagged endGuessed - no external client ever sees an invented end
+    final due = feed.occurrences.firstWhere((o) => o.title == "Due: AM I (Blatt 3)");
+    expect(due.endGuessed, isTrue);
   });
 
   test("webcal:// and folded non-http URLs are stripped from event bodies", () {
@@ -131,6 +145,23 @@ void main() {
     // the events themselves survive — only the URL-bearing lines drop
     expect(text, contains("personal note"));
     expect(text, contains("only text here"));
+  });
+
+  test("SUMMARY with a URL survives the source-info filter", () {
+    // an announcement title quoting its ILIAS link used to be dropped as
+    // "publisher metadata" - the deadline exported TITLELESS
+    final merged = fixture3.replaceFirst(
+        "END:VCALENDAR",
+        "BEGIN:VEVENT\r\n"
+        "UID:kauni-due-9-z@ka_uni\r\n"
+        "SUMMARY:Due: AM I (Abgabe https://ilias.studium.kit.edu/goto/9)\r\n"
+        "DTSTART;TZID=Europe/Berlin:20261120T180000\r\n"
+        "END:VEVENT\r\nEND:VCALENDAR");
+    final e = buildIcsExport(merged, now: DateTime(2026, 10, 31))!;
+    expect(_text(e), contains("https://ilias.studium.kit.edu/goto/9"),
+        reason: "titleless deadline export: SUMMARY catch-all fired again");
+    final feed = WebcalFeed.parse(_text(e))!;
+    expect(feed.occurrences.any((o) => o.title.contains("goto/9")), isTrue);
   });
 
   test("empty / non-exportable cache: null signal, no exception", () {

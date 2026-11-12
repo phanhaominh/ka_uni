@@ -1471,6 +1471,11 @@ class CampusManager extends KITLoginManager {
     "X-EXAM-SYNTH-END",
     "X-PERSONAL-ICS-BEGIN",
     "X-PERSONAL-ICS-END",
+    // R25: the deadline block is the fourth injected family; an imported
+    // personal ICS (or a KIT body carrying these lines) would otherwise
+    // survive sanitizing and be extracted/re-injected as if genuine
+    "X-DUE-SYNTH-BEGIN",
+    "X-DUE-SYNTH-END",
   ];
 
   /// Drop every line containing a sentinel token: external ICS bytes
@@ -1711,34 +1716,62 @@ class CampusManager extends KITLoginManager {
   }
 
   Future<void> ensureDueSynthLoaded() async {
-    if (_dueSynthLoaded) return;
+    // NOT load-once: the 30-min poll isolate publishes fresh deadline
+    // blocks into the same platform store; a once-loaded field would let
+    // the next foreground write clobber dues the poll just added.
+    // SharedPreferencesAsync bypasses the per-engine legacy cache
+    // (same cross-isolate freshness rule as the urlLive fences).
     _dueSynthLoaded = true;
-    final prefs = await SharedPreferences.getInstance();
-    dueSynth = prefs.getString(_dueSynthBlockKey) ?? "";
+    dueSynth = await SharedPreferencesAsync().getString(_dueSynthBlockKey) ?? "";
   }
 
   /// Parse deadlines out of freshly fetched ILIAS announcements, persist
   /// the deterministic block and merge it into the live cache. Idempotent
   /// by byte-equality (announcement list flickers re-run this on every
   /// agenda visit and every 30-min poll).
-  Future<void> publishDueBlock(List<IliasAnnouncement> anns) async {
+  Future<void> publishDueBlock(List<IliasAnnouncement> anns,
+      {Map<int, String> courses = const {}, String? issuedUrl}) async {
     final epoch = _teardownEpoch;
     final items = <DueItem>[];
     final now = DateTime.now();
     for (final a in anns) {
+      // the news list ships NO course title - join it from the caller's
+      // refId map so the SUMMARY reads "Due: <course> (<ann>)" instead of
+      // duplicating the announcement in both slots
+      final title = a.courseTitle.isNotEmpty
+          ? a.courseTitle
+          : (courses[a.courseRefId] ?? "");
       final d = parseDueAnnouncement(
           courseRefId: a.courseRefId,
-          course: shortCourse(a.courseTitle),
+          course: shortCourse(title),
           title: a.title,
-          postedAt: a.when ?? now);
+          postedAt: a.when ?? now,
+          // announcements without a ref_id would otherwise collide across
+          // courses when titles match - the URL separates them
+          uidSalt: a.courseRefId == 0 ? a.url : "");
       if (d != null && !items.any((e) => e.sameKey(d))) items.add(d);
     }
     final block = buildDueSynthBlock(items);
     final prefs = await SharedPreferences.getInstance();
     if (epoch != _teardownEpoch) return;
+    // LIVE probe, not the legacy snapshot: inside the WorkManager poll
+    // isolate the snapshot keeps answering the OLD account's URL after a
+    // logout, and DATA_dueSynthBlock is consumed (not overwritten) by the
+    // next fetch — a bled block would render the dead account's deadlines
+    // in the next student's agenda until their own board proves out.
+    final urlLive = SharedPreferencesAsync();
     if (testWebcalUrl.isEmpty &&
-        (prefs.getString(_webcalUrlKey) ?? "").isEmpty) {
+        (await urlLive.getString(_webcalUrlKey) ?? "").isEmpty) {
       return; // logged out (or not provisioned yet)
+    }
+    // cross-isolate epoch blindspot: the poll's CampusManager never sees
+    // the main isolate's teardown bump, so a board fetched under A and
+    // published after B re-provisioned would sail past the probe above.
+    // The poll captured ITS url before scraping; any rotation since means
+    // the board belongs to someone else
+    if (issuedUrl != null &&
+        (await urlLive.getString(_webcalUrlKey) ?? "") != issuedUrl) {
+      return;
     }
     dueSynth = block;
     await prefs.setString(_dueSynthBlockKey, block);
@@ -1747,7 +1780,33 @@ class CampusManager extends KITLoginManager {
     final merged = injectDueSynth(cached, block);
     if (merged != cached) {
       await prefs.setString(_webcalIcsCacheKey, merged);
-      if (epoch == _teardownEpoch) notificationCallback();
+      // a logout landing inside the write hops above: undo both writes
+      // (the sweep may already have removed them - remove is idempotent)
+      // before the block key can ride into the next account's fetch
+      if (epoch != _teardownEpoch ||
+          (testWebcalUrl.isEmpty &&
+              (await urlLive.getString(_webcalUrlKey) ?? "").isEmpty)) {
+        dueSynth = "";
+        await prefs.remove(_dueSynthBlockKey);
+        // Strip OUR block from the shared body - NEVER remove() it: the
+        // next account's fetch may have replaced the whole document in
+        // this window, and wiping the body severs its fingerprint<->cache
+        // pair (the first real change after the wipe is then swallowed
+        // forever, and the agenda loses its offline fallback). Reading
+        // through the ASYNC store sees B's write, and the byte-equality
+        // guard below skips any document that no longer carries our
+        // exact splice.
+        final body = await urlLive.getString(_webcalIcsCacheKey);
+        if (body != null && extractDueSynth(body) == block) {
+          final stripped = stripDueSynth(body);
+          await urlLive.setString(_webcalIcsCacheKey, stripped);
+          // keep the legacy in-memory snapshot from serving the merged
+          // bytes back to this isolate's own readers afterwards
+          await prefs.setString(_webcalIcsCacheKey, stripped);
+        }
+        return;
+      }
+      notificationCallback();
     }
   }
 

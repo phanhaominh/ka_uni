@@ -154,7 +154,12 @@ class GradesPage extends StatelessWidget {
         final failed = plan.by(AmpelState.failed);
         final signup = plan.by(AmpelState.signupOpen);
         final running = plan.by(AmpelState.inProgress);
-        final blocked = plan.remaining.where((m) => m.blockedBy.isNotEmpty);
+        // blocked rows that already print under signup/failed/running
+        // carry their block suffix there - this section adds only the
+        // otherwise-invisible ones (planned with a failed prerequisite)
+        final blocked = plan
+            .by(AmpelState.planned)
+            .where((m) => m.blockedBy.isNotEmpty);
         final nextTerm = currentTerm(now) == "WS" ? "SS" : "WS";
         final nextUp = plan
             .by(AmpelState.planned)

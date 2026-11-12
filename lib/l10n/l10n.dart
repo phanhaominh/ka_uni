@@ -143,7 +143,6 @@ class L10n {
     "agenda.timetableChangedN": "Stundenplan geändert ({0})",
     "agenda.roomChanges": "Raumänderungen, Ausfälle, neue Mitteilungen",
     "agenda.lecturesExercises": "Vorlesungen und Übungen",
-    "agenda.prepTitle": "Vorbereitung",
     "agenda.prepIlias": "ILIAS-Kurs öffnen",
     "agenda.prepDue": "Abgabe",
     "agenda.prepExam": "Prüfung",
@@ -200,6 +199,8 @@ class L10n {
     "easter.currywerk": "Currywerk ist überschätzt",
     // round 1: next-up banner
     "agenda.nowRunning": "läuft · bis {0}",
+    "agenda.rowDueBy": "bis {0}",
+    "agenda.rowFrom": "ab {0}",
     "agenda.startsSoon": "startet gleich",
     "agenda.startsInMin": "startet in {0} Min",
     "agenda.startsInHours": "startet in {0} Std",
@@ -251,6 +252,8 @@ class L10n {
     "notifs.digestBody": " Erste um {0}{1}",
     // round 4: exam sittings as calendar events
     "notifs.digestTitleExam": "Heute: Klausur",
+    "notifs.digestTitleDue": "Heute: Abgabe fällig",
+    "notifs.digestBodyDue": " Fällig um {0}{1}",
     "notifs.digestBodyExam": " Klausur um {0}{1}",
     // R24 wave A: morning decision line ("do I have lecture today?")
     "agenda.dayStale":
@@ -290,7 +293,6 @@ class L10n {
     // shared / dates
     "dates.bis": "until {0}",
     "agenda.lecturesExercises": "Lectures and tutorials",
-    "agenda.prepTitle": "Prep",
     "agenda.prepIlias": "Open ILIAS course",
     "agenda.prepDue": "Deadline",
     "agenda.prepExam": "Exam",
@@ -355,6 +357,8 @@ class L10n {
     "ilias.savedToFiles": "Saved to Files: {0}",
     "easter.currywerk": "Currywerk is overrated",
     "agenda.nowRunning": "running · until {0}",
+    "agenda.rowDueBy": "by {0}",
+    "agenda.rowFrom": "from {0}",
     "agenda.startsSoon": "starting soon",
     "agenda.startsInMin": "starts in {0} min",
     "agenda.startsInHours": "starts in {0} h",
@@ -395,6 +399,8 @@ class L10n {
     "notifs.digestBody": " First at {0}{1}",
     // round 4: exam sittings as calendar events
     "notifs.digestTitleExam": "Today: exam",
+    "notifs.digestTitleDue": "Today: assignment due",
+    "notifs.digestBodyDue": " Due at {0}{1}",
     "notifs.digestBodyExam": " Exam at {0}{1}",
     // R24 wave A: morning decision line ("do I have lecture today?")
     "agenda.dayStale": "Timetable not current – feed older than a day",

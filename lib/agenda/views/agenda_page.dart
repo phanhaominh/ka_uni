@@ -358,9 +358,21 @@ class _AgendaPageState extends State<AgendaPage> {
           // R24 wave B: the same proven board feeds the ILIAS deadline
           // synth (due rows land in the merged cache; contained, never
           // poisons the agenda)
-          unawaited(vm.campusManager
-              .publishDueBlock(announcements)
-              .catchError((Object _) {}));
+          unawaited(() async {
+            // the news board ships no course titles - join them from the
+            // enrolment list so dues read "Due: <course> (<announcement>)"
+            // instead of duplicating the announcement; a failed course
+            // page only costs the label, never the deadline itself
+            Map<int, String> names = const {};
+            try {
+              names = {
+                for (final c in await vm.iliasManager.fetchCourses())
+                  c.refId: c.title
+              };
+            } catch (_) {}
+            await vm.campusManager
+                .publishDueBlock(announcements, courses: names);
+          }().catchError((Object _) {}));
         }
       }
     } catch (_) {
@@ -378,6 +390,10 @@ class _AgendaPageState extends State<AgendaPage> {
           tomorrow: _load.tomorrow,
           changes: _load.changes,
           upcoming: _load.upcoming,
+          // R25 carry: the cockpit/prep consumers read the occurrence
+          // pool; dropping it here made dues vanish the moment the
+          // ILIAS fetch settled
+          occurrences: _load.occurrences,
           unread: unread ?? _load.unread,
           announcements:
               announcements.isNotEmpty ? announcements : _load.announcements,
@@ -482,6 +498,9 @@ class _AgendaPageState extends State<AgendaPage> {
               feed2, DateTime(now2.year, now2.month, now2.day + 1)),
           changes: cachedChanges,
           upcoming: _upcoming(feed2, now2),
+          // the FRESH re-parse is exactly where re-injected due/exam
+          // synth events surface to the cockpit + prep sheet
+          occurrences: feed2?.occurrences ?? const [],
           unread: _load.unread,
           announcements: _load.announcements,
           iliasError: _load.iliasError,
@@ -517,6 +536,7 @@ class _AgendaPageState extends State<AgendaPage> {
         today: _load.today,
         tomorrow: _load.tomorrow,
         upcoming: _load.upcoming,
+        occurrences: _load.occurrences,
         unread: _load.unread,
         announcements: _load.announcements,
         iliasError: _load.iliasError,
@@ -810,15 +830,28 @@ class _AgendaPageState extends State<AgendaPage> {
         roomDelta = c;
       }
     }
+    // a deadline is a POINT and a guessed end (+90 fallback) is no fact:
+    // render start-only ("bis 18:00" for dues, "ab 08:00" for guessed
+    // spans) instead of the invented "18:00–19:30" block
+    final duePoint = occ.title.startsWith("Due: ");
+    final String timeText;
+    if (occ.endGuessed) {
+      timeText = duePoint
+          ? L10n.t("agenda.rowDueBy", [_hm(occ.start)])
+          : L10n.t("agenda.rowFrom", [_hm(occ.start)]);
+    } else {
+      timeText = "${_hm(occ.start)}–${_hm(occ.end)}";
+    }
     Widget title = Text(
-        "${_hm(occ.start)}–${_hm(occ.end)}  ${occ.displayTitle}",
+        "$timeText  ${occ.displayTitle}",
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
             fontSize: 13,
-            fontWeight: occ.start.isBefore(now) && occ.end.isAfter(now)
-                ? FontWeight.bold
-                : FontWeight.normal,
+            fontWeight:
+                occ.start.isBefore(now) && occ.end.isAfter(now) && !occ.endGuessed
+                    ? FontWeight.bold
+                    : FontWeight.normal,
             fontFeatures: const [FontFeature.tabularFigures()]));
     if (touched) {
       title = Row(children: [
@@ -841,8 +874,12 @@ class _AgendaPageState extends State<AgendaPage> {
     final showRoomDelta =
         roomDelta != null && (roomDelta.oldRoom?.isNotEmpty ?? false);
     return Opacity(
-      // finished lectures recede; the live one is the anchor
-      opacity: occ.end.isBefore(now) ? 0.38 : 1.0,
+      // finished lectures recede; the live one is the anchor. A guessed
+      // end must not keep a passed deadline full-brightness for 90 min:
+      // point rows dim as soon as their time is over
+      opacity: (occ.endGuessed ? occ.start.isBefore(now) : occ.end.isBefore(now))
+          ? 0.38
+          : 1.0,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 3),
         child: Column(
