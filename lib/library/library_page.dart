@@ -858,7 +858,7 @@ Future<void> showLibrarySignInDialog(BuildContext context) async {
   }
   if (go != true) return;
   if (kitUser.isEmpty) {
-    toasts.showTextToast(L10n.t("settings.usernamePlaceholder"));
+    toasts.showTextToast(L10n.t("library.userMissing"));
     return;
   }
   final bool ok = await anny.signIn(kitUser, password);
