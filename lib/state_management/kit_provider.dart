@@ -259,6 +259,10 @@ class KITProvider extends ChangeNotifier {
       // transport timeout, and the pull spinner must not hang on a
       // third-party site after the campus cascade already finished
       unawaited(mensa.fetchWeek(force: true));
+      // ... and the library seat counts (same discipline: the Anny
+      // backend is third-party, its latency must not hang the campus
+      // pull spinner; the card's own TTL coalesces with the boot kick)
+      unawaited(anny.refreshAnon(force: true));
     })();
     _refetchInFlight = future;
     // identity-bound clear: an orphaned cascade from the previous account

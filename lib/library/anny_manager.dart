@@ -6,11 +6,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:kit_mobile/library/anny_api.dart';
-import 'package:kit_mobile/notifications/library_notifications.dart';
-import 'package:kit_mobile/library/anny_auth.dart';
-import 'package:kit_mobile/state_management/kit_login_manager.dart'
-    show KITLoginManager;
+import 'anny_api.dart';
+import '../notifications/library_notifications.dart';
+import 'anny_auth.dart';
+import '../state_management/kit_login_manager.dart' show KITLoginManager;
 
 /// SharedPreferences keys. ANN_* deliberately, not DATA_*: the room catalog
 /// and free counts are PUBLIC Anny data (survive logout on a shared device,

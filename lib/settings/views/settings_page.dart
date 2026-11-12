@@ -97,6 +97,13 @@ class _SettingsPageState extends State<SettingsPage> {
                           trailing: CupertinoSwitch(
                               value: settingsVM.showMensa.value,
                               onChanged: settingsVM.showMensa.set)),
+                      SettingRow(
+                          title: L10n.t("library.settingsToggle"),
+                          onTap: () => settingsVM.showLibrary
+                              .set(!settingsVM.showLibrary.value),
+                          trailing: CupertinoSwitch(
+                              value: settingsVM.showLibrary.value,
+                              onChanged: settingsVM.showLibrary.set)),
                     ],
                   ),
                 ),
@@ -375,9 +382,8 @@ class _OwnIcsSectionState extends State<_OwnIcsSection> {
   }
 
   void _loadStatus(CampusManager cm) {
-    _events = RegExp("BEGIN:VEVENT", dotAll: true)
-        .allMatches(cm.personalIcs)
-        .length;
+    _events =
+        RegExp("BEGIN:VEVENT", dotAll: true).allMatches(cm.personalIcs).length;
   }
 
   String get _statusText => _events == 0

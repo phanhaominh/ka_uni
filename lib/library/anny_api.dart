@@ -82,10 +82,12 @@ class AnnyHttp {
       if (decoded is Map<String, dynamic>) json = decoded;
     } on Object catch (_) {}
     if (r.statusCode == 401) throw AnnyUnauthorized();
-    if (r.statusCode == 429)
+    if (r.statusCode == 429) {
       throw AnnyRateLimited(_retryAfter(r.headers['retry-after']));
-    if (r.statusCode >= 400)
+    }
+    if (r.statusCode >= 400) {
       throw AnnyError(r.statusCode, _detail(r.body, json));
+    }
     // live endpoints answering a BARE JSON array instead of a JSON:API
     // document (intervals/start + availability/start-dates, verified
     // against b.anny.eu 2026-11-12) stay reachable via itemsOf
@@ -120,9 +122,11 @@ class AnnyHttp {
     final errs = json['errors'];
     if (errs is List && errs.isNotEmpty && errs.first is Map) {
       final e = errs.first as Map;
-      if (e['detail'] != null)
+      if (e['detail'] != null) {
         return '${e['detail']}';
-      else if (e['title'] != null) return '${e['title']}';
+      } else if (e['title'] != null) {
+        return '${e['title']}';
+      }
     }
     return raw.length > 160 ? raw.substring(0, 160) : raw;
   }
@@ -206,8 +210,9 @@ Future<List<AnnyRoom>> fetchRooms(AnnyHttp h) async {
     for (final r
         in d is List ? d.whereType<Map>() : (d is Map ? [d] : const <Map>[])) {
       final room = _room(r.cast<String, dynamic>(), services);
-      if (room.id.isNotEmpty)
+      if (room.id.isNotEmpty) {
         rooms[room.slug.isEmpty ? room.id : room.slug] = room;
+      }
     }
   }
 
@@ -395,9 +400,11 @@ Future<List<String>> childSeats(AnnyHttp h, String slug,
       final fs = _freeState(
           (r['meta'] as Map?)?['resource_availability_result'] ??
               a['resource_availability_result']);
-      if (fs == true)
+      if (fs == true) {
         picked.add(id);
-      else if (fs == null) unknown++;
+      } else if (fs == null) {
+        unknown++;
+      }
     } on Object catch (_) {
       unknown++;
     }
@@ -423,8 +430,9 @@ Future<List<AnnyBooking>> myBookings(
       q: const {'filter[upcoming_only]': '1'}, bearer: bearer);
   final names = <String, String>{};
   for (final i in ((json['included'] as List?) ?? const []).whereType<Map>()) {
-    if (_asStr(i['type']) == 'resources')
+    if (_asStr(i['type']) == 'resources') {
       names[_asStr(i['id'])] = _asStr((i['attributes'] as Map?)?['name']);
+    }
   }
   final out = <AnnyBooking>[];
   for (final b in ((json['data'] as List?) ?? const []).whereType<Map>()) {
@@ -557,10 +565,20 @@ int _dstOff(DateTime utc) {
 /// ISO with explicit Berlin offset (as captured); non-UTC DateTimes are
 /// treated as Berlin wall time, UTC ones converted
 String _isoBerlin(DateTime d) {
-  final utc = d.isUtc
-      ? d
-      : DateTime.utc(d.year, d.month, d.day, d.hour, d.minute, d.second);
-  final off = _dstOff(utc), loc = utc.add(Duration(hours: off));
+  // AnnySlot/AnnyBooking times are Berlin WALL times (contract): the
+  // wall fields go out AS-IS stamped with that date's Berlin offset.
+  // (The old code treated wall input as UTC and ADDED the offset ->
+  // every booked slot went out 1h winter / 2h summer late. Only true
+  // UTC instants convert; the UTC path's output is unchanged.)
+  final int off;
+  final DateTime loc;
+  if (d.isUtc) {
+    off = _dstOff(d);
+    loc = d.add(Duration(hours: off));
+  } else {
+    loc = d;
+    off = _dstOff(DateTime.utc(d.year, d.month, d.day, d.hour, d.minute));
+  }
   return '${loc.year}-${_two(loc.month)}-${_two(loc.day)}'
       'T${_two(loc.hour)}:${_two(loc.minute)}:${_two(loc.second)}+0$off:00';
 }
@@ -569,8 +587,17 @@ String _isoBerlin(DateTime d) {
 DateTime? _parseT(Object? v, [bool dayOnly = false]) {
   if (v == null) return null;
   try {
+    if (dayOnly) {
+      // calendar day = the DATE PREFIX exactly as written; DateTime.
+      // parse field getters are UTC-shifted and keyed live
+      // "2026-11-13T00:00:00+01:00" start-dates under 2026-11-12
+      final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch('$v');
+      return m == null
+          ? null
+          : DateTime(int.parse(m.group(1)!), int.parse(m.group(2)!),
+              int.parse(m.group(3)!));
+    }
     final i = DateTime.parse('$v');
-    if (dayOnly) return DateTime(i.year, i.month, i.day);
     final u = i.isUtc ? i : i.toUtc(), l = u.add(Duration(hours: _dstOff(u)));
     return DateTime(l.year, l.month, l.day, l.hour, l.minute, l.second);
   } on FormatException {

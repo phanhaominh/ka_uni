@@ -8,6 +8,7 @@ import '../types/setting.dart';
 const showingAvgMarkKey = "PREF_showingAvgMark";
 const showingProfileKey = "PREF_showingProfile";
 const showingMensaKey = "PREF_showingMensa";
+const showingLibraryKey = "PREF_showingLibrary";
 const defaultIliasPageKey = "PREF_defaultIliasPage";
 // the language pref is read by L10n.reload() directly: one constant only,
 // a private duplicate could silently drift from the key that has the effect
@@ -42,6 +43,11 @@ class SettingsProvider extends ChangeNotifier {
       defaultValue: true,
       notifyCallback: () => _instance?.notifyListeners());
 
+  BoolSetting showLibrary = BoolSetting(
+      valueKey: showingLibraryKey,
+      defaultValue: true,
+      notifyCallback: () => _instance?.notifyListeners());
+
   MultipleChoiceSetting<String> defaultIliasPage = MultipleChoiceSetting(
       valueKey: defaultIliasPageKey,
       choices: ["Dashboard", "Meine Kurse & Gruppen"],
@@ -72,6 +78,7 @@ class SettingsProvider extends ChangeNotifier {
         showingAvgMark,
         showingProfile,
         showMensa,
+        showLibrary,
         defaultIliasPage,
         language,
         theme

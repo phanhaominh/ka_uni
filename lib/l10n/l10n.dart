@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'strings_exams.dart';
 import 'strings_files.dart';
 import 'strings_grades.dart';
+import 'strings_library.dart';
 import 'strings_mensa.dart';
 import 'strings_notifs.dart';
 import 'strings_places.dart';
@@ -121,6 +122,7 @@ class L10n {
     ...de_exams,
     ...de_files,
     ...de_grades,
+    ...de_library,
     ...de_mensa,
     ...de_notifs,
     ...de_places,
@@ -256,6 +258,7 @@ class L10n {
     ...en_exams,
     ...en_files,
     ...en_grades,
+    ...en_library,
     ...en_mensa,
     ...en_notifs,
     ...en_places,

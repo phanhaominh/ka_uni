@@ -16,6 +16,11 @@
 ///   library.capacity     {0} = total seat/room count
 ///   library.signedInAs   {0} = KIT user id / first name
 ///   library.checkinBanner {0} = room name, {1} = check-in deadline time
+///   library.updatedAt    {0} = localized "HH:mm" of the last refresh
+///   library.cancelUntil  {0} = localized cancel deadline
+///   library.durMin       {0} = duration in minutes
+///   library.durH         {0} = duration in whole hours
+///   library.bookedOk     {0} = booking number (BB…)
 const Map<String, String> de_library = {
   "library.title": "Bibliothek",
   "library.freeNow": "{0} Plätze frei",
@@ -54,6 +59,18 @@ const Map<String, String> de_library = {
   "library.neverBooked": "Noch keine Buchung.",
   "library.openingHours": "Öffnungszeiten",
   "library.seats": "Plätze",
+  "library.updatedAt": "Stand: {0} Uhr",
+  "library.stale": "evtl. veraltet",
+  "library.firstName": "Vorname",
+  "library.lastName": "Nachname",
+  "library.email": "E-Mail",
+  "library.signInFailed": "Anmeldung fehlgeschlagen – KIT-Zugangsdaten prüfen.",
+  "library.cancelUntil": "Stornierbar bis {0}",
+  "library.durMin": "{0} Min.",
+  "library.durH": "{0} h",
+  "library.bookedOk": "Gebucht: {0}",
+  "library.setFav": "Als Favorit festlegen",
+  "library.retry": "Erneut versuchen",
 };
 
 const Map<String, String> en_library = {
@@ -94,4 +111,16 @@ const Map<String, String> en_library = {
   "library.neverBooked": "No bookings yet.",
   "library.openingHours": "Opening hours",
   "library.seats": "Seats",
+  "library.updatedAt": "As of {0}",
+  "library.stale": "possibly outdated",
+  "library.firstName": "First name",
+  "library.lastName": "Last name",
+  "library.email": "Email",
+  "library.signInFailed": "Sign-in failed – check your KIT credentials.",
+  "library.cancelUntil": "Cancelable until {0}",
+  "library.durMin": "{0} min",
+  "library.durH": "{0} h",
+  "library.bookedOk": "Booked: {0}",
+  "library.setFav": "Set as favorite",
+  "library.retry": "Try again",
 };

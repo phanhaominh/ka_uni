@@ -21,6 +21,7 @@ import 'package:kit_mobile/timetable/models/webcal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:kit_mobile/home/views/relevant_modules.dart';
 import 'package:kit_mobile/local_files_storage/views/pinned_files_list_view.dart';
+import 'package:kit_mobile/library/library_today_card.dart';
 import 'package:kit_mobile/mensa/views/mensa_today_card.dart';
 import 'package:kit_mobile/profile/views/profile_view.dart';
 import 'package:kit_mobile/settings/providers/settings_provider.dart';
@@ -226,6 +227,15 @@ class _KITHomePageState extends State<KITHomePage> {
                         Padding(
                           padding: const EdgeInsets.only(bottom: spaceMd),
                           child: const MensaTodayCard(),
+                        ),
+                        const SizedBox(height: spaceLg),
+                      ],
+                      // library seat reservation (settings-gated, mensa
+                      // precedent): cached rooms + counts paint instantly
+                      if (settingsVM.showLibrary.value) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: spaceMd),
+                          child: const LibraryTodayCard(),
                         ),
                         const SizedBox(height: spaceLg),
                       ],
