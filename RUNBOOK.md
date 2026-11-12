@@ -404,3 +404,42 @@ guards, ICS emitter hygiene). 518 tests green, 0 analyzer errors.
   kit_https pin test asserts the PRODUCTION seed const (was a drifted
   local copy), exam_synth weekday prefixes derived from the date,
   orphan 6.9k-line ref.ics fixture deleted.
+
+## Wave R24–R27: deadlines -> cockpit -> Ampel -> prep (0.8.7+61)
+
+Five waves, one user story: "what do I have to do and when". 550 tests
+green, 0 analyzer errors.
+
+- R24 Wave A (shipped in 0.8.6+60 commit): morning decision line + export
+  leak fix (see git log; entry backfilled here).
+- R25 Wave B — ILIAS deadline parser (`lib/ilias/due_parse.dart`):
+  announcement TITLES only (dashboard carries no body); fence = deadline
+  keyword + date, year-less rolls to nearest future, >210d refused, time
+  needs "Uhr" (bare "18.01" is a room), no-time = 23:45 end-of-day;
+  deterministic UIDs `kauni-due-<refId>-<key>`; emitted as the FOURTH
+  sentinel block (X-DUE-SYNTH, mirrors exam synth: line-anchored
+  strip/extract/inject, fold, wipe on logout). Persisted under
+  DATA_dueSynthBlock (survives restart before any ILIAS fetch), rebuilt by
+  agenda fetch + the 30-min poll diff (proven boards only — an EMPTY board
+  never retracts), merged at every cache write, EXCLUDED from the change
+  fingerprint and the ICS export sentinels (block content itself stays
+  shareable — it is university data). T−30 reminders and digest pick dues
+  up via the merged feed with zero alarm-family changes.
+- R26 Wave C — deadline cockpit (`lib/agenda/logic/cockpit.dart` + agenda
+  card): dues + exam sittings + exam/SignMeUp registration windows in ONE
+  sorted timeline; strictly tomorrow onward (today sections own today);
+  28d horizon (60d for sittings — the Klaus phase lives further out);
+  smu rows only behind proven `loadedMine`; <3d items painted error.
+- R26 Wave D — Schein-Ampel (`lib/handbook/`, `assets/mei/
+  handbook_spo2024.json`): official MEI SPO 2024 handbook (86 modules,
+  17 prerequisite parts, 28 gates — EVERY rule page-cited; pinned to the
+  2024-08-29 edition, drift of newer reprints recorded in meta.note).
+  Card on grades page: CP bar is LEDGER passedEcts / 180 (handbook sum
+  303 counts every elective option — never a denominator), states from
+  ledger/exam/feed only, gates block ONLY on a positively failed
+  prerequisite (unknown never shouts), unmatched titles read "planned"
+  (under-report, never inflate). next-term candidate list included.
+- R27 Wave E — prep bundle: hero tap -> sheet with the CERTIFIED ILIAS
+  bind (manual map only, auto-guess never deep-links), that course's open
+  dues (guarded lecture-key match — EM I never borrows EM III) and the
+  exam registration state.

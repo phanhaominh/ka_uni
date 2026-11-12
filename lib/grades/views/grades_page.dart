@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../common_ui/block_container.dart';
+import '../../handbook/ampel.dart';
+import '../../handbook/handbook_data.dart';
 import '../../l10n/l10n.dart';
+import '../../state_management/campus/campus_manager.dart';
 import '../../state_management/kit_provider.dart';
 import '../../toasts/models/toasts_provider.dart';
 import '../models/grade_book.dart';
@@ -61,6 +64,8 @@ class GradesPage extends StatelessWidget {
               )
             else ...[
               _sopCard(context, book, scheme),
+              const SizedBox(height: 8),
+              _ampelCard(context, book, scheme),
               const SizedBox(height: 8),
               _summaryCard(context, book, scheme),
               // failed first: those are the attempts the student must act on
@@ -121,6 +126,125 @@ class GradesPage extends StatelessWidget {
                   color: statusColor)),
         ],
       ),
+    );
+  }
+
+  /// Wave D (R26): Schein-Ampel — official MEI handbook crossed with the
+  /// live ledger + exam registration. Static catalogue, live status: if
+  /// either side is missing (no ledger) the card hides itself rather than
+  /// showing a catalogue as if it were progress.
+  Widget _ampelCard(BuildContext context, GradeBook book, ColorScheme scheme) {
+    return FutureBuilder<Handbook?>(
+      future: Handbook.load(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        final cm = context.read<KITProvider>().campusManager;
+        if (cm.enrolledLectureTitles.isEmpty) return const SizedBox.shrink();
+        final now = DateTime.now();
+        final plan = ampelPlan(
+            handbook: snap.data!,
+            book: book,
+            signupOpenKeys: {
+              for (final e in cm.exams)
+                if (e.needsAction(now) &&
+                    cm.isTakingThisSemester(e) != false)
+                  CampusManager.lectureTitleKey(e.title)
+            },
+            takingKeys: cm.enrolledLectureTitles);
+        final failed = plan.by(AmpelState.failed);
+        final signup = plan.by(AmpelState.signupOpen);
+        final running = plan.by(AmpelState.inProgress);
+        final blocked = plan.remaining.where((m) => m.blockedBy.isNotEmpty);
+        final nextTerm = currentTerm(now) == "WS" ? "SS" : "WS";
+        final nextUp = plan
+            .by(AmpelState.planned)
+            .where((m) =>
+                m.offeredIn(nextTerm) &&
+                m.blockedBy.isEmpty &&
+                !book.pending
+                    .any((g) => g.titleKey == m.module.titleKey))
+            .take(5)
+            .toList();
+        final green =
+            CupertinoDynamicColor.resolve(CupertinoColors.systemGreen, context);
+        final pct = (book.passedEcts / AmpelPlan.degreeEctsTarget)
+            .clamp(0.0, 1.0);
+        Widget list(String label, Color color, List<AmpelModule> mods) =>
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final m in mods)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      "$label: ${m.module.title}"
+                      "${m.blockedBy.isEmpty ? "" : " — ${L10n.t("grades.ampelBlocked", [m.blockedBy.join(", ")])}"}",
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: color == scheme.error
+                              ? scheme.error
+                              : scheme.onSurfaceVariant),
+                    ),
+                  ),
+              ],
+            );
+        return BlockContainer(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(L10n.t("grades.ampelTitle"),
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: pct,
+                  minHeight: 8,
+                  backgroundColor: scheme.surfaceContainerHighest,
+                  valueColor: AlwaysStoppedAnimation(green),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                  L10n.t("grades.ampelCp", [
+                    _deDecimal(book.passedEcts),
+                    _whole(AmpelPlan.degreeEctsTarget)
+                  ]),
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w600)),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  if (running.isNotEmpty)
+                    _chip(L10n.t("grades.ampelRunning"), scheme.secondary),
+                  if (signup.isNotEmpty)
+                    _chip(L10n.t("grades.ampelSignup"), scheme.error),
+                  if (failed.isNotEmpty)
+                    _chip(L10n.t("grades.ampelFailed"), scheme.error),
+                ],
+              ),
+              if (signup.isNotEmpty) list(L10n.t("grades.ampelSignup"), scheme.error, signup),
+              if (failed.isNotEmpty) list(L10n.t("grades.ampelFailed"), scheme.error, failed),
+              if (running.isNotEmpty) list(L10n.t("grades.ampelRunning"), scheme.secondary, running),
+              if (blocked.isNotEmpty)
+                list(L10n.t("grades.ampelBlockedTitle"), scheme.error,
+                    blocked.toList()),
+              if (nextUp.isNotEmpty)
+                list(
+                    L10n.t("grades.ampelNextTerm", [nextTerm]),
+                    scheme.onSurfaceVariant,
+                    nextUp),
+              const SizedBox(height: 6),
+              Text(L10n.t("grades.ampelSource", [snap.data!.version]),
+                  style: TextStyle(fontSize: 11, color: scheme.outline)),
+            ],
+          ),
+        );
+      },
     );
   }
 

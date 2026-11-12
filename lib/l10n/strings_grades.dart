@@ -22,6 +22,15 @@ const Map<String, String> de_grades = {
   "grades.cp": "{0} CP",
   "grades.empty": "Noch keine Noten vorhanden.\n"
       "(Nicht angemeldet oder Studienverlauf noch nicht geladen.)",
+  "grades.ampelTitle": "MEI-Fortschritt (SPO 2024)",
+  "grades.ampelCp": "{0} / {1} CP laut Modulhandbuch",
+  "grades.ampelFailed": "Nicht bestanden",
+  "grades.ampelSignup": "Prüfung noch nicht angemeldet",
+  "grades.ampelRunning": "Läuft gerade",
+  "grades.ampelBlocked": "Zulassung gesperrt: {0}",
+  "grades.ampelBlockedTitle": "Zulassung gesperrt",
+  "grades.ampelNextTerm": "Nächstes Semester ({0}) geplant",
+  "grades.ampelSource": "Quelle: offizielles Modulhandbuch {0}",
 };
 
 const Map<String, String> en_grades = {
@@ -48,4 +57,13 @@ const Map<String, String> en_grades = {
   "grades.cp": "{0} CP",
   "grades.empty": "No grades yet.\n"
       "(Not signed in, or the study record has not loaded yet.)",
+  "grades.ampelTitle": "MEI progress (SPO 2024)",
+  "grades.ampelCp": "{0} / {1} CP per module handbook",
+  "grades.ampelFailed": "Failed",
+  "grades.ampelSignup": "Exam not registered yet",
+  "grades.ampelRunning": "Currently taking",
+  "grades.ampelBlocked": "Admission blocked: {0}",
+  "grades.ampelBlockedTitle": "Admission blocked",
+  "grades.ampelNextTerm": "Planned for next term ({0})",
+  "grades.ampelSource": "Source: official module handbook {0}",
 };

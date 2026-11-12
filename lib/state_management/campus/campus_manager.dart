@@ -21,6 +21,8 @@ import '../../notifications/mei_notifications.dart';
 import '../../timetable/models/webcal.dart';
 import '../../exams/models/exam_list.dart';
 import '../../exams/models/exam_synth.dart';
+import '../../ilias/due_parse.dart';
+import '../../ilias/models/ilias_models.dart';
 import '../../utils/string_prettifiers.dart';
 
 const _studentDataKey = "DATA_student";
@@ -328,6 +330,8 @@ class CampusManager extends KITLoginManager {
     // fetchMine for B (break, plus session) would never replace it
     signMeUpSynth = "";
     examSynth = ""; // registered sittings are account data too
+    dueSynth = ""; // A's ILIAS deadlines are A's account data as well
+    _dueSynthLoaded = false;
     personalIcs = "";
     personalIcsUrl = "";
     _personalIcsLoaded = false;
@@ -1680,6 +1684,73 @@ class CampusManager extends KITLoginManager {
     return base.replaceRange(at, at, wrapped);
   }
 
+  // ---- ILIAS deadline synth (announcement-titled due dates, Wave B) ----
+  // Same sentinel pattern as the exam block above. Producer:
+  // [publishDueBlock] (agenda foreground fetch + the background ILIAS
+  // diff); rebuilt block re-merged at every cache write, so due events are
+  // ordinary feed events everywhere (grid, agenda, digest, reminders).
+  static const dueSynthBegin = "X-DUE-SYNTH-BEGIN";
+  static const dueSynthEnd = "X-DUE-SYNTH-END";
+  static const _dueSynthBlockKey = "DATA_dueSynthBlock";
+  String dueSynth = "";
+  bool _dueSynthLoaded = false;
+
+  static String stripDueSynth(String raw) =>
+      stripSentinelBlock(raw, dueSynthBegin, dueSynthEnd);
+
+  static String extractDueSynth(String raw) =>
+      extractSentinelBlock(raw, dueSynthBegin, dueSynthEnd);
+
+  static String injectDueSynth(String raw, String block) {
+    final base = stripDueSynth(raw);
+    if (block.isEmpty) return base;
+    final wrapped = "$dueSynthBegin\r\n$block$dueSynthEnd\r\n";
+    final at = base.lastIndexOf("END:VCALENDAR");
+    if (at < 0) return "$base$wrapped";
+    return base.replaceRange(at, at, wrapped);
+  }
+
+  Future<void> ensureDueSynthLoaded() async {
+    if (_dueSynthLoaded) return;
+    _dueSynthLoaded = true;
+    final prefs = await SharedPreferences.getInstance();
+    dueSynth = prefs.getString(_dueSynthBlockKey) ?? "";
+  }
+
+  /// Parse deadlines out of freshly fetched ILIAS announcements, persist
+  /// the deterministic block and merge it into the live cache. Idempotent
+  /// by byte-equality (announcement list flickers re-run this on every
+  /// agenda visit and every 30-min poll).
+  Future<void> publishDueBlock(List<IliasAnnouncement> anns) async {
+    final epoch = _teardownEpoch;
+    final items = <DueItem>[];
+    final now = DateTime.now();
+    for (final a in anns) {
+      final d = parseDueAnnouncement(
+          courseRefId: a.courseRefId,
+          course: shortCourse(a.courseTitle),
+          title: a.title,
+          postedAt: a.when ?? now);
+      if (d != null && !items.any((e) => e.sameKey(d))) items.add(d);
+    }
+    final block = buildDueSynthBlock(items);
+    final prefs = await SharedPreferences.getInstance();
+    if (epoch != _teardownEpoch) return;
+    if (testWebcalUrl.isEmpty &&
+        (prefs.getString(_webcalUrlKey) ?? "").isEmpty) {
+      return; // logged out (or not provisioned yet)
+    }
+    dueSynth = block;
+    await prefs.setString(_dueSynthBlockKey, block);
+    final cached = prefs.getString(_webcalIcsCacheKey);
+    if (cached == null || !cached.contains("BEGIN:VCALENDAR")) return;
+    final merged = injectDueSynth(cached, block);
+    if (merged != cached) {
+      await prefs.setString(_webcalIcsCacheKey, merged);
+      if (epoch == _teardownEpoch) notificationCallback();
+    }
+  }
+
   // ---- personal / faculty timetable ICS ----
   // The faculty sends first-semester MEI a timetable ICS by e-mail because
   // the big lectures (AM I, EM I, MSE I, MD A) carry no Belegungspflicht
@@ -2383,6 +2454,7 @@ class CampusManager extends KITLoginManager {
       // readable from the agenda footer alone
       await _webcalDiag("start");
       await ensurePersonalIcsLoaded();
+      await ensureDueSynthLoaded();
       await carryExamSynthFromCache();
       await _webcalDiag("synth ok");
       var url =
@@ -2502,7 +2574,8 @@ class CampusManager extends KITLoginManager {
       var changesLiveRaw = await live.getString(_webcalChangesKey) ?? "";
       if (previousFingerprint != null && previousFingerprint != fingerprint) {
         final changes = feed.changesSince(WebcalFeed.parse(
-            stripPersonalIcs(stripSignMeUpSynth(stripExamSynth(cachedLive)))));
+            stripDueSynth(stripPersonalIcs(
+                stripSignMeUpSynth(stripExamSynth(cachedLive))))));
         if (changes.isNotEmpty) {
           // an empty diff under a changed fingerprint is the rolling parse
           // window, not a real change - flagging it stuck the tab badge with
@@ -2524,20 +2597,22 @@ class CampusManager extends KITLoginManager {
       final synthBlock =
           dropSignMeUpSynthCoveredByFeed(feed.raw, signMeUpSynth);
       signMeUpSynth = synthBlock;
-      await prefs.setString(
-          _webcalIcsCacheKey,
+      // ONE merged document for both the write and the parse (they used to
+      // duplicate the inject ladder and could drift); R24 wave B adds the
+      // ILIAS deadline block to the ladder
+      final mergedCache = injectDueSynth(
           injectPersonalIcs(
               injectSignMeUpSynth(
                   injectExamSynth(feed.raw, examSynth), synthBlock),
-              personalIcs));
+              personalIcs),
+          dueSynth);
+      await prefs.setString(_webcalIcsCacheKey, mergedCache);
       // age stamp for the agenda stale-data footer (also written by the
       // background poll after it rewrites the cache)
       await prefs.setString(
           WebcalKeys.fetchedAt, DateTime.now().toIso8601String());
 
-      final merged = WebcalFeed.parse(injectPersonalIcs(
-          injectSignMeUpSynth(injectExamSynth(feed.raw, examSynth), synthBlock),
-          personalIcs));
+      final merged = WebcalFeed.parse(mergedCache);
       timetable = gridTemplate(merged ?? feed);
       rememberEnrolledTitles(merged ?? feed);
 

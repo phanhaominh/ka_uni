@@ -11,7 +11,9 @@ import '../../l10n/l10n.dart';
 import '../../exams/models/exam_list.dart';
 import '../../exams/views/exams_page.dart';
 import '../../agenda/logic/walk_hint.dart';
+import '../../agenda/logic/cockpit.dart';
 import '../../agenda/logic/next_up.dart';
+import '../../agenda/logic/prep_bundle.dart';
 import '../../timetable/logic/now_clock.dart';
 import '../../common_ui/highlight_pulse.dart';
 import '../../ilias/ilias_scraper.dart';
@@ -78,6 +80,11 @@ class _AgendaLoad {
   // nearest occurrences AFTER tomorrow, so empty day cards can point at
   // when the silence ends instead of showing a dead "No events"
   final List<IcsOccurrence> upcoming;
+
+  /// Raw merged-feed future pool for the deadline cockpit (the cockpit
+  /// itself is rebuilt per build from live vm data; this is only the
+  /// occurrence snapshot the agenda already parsed - no second parse)
+  final List<IcsOccurrence> occurrences;
   final IliasUnread? unread;
   final List<IliasAnnouncement> announcements;
   final String? iliasError;
@@ -88,6 +95,7 @@ class _AgendaLoad {
       this.tomorrow = const [],
       this.changes = const [],
       this.unread,
+      this.occurrences = const [],
       this.announcements = const [],
       this.upcoming = const [],
       this.iliasError,
@@ -293,6 +301,7 @@ class _AgendaPageState extends State<AgendaPage> {
               NextUp.onDay(feed, DateTime(now.year, now.month, now.day + 1)),
           changes: changes,
           upcoming: _upcoming(feed, now),
+          occurrences: feed?.occurrences ?? const [],
           unread: iliasCached?.$1 ?? _load.unread,
           announcements: iliasCached != null && iliasCached.$2.isNotEmpty
               ? iliasCached.$2
@@ -346,6 +355,12 @@ class _AgendaPageState extends State<AgendaPage> {
           // fire-and-forget: the watcher swallows every failure internally
           // and must never delay or poison the agenda rebuild behind it
           IliasWatcher.diffAndNotify(announcements);
+          // R24 wave B: the same proven board feeds the ILIAS deadline
+          // synth (due rows land in the merged cache; contained, never
+          // poisons the agenda)
+          unawaited(vm.campusManager
+              .publishDueBlock(announcements)
+              .catchError((Object _) {}));
         }
       }
     } catch (_) {
@@ -568,6 +583,7 @@ class _AgendaPageState extends State<AgendaPage> {
               _daySection(L10n.t("agenda.tomorrow"), _load.tomorrow, now,
                   day: DateTime(now.year, now.month, now.day + 1)),
               _nextExamCard(context, vm, now),
+              _cockpitCard(context, vm, now),
               _iliasSection(context),
               if (needAction.isNotEmpty)
                 _examsSection(context, needAction)
@@ -901,7 +917,109 @@ class _AgendaPageState extends State<AgendaPage> {
   Widget _nextUpBanner(BuildContext context, DateTime now) {
     final up = NextUp.compute([..._load.today, ..._load.tomorrow], now);
     if (up == null) return const SizedBox.shrink();
-    return NextUpCard(up: up);
+    // R27: tapping the hero opens the prep bundle for exactly this lecture
+    return NextUpCard(up: up, onTap: () => _openPrepSheet(up));
+  }
+
+  /// Wave E (R27): bottom sheet with the lecture's certified ILIAS bind,
+  /// its open deadlines and the exam registration state.
+  void _openPrepSheet(NextUp up) {
+    final vm = context.read<KITProvider>();
+    final bundle = prepBundleFor(up.occ,
+        iliasUrl: vm.campusManager.manualIliasUrlFor(up.occ.displayTitle),
+        occurrences: _load.occurrences,
+        exams: vm.campusManager.exams,
+        now: DateTime.now());
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        final e = bundle.exam;
+        final now = DateTime.now();
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(up.occ.displayTitle,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700)),
+                  if (up.occ.room.isNotEmpty)
+                    Text(up.occ.room,
+                        style: TextStyle(
+                            fontSize: 12, color: scheme.onSurfaceVariant)),
+                  const SizedBox(height: 12),
+                  if (bundle.isEmpty)
+                    Text(L10n.t("agenda.prepEmpty"),
+                        style: TextStyle(
+                            fontSize: 13, color: scheme.onSurfaceVariant)),
+                  if (bundle.iliasUrl != null)
+                    TextButton.icon(
+                      icon: const Icon(Icons.school),
+                      label: Text(L10n.t("agenda.prepIlias")),
+                      onPressed: () =>
+                          launchUrl(Uri.parse(bundle.iliasUrl!),
+                              mode: LaunchMode.externalApplication),
+                    ),
+                  for (final d in bundle.dues.take(6))
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Row(
+                        children: [
+                          Icon(Icons.assignment,
+                              size: 16, color: scheme.onSurfaceVariant),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              "${L10n.t("agenda.prepDue")} · ${d.what}",
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                          Text(L10n.dayOffset(d.when, now),
+                              style: TextStyle(
+                                  fontSize: 12, color: scheme.outline)),
+                        ],
+                      ),
+                    ),
+                  if (e != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Row(
+                        children: [
+                          Icon(Icons.event,
+                              size: 16,
+                              color: e.registered
+                                  ? scheme.primary
+                                  : scheme.error),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              e.registered
+                                  ? "${L10n.t("agenda.prepExam")} · ${L10n.t("agenda.prepExamRegistered")}"
+                                  : e.windowIsOpen(now) && e.windowEnd != null
+                                      ? "${L10n.t("agenda.prepExam")} · ${L10n.t("agenda.prepExamOpen", [L10n.stamp(e.windowEnd!)])}"
+                                      : L10n.t("agenda.prepExam"),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   /// Countdown to the nearest registered exam sitting (dates now parsed
@@ -956,6 +1074,94 @@ class _AgendaPageState extends State<AgendaPage> {
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Wave C (R25): one merged timeline of every date the student can miss
+  /// (ILIAS dues, exam sittings, exam + SignMeUp registration windows).
+  /// Pure selection lives in [cockpitPlan]; alarms for these dates are
+  /// already armed by the existing families (500-600 / 700-799 id bands,
+  /// T−30 lecture reminders over the merged feed) - this card only shows
+  /// the view, so it never schedules anything.
+  Widget _cockpitCard(BuildContext context, KITProvider vm, DateTime now) {
+    final items = cockpitPlan(
+        occurrences: _load.occurrences,
+        exams: vm.campusManager.exams,
+        procedures: vm.signMeUpManager.procedures,
+        registeredProcedureIds: vm.signMeUpManager.registeredProcedureIds,
+        smuProven: vm.signMeUpManager.loadedMine,
+        now: now);
+    if (items.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    String label(CockpitKind k) => switch (k) {
+          CockpitKind.due => L10n.t("agenda.cockpitDue"),
+          CockpitKind.examSignupOpen =>
+            L10n.t("agenda.cockpitExamSignupOpen"),
+          CockpitKind.examSignupOpens =>
+            L10n.t("agenda.cockpitExamSignupOpens"),
+          CockpitKind.examSitting => L10n.t("agenda.cockpitExamSitting"),
+          CockpitKind.smuOpen => L10n.t("agenda.cockpitSmuOpen"),
+          CockpitKind.smuOpens => L10n.t("agenda.cockpitSmuOpens"),
+        };
+    IconData icon(CockpitKind k) => switch (k) {
+          CockpitKind.due => Icons.assignment,
+          CockpitKind.examSignupOpen || CockpitKind.examSignupOpens =>
+            Icons.how_to_reg,
+          CockpitKind.examSitting => Icons.event,
+          CockpitKind.smuOpen || CockpitKind.smuOpens => Icons.school,
+        };
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(Icons.timeline, color: scheme.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(L10n.t("agenda.cockpitTitle"),
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, color: scheme.primary)),
+              ),
+            ]),
+            for (final it in items)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Icon(icon(it.kind),
+                        size: 16,
+                        color: it.urgent(now)
+                            ? scheme.error
+                            : scheme.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(it.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w600)),
+                          Text(
+                            "${label(it.kind)} · ${L10n.dayOffset(it.when, now)} · ${L10n.stamp(it.when)}",
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: it.urgent(now)
+                                    ? scheme.error
+                                    : scheme.outline),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),

@@ -12,6 +12,7 @@ import 'package:workmanager/workmanager.dart';
 
 import '../agenda/logic/day_decision.dart';
 import '../exams/models/exam_list.dart';
+import '../student/student.dart';
 import '../l10n/l10n.dart';
 import '../signmeup/signmeup_manager.dart';
 import '../state_management/campus/campus_manager.dart';
@@ -713,6 +714,11 @@ Future<void> _iliasBackgroundDiff() async {
       stillOurs: () async =>
           (await SharedPreferencesAsync().getString(WebcalKeys.url) ?? "")
               .isNotEmpty);
+  // R24 wave B: same proven board feeds the deadline synth — the block
+  // (and with it agenda rows + T-30 deadline reminders) is rebuilt and
+  // merged into the live cache; empty boards never reach here, so proven
+  // dues are never retracted by an unproven board
+  await CampusManager(Student.empty, () {}).publishDueBlock(fresh);
 }
 
 /// WorkManager entry: cookieless ICS poll + fingerprint diff -> push.
@@ -867,20 +873,25 @@ void meiBackgroundCallback() {
       // plus session)
       final staleCache =
           (await prefsLive.getString("DATA_webcalIcsCache")) ?? "";
-      final mergedRaw = CampusManager.injectPersonalIcs(
-          CampusManager.injectSignMeUpSynth(
-              CampusManager.injectExamSynth(
-                  body, CampusManager.extractExamSynth(staleCache)),
-              // feed-coverage dedupe of the CARRIED synth block (b48: the
-              // poll re-seeded the pre-dedupe block verbatim, reviving
-              // double agenda rows the foreground paths now filter):
-              // judge the carried block against the FRESH feed alone
-              // (same rule as CampusManager's foreground embed) - suppress
-              // only feed-covered events, keep synth-only ones (AdvMath,
-              // MINT tutorials)
-              CampusManager.dropSignMeUpSynthCoveredByFeed(
-                  body, CampusManager.extractSignMeUpSynth(staleCache))),
-          CampusManager.extractPersonalIcs(staleCache));
+      var mergedRaw = CampusManager.injectDueSynth(
+          CampusManager.injectPersonalIcs(
+              CampusManager.injectSignMeUpSynth(
+                  CampusManager.injectExamSynth(
+                      body, CampusManager.extractExamSynth(staleCache)),
+                  // feed-coverage dedupe of the CARRIED synth block (b48: the
+                  // poll re-seeded the pre-dedupe block verbatim, reviving
+                  // double agenda rows the foreground paths now filter):
+                  // judge the carried block against the FRESH feed alone
+                  // (same rule as CampusManager's foreground embed) - suppress
+                  // only feed-covered events, keep synth-only ones (AdvMath,
+                  // MINT tutorials)
+                  CampusManager.dropSignMeUpSynthCoveredByFeed(
+                      body, CampusManager.extractSignMeUpSynth(staleCache)),
+              ),
+              CampusManager.extractPersonalIcs(staleCache)),
+          // R24 wave B: ILIAS deadline block survives a fresh feed pull too
+          // (it is rebuilt from announcements every cycle, carried between)
+          CampusManager.extractDueSynth(staleCache));
       await prefs.setString("DATA_webcalIcsCache", mergedRaw);
       await prefs.setString(
           "DATA_webcalFetchedAt", DateTime.now().toIso8601String());
@@ -895,6 +906,11 @@ void meiBackgroundCallback() {
       // the re-registration below
       try {
         await _iliasBackgroundDiff();
+        // the diff may have merged a refreshed deadline block into the
+        // cache after mergedRaw was built above - the reminders and the
+        // digest scheduled from THIS run must see it
+        mergedRaw =
+            (await prefsLive.getString("DATA_webcalIcsCache")) ?? mergedRaw;
       } on Object catch (e) {
         if (kDebugMode) print("ilias background diff failed: $e");
       }

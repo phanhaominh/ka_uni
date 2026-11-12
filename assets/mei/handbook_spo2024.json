@@ -1,0 +1,1180 @@
+{
+ "meta": {
+  "source": "https://www.mach.kit.edu/download/MHB/82-804-H-2024_v1_2024-08-29_en.pdf",
+  "retrieved": "2026-11-12",
+  "version": "SPO 2024 v1.2 2024-08-29",
+  "note": "Extracted from the official KIT module handbook for the B.Sc. Mechanical Engineering International (MEI), SPO 2024, Winter Term 2024/25 edition dated 2024-08-29 (168 pages; all cited page numbers are pages of this exact PDF, which reprints the Study and Examination Regulations pp.8-23 and their correction p.25); newer semester reprints of the same SPO 2024 handbook exist (latest Winter Semester 2026/27, dated 2026-08-18) and some module rules have since changed (e.g. a CAE-Basics Workshop gate was added), so this dataset is deliberately pinned to the 2024-08-29 edition; the app displays this data as an unofficial convenience reference only, the authoritative source is the PDF itself."
+ },
+ "modules": [
+  {
+   "code": "T-MACH-113573",
+   "title": "Advanced Ceramics: Functionality and Mechanics",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MATH-113493",
+   "title": "Advanced Mathematics I",
+   "ects": 7,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "written",
+   "parts": [
+    {
+     "code": "T-MATH-113496",
+     "type": "prerequisite",
+     "ects": 0,
+     "title": "Advanced Mathematics I Prerequisite",
+     "attendsTo": "T-MATH-113493"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "Prerequisite homework course Advanced Mathematics I Prerequisite (T-MATH-113496, 0 CP) must have been passed; passing scores for homework are prerequisites for the examination",
+     "edge": "T-MATH-113496.prerequisite -> T-MATH-113493.exam",
+     "page": 78
+    },
+    {
+     "requires": "Orientation exam, take deadline: Advanced Mathematics I must be TAKEN by the end of the 2nd semester (SPO 8(1) p.15; Curriculum 1.4 repeats 'must be taken by the end of the second semester', p.40)",
+     "edge": "deadline:taken-by-end-of-2nd-semester -> T-MATH-113493.exam",
+     "page": 15
+    },
+    {
+     "requires": "Orientation exam, pass deadline (discrepancy with the 2-semester take deadline, both recorded): Orientation Exam module M-MACH-106721 'This module must be passed until the end of the 3. term'; SPO 8(2): entitlement to the degree programme is lost if not PASSED incl. repetitions by the end of the 3rd semester (p.15); a second repetition of orientation exams is excluded (SPO 8(2), p.15)",
+     "edge": "deadline:passed-by-end-of-3rd-semester -> T-MATH-113493.exam",
+     "page": 70
+    }
+   ],
+   "notes": [
+    "Orientation exam: take by end of 2nd semester (p.15 SPO 8(1), p.40) but module must be passed by end of 3rd term (p.70, p.15 SPO 8(2)); second repetition excluded (p.15)",
+    "One-retake rule: a failed written/oral/alternative exam may be repeated only once; after a failed repeat the entitlement to the examination is lost (p.5 sec.1.1.5; SPO 9, p.15)"
+   ]
+  },
+  {
+   "code": "T-MATH-113496",
+   "title": "Advanced Mathematics I Prerequisite",
+   "ects": 0,
+   "terms": [
+    "WS"
+   ],
+   "examType": "coursework",
+   "notes": [
+    "0 CP homework coursework whose passing scores gate the AM I exam (p.79); repeated until passed: coursework may be repeated until successfully passed (p.40)"
+   ]
+  },
+  {
+   "code": "T-MATH-113494",
+   "title": "Advanced Mathematics II",
+   "ects": 7,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "written",
+   "parts": [
+    {
+     "code": "T-MATH-113497",
+     "type": "prerequisite",
+     "ects": 0,
+     "title": "Advanced Mathematics II Prerequisite",
+     "attendsTo": "T-MATH-113494"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "Prerequisite homework course Advanced Mathematics II Prerequisite (T-MATH-113497, 0 CP) must have been passed; passing scores for homework AND the midterm test are prerequisites for the examination",
+     "edge": "T-MATH-113497.prerequisite -> T-MATH-113494.exam",
+     "page": 80
+    }
+   ],
+   "notes": [
+    "Exam admission needs passing scores for homework AND the midterm test (p.80)"
+   ]
+  },
+  {
+   "code": "T-MATH-113497",
+   "title": "Advanced Mathematics II Prerequisite",
+   "ects": 0,
+   "terms": [
+    "SS"
+   ],
+   "examType": "coursework",
+   "notes": [
+    "0 CP homework coursework whose passing scores gate the AM II exam; AM II additionally requires the midterm test score (p.81, p.80)"
+   ]
+  },
+  {
+   "code": "T-MATH-113495",
+   "title": "Advanced Mathematics III",
+   "ects": 7,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "written",
+   "parts": [
+    {
+     "code": "T-MATH-113498",
+     "type": "prerequisite",
+     "ects": 0,
+     "title": "Advanced Mathematics III Prerequisite",
+     "attendsTo": "T-MATH-113495"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "Prerequisite homework course Advanced Mathematics III Prerequisite (T-MATH-113498, 0 CP) must have been passed; passing scores for homework are prerequisites for the examination",
+     "edge": "T-MATH-113498.prerequisite -> T-MATH-113495.exam",
+     "page": 82
+    }
+   ]
+  },
+  {
+   "code": "T-MATH-113498",
+   "title": "Advanced Mathematics III Prerequisite",
+   "ects": 0,
+   "terms": [
+    "WS"
+   ],
+   "examType": "coursework",
+   "notes": [
+    "0 CP homework coursework whose passing scores gate the AM III exam (p.83)"
+   ]
+  },
+  {
+   "code": "T-MACH-113563",
+   "title": "Automated Production Systems",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113566",
+   "title": "Automation and Autonomy in Logistics",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "written"
+  },
+  {
+   "code": "T-MACH-113550",
+   "title": "Bachelor's Thesis",
+   "ects": 12,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "thesis",
+   "parts": [
+    {
+     "code": "T-MACH-113551",
+     "type": "coursework",
+     "ects": 3,
+     "title": "Presentation",
+     "attendsTo": "T-MACH-113550"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "Admission to the Bachelor's Thesis module requires 120 CP ('The requirement for admission to the bachelor thesis module are 120 ECTS'; SPO 14(1) p.17; at least 120 CP from the fields Fundamentals of Engineering, International Studies, Internship and Specialization in MEI, p.49; exam board decides on exceptions upon request)",
+     "edge": "CP:120 -> T-MACH-113550.exam",
+     "page": 49
+    }
+   ],
+   "notes": [
+    "Max processing time 3 months; topic may be returned once within the first month; graded by two examiners within 6 weeks (p.49, p.86)"
+   ]
+  },
+  {
+   "code": "T-FORUM-113579",
+   "title": "Basic Seminar Supplementary Studies on Science, Technology and Society - Self Registration",
+   "ects": 2,
+   "terms": [
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113526",
+   "title": "Basics in Measurement and Control Systems",
+   "ects": 7,
+   "terms": [
+    "WS"
+   ],
+   "examType": "written"
+  },
+  {
+   "code": "T-ETIT-113567",
+   "title": "Basics of Electrical Engineering",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "written"
+  },
+  {
+   "code": "T-MACH-113509",
+   "title": "Basics of Manufacturing Technology",
+   "ects": 3,
+   "terms": [
+    "WS"
+   ],
+   "examType": "written"
+  },
+  {
+   "code": "T-MACH-113525",
+   "title": "Basics of Mechatronics",
+   "ects": 3,
+   "terms": [
+    "SS"
+   ],
+   "examType": "written",
+   "parts": [
+    {
+     "code": "T-MACH-113524",
+     "type": "coursework",
+     "ects": 1,
+     "title": "Tutorial Basics of Mechatronics",
+     "attendsTo": "T-MACH-113525"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "The course Tutorial Basics of Mechatronics (T-MACH-113524) must have been passed for admission to the exam",
+     "edge": "T-MACH-113524.coursework -> T-MACH-113525.exam",
+     "page": 92
+    }
+   ]
+  },
+  {
+   "code": "T-MACH-113507",
+   "title": "CAE-Basics",
+   "ects": 4,
+   "terms": [
+    "WS"
+   ],
+   "examType": "written",
+   "notes": [
+    "Recommendation: knowledge of Mechanical Design A and Engineering Mechanics I assumed (p.93)"
+   ]
+  },
+  {
+   "code": "T-ZAK-112807",
+   "title": "Civil Society and non-profit Organizations in democratic socities",
+   "ects": 2,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113601",
+   "title": "Computer Vehicle Dynamics",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113557",
+   "title": "Contact Mechanics",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-ZAK-112565",
+   "title": "Deconstructing Unconscious Bias into Intercultural Competence: A neurological look into how the brain constructs . 97 reality",
+   "ects": 2,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-106700",
+   "title": "Do it! – Service-Learning for Prospective Mechanical Engineers",
+   "ects": 2,
+   "terms": [
+    "WS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113405",
+   "title": "Drive System Engineering A: Automotive Systems",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "written"
+  },
+  {
+   "code": "T-FORUM-113580",
+   "title": "Elective Specialization Supplementary Studies on Science, Technology and Society / About Knowledge and 101 Science - Self-Registration",
+   "ects": 3,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "other"
+  },
+  {
+   "code": "T-FORUM-113582",
+   "title": "Elective Specialization Supplementary Studies on Science, Technology and Society / Science in Public Debates - . 102 Self Registration",
+   "ects": 3,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "other"
+  },
+  {
+   "code": "T-FORUM-113581",
+   "title": "Elective Specialization Supplementary Studies on Science, Technology and Society / Science in Society - Self- . 103 Registration",
+   "ects": 3,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "other"
+  },
+  {
+   "code": "T-MACH-113501",
+   "title": "Engineering Mechanics I",
+   "ects": 6,
+   "terms": [
+    "WS"
+   ],
+   "examType": "written",
+   "parts": [
+    {
+     "code": "T-MACH-113502",
+     "type": "coursework",
+     "ects": 1,
+     "title": "Tutorial Engineering Mechanics I",
+     "attendsTo": "T-MACH-113501"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "Coursework in Tutorial Engineering Mechanics I (T-MACH-113502) must be passed for admission to the exam (module description M-MACH-106705 p.53; course page identical)",
+     "edge": "T-MACH-113502.coursework -> T-MACH-113501.exam",
+     "page": 104
+    },
+    {
+     "requires": "Orientation exam, take deadline: Engineering Mechanics I must be TAKEN by the end of the 2nd semester (SPO 8(1) p.15; Curriculum 1.4 repeats 'must be taken by the end of the second semester', p.40)",
+     "edge": "deadline:taken-by-end-of-2nd-semester -> T-MACH-113501.exam",
+     "page": 15
+    },
+    {
+     "requires": "Orientation exam, pass deadline (discrepancy with the 2-semester take deadline, both recorded): Orientation Exam module M-MACH-106721 'This module must be passed until the end of the 3. term'; SPO 8(2): entitlement to the degree programme is lost if not PASSED incl. repetitions by the end of the 3rd semester (p.15); a second repetition of orientation exams is excluded (SPO 8(2), p.15)",
+     "edge": "deadline:passed-by-end-of-3rd-semester -> T-MACH-113501.exam",
+     "page": 70
+    }
+   ],
+   "notes": [
+    "Orientation exam: take by end of 2nd semester (p.15 SPO 8(1), p.40) but module must be passed by end of 3rd term (p.70, p.15 SPO 8(2)); second repetition excluded (p.15)",
+    "One-retake rule: a failed written/oral/alternative exam may be repeated only once; after a failed repeat the entitlement to the examination is lost (p.5 sec.1.1.5; SPO 9, p.15)"
+   ]
+  },
+  {
+   "code": "T-MACH-113503",
+   "title": "Engineering Mechanics II",
+   "ects": 6,
+   "terms": [
+    "SS"
+   ],
+   "examType": "written",
+   "parts": [
+    {
+     "code": "T-MACH-113504",
+     "type": "coursework",
+     "ects": 1,
+     "title": "Tutorial Engineering Mechanics II",
+     "attendsTo": "T-MACH-113503"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "Coursework in Tutorial Engineering Mechanics II (T-MACH-113504) must be passed for admission to the exam (module description p.53; tutorial page repeats it, p.160)",
+     "edge": "T-MACH-113504.coursework -> T-MACH-113503.exam",
+     "page": 105
+    }
+   ]
+  },
+  {
+   "code": "T-MACH-113505",
+   "title": "Engineering Mechanics III",
+   "ects": 6,
+   "terms": [
+    "WS"
+   ],
+   "examType": "written",
+   "parts": [
+    {
+     "code": "T-MACH-113506",
+     "type": "coursework",
+     "ects": 1,
+     "title": "Tutorial Engineering Mechanics III",
+     "attendsTo": "T-MACH-113505"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "Coursework in Tutorial Engineering Mechanics III (T-MACH-113506) must have been passed for admission to the exam (module description p.53; tutorial page repeats it, p.161)",
+     "edge": "T-MACH-113506.coursework -> T-MACH-113505.exam",
+     "page": 106
+    }
+   ]
+  },
+  {
+   "code": "T-MACH-113523",
+   "title": "Fluid Mechanics",
+   "ects": 7,
+   "terms": [
+    "SS"
+   ],
+   "examType": "written"
+  },
+  {
+   "code": "T-MACH-113603",
+   "title": "Fluid Power",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113571",
+   "title": "Functional Materials",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113627",
+   "title": "Fundamentals of Nuclear Energy and Radiation Protection",
+   "ects": 4,
+   "terms": [
+    "WS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113565",
+   "title": "Global Logistics",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113562",
+   "title": "Global Production Engineering",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113514",
+   "title": "Group Work IT and Data Science",
+   "ects": 1,
+   "terms": [
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113621",
+   "title": "Heat Transfer and Thermal Fluid Flow",
+   "ects": 4,
+   "terms": [
+    "WS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-FORUM-113833",
+   "title": "How does the European Union work? Functions, institutions and ongoing challenges (Jean Monnet Circle 115 Seminar)",
+   "ects": 2,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-ETIT-113612",
+   "title": "Hybrid and Electric Vehicles",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "written"
+  },
+  {
+   "code": "T-ZAK-112564",
+   "title": "Intercultural Communications: USA and Germany",
+   "ects": 2,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-FORUM-113834",
+   "title": "International Management - Practical insights",
+   "ects": 2,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113552",
+   "title": "International Production Operations Management",
+   "ects": 3,
+   "terms": [
+    "WS"
+   ],
+   "examType": "written",
+   "parts": [
+    {
+     "code": "T-MACH-113553",
+     "type": "exam",
+     "ects": 2,
+     "title": "International Production Operations Management: Project",
+     "attendsTo": "T-MACH-113552"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "International Production Operations Management: Project (T-MACH-113553) must have been completed successfully for admission to the written exam",
+     "edge": "T-MACH-113553.exam -> T-MACH-113552.exam",
+     "page": 119
+    }
+   ]
+  },
+  {
+   "code": "T-MACH-113553",
+   "title": "International Production Operations Management: Project",
+   "ects": 2,
+   "terms": [
+    "WS"
+   ],
+   "examType": "other"
+  },
+  {
+   "code": "T-MACH-113548",
+   "title": "International Project",
+   "ects": 5,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113549",
+   "title": "Internship in Industry",
+   "ects": 12,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework",
+   "notes": [
+    "Minimum 12-week industrial internship; weekly 0.5-page report confirmed by company stamp and signature (p.122; SPO 14a, p.18)"
+   ]
+  },
+  {
+   "code": "T-MACH-113622",
+   "title": "Introduction to Energy Topology and Resilience",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113559",
+   "title": "Introduction to High Temperature Materials",
+   "ects": 4,
+   "terms": [
+    "WS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113623",
+   "title": "Introduction to Hydrogen Technologies",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "written"
+  },
+  {
+   "code": "T-MACH-113576",
+   "title": "Introduction to Powder Metallurgy",
+   "ects": 4,
+   "terms": [
+    "WS"
+   ],
+   "examType": "written"
+  },
+  {
+   "code": "T-MACH-113620",
+   "title": "Introduction to Thermodynamics of the Energy Transition",
+   "ects": 4,
+   "terms": [
+    "WS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113515",
+   "title": "IT and Data Science",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "written",
+   "parts": [
+    {
+     "code": "T-MACH-113512",
+     "type": "coursework",
+     "ects": 1,
+     "title": "Python Course on IT and Data Science",
+     "attendsTo": "T-MACH-113515"
+    },
+    {
+     "code": "T-MACH-113513",
+     "type": "coursework",
+     "ects": 1,
+     "title": "Tutorial IT and Data Science",
+     "attendsTo": "T-MACH-113515"
+    },
+    {
+     "code": "T-MACH-113514",
+     "type": "coursework",
+     "ects": 1,
+     "title": "Group Work IT and Data Science",
+     "attendsTo": "T-MACH-113515"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "Python Course on IT and Data Science (T-MACH-113512) must have been passed for admission to the written exam IT and Data Science (Python course page repeats it, p.143)",
+     "edge": "T-MACH-113512.coursework -> T-MACH-113515.exam",
+     "page": 128
+    }
+   ]
+  },
+  {
+   "code": "T-FORUM-113578",
+   "title": "Lecture Series Supplementary Studies on Science, Technology and Society - Self Registration",
+   "ects": 2,
+   "terms": [
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113554",
+   "title": "Machines and Processes of Energy Conversion",
+   "ects": 6,
+   "terms": [
+    "WS"
+   ],
+   "examType": "written",
+   "parts": [
+    {
+     "code": "T-MACH-113555",
+     "type": "coursework",
+     "ects": 1,
+     "title": "Machines and Processes of Energy Conversion, Lab Course",
+     "attendsTo": "T-MACH-113554"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "The coursework Machines and Processes of Energy Conversion, Lab Course (T-MACH-113555) must have been passed for admission to the exam (lab course page repeats it, p.131)",
+     "edge": "T-MACH-113555.coursework -> T-MACH-113554.exam",
+     "page": 130
+    }
+   ]
+  },
+  {
+   "code": "T-MACH-113555",
+   "title": "Machines and Processes of Energy Conversion, Lab Course",
+   "ects": 1,
+   "terms": [
+    "WS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113574",
+   "title": "Materials for Nuclear Fusion and Accelerator Applications",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113510",
+   "title": "Materials Science I and II",
+   "ects": 10,
+   "terms": [
+    "WS"
+   ],
+   "examType": "oral",
+   "parts": [
+    {
+     "code": "T-MACH-113511",
+     "type": "coursework",
+     "ects": 2,
+     "title": "Materials Science Lab Course",
+     "attendsTo": "T-MACH-113510"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "Prerequisite for the oral exam: Materials Science Lab Course (T-MACH-113511) must have been passed; event description repeats 'The successful participation in the lab course is obligatory for the admission to the examination' (p.134)",
+     "edge": "T-MACH-113511.coursework -> T-MACH-113510.exam",
+     "page": 133
+    }
+   ],
+   "notes": [
+    "Combined MS I + MS II oral examination, approx. 25 minutes (p.133); sample curriculum splits it into MS I (6 CP, sem 1) and MS II (4 CP, sem 2) (p.43)"
+   ]
+  },
+  {
+   "code": "T-MACH-113511",
+   "title": "Materials Science Lab Course",
+   "ects": 2,
+   "terms": [
+    "SS"
+   ],
+   "examType": "coursework",
+   "gates": [
+    {
+     "requires": "Materials Science Lab Course: 5 topics, each opening with an oral colloquium that must be passed before performing the experiment; passed only after all colloquia are passed and all experiments carried out",
+     "edge": "T-MACH-113511.attendance -> T-MACH-113511.coursework",
+     "page": 135
+    }
+   ]
+  },
+  {
+   "code": "T-MACH-113500",
+   "title": "Mechanical Design A",
+   "ects": 6,
+   "terms": [
+    "WS"
+   ],
+   "examType": "written",
+   "parts": [
+    {
+     "code": "T-MACH-113499",
+     "type": "coursework",
+     "ects": 2,
+     "title": "Mechanical Design A, Workshop",
+     "attendsTo": "T-MACH-113500"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "Admission to the exam only with successful completion of Workshop Mechanical Design A (T-MACH-113499)",
+     "edge": "T-MACH-113499.coursework -> T-MACH-113500.exam",
+     "page": 136
+    }
+   ]
+  },
+  {
+   "code": "T-MACH-113499",
+   "title": "Mechanical Design A, Workshop",
+   "ects": 2,
+   "terms": [
+    "WS"
+   ],
+   "examType": "coursework",
+   "gates": [
+    {
+     "requires": "Attendance at MD A Workshop is mandatory and will be controlled: 3 workshop sessions over the semester with a colloquium testing mechanical design knowledge at the beginning of every single session; passing all colloquia and progressing on the workshop task are required to pass",
+     "edge": "T-MACH-113499.attendance -> T-MACH-113499.coursework",
+     "page": 138
+    }
+   ]
+  },
+  {
+   "code": "T-MACH-113406",
+   "title": "Methods and Processes of Sustainable Engineering",
+   "ects": 4,
+   "terms": [
+    "WS"
+   ],
+   "examType": "written"
+  },
+  {
+   "code": "T-MACH-113547",
+   "title": "Participation in Empirical Research",
+   "ects": 2,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113569",
+   "title": "Phase Diagrams",
+   "ects": 4,
+   "terms": [
+    "WS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113551",
+   "title": "Presentation",
+   "ects": 3,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework",
+   "gates": [
+    {
+     "requires": "Prerequisite: Bachelor's Thesis (T-MACH-113550) must have been started; the colloquium presentation must be held within 6 weeks after thesis submission (p.49)",
+     "edge": "T-MACH-113550.started -> T-MACH-113551.coursework",
+     "page": 142
+    }
+   ]
+  },
+  {
+   "code": "T-MACH-113512",
+   "title": "Python Course on IT and Data Science",
+   "ects": 1,
+   "terms": [
+    "SS"
+   ],
+   "examType": "coursework",
+   "gates": [
+    {
+     "requires": "Successful participation in an individual colloquium at the end of the Python course; completion of this coursework is prerequisite for the written exam IT and Data Science (T-MACH-113515)",
+     "edge": "T-MACH-113512.coursework -> T-MACH-113515.exam",
+     "page": 143
+    }
+   ]
+  },
+  {
+   "code": "T-FORUM-113587",
+   "title": "Registration for Certificate Issuance - Supplementary Studies on Science, Technology and Society",
+   "ects": 0,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113624",
+   "title": "Renewable Energies I: Solar Systems",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113546",
+   "title": "Scientific Work and Empirical Research Methods",
+   "ects": 2,
+   "terms": [
+    "SS"
+   ],
+   "examType": "coursework",
+   "notes": [
+    "Ungraded written exam (pass/fail), 60 min, repeatable as often as necessary (p.146)"
+   ]
+  },
+  {
+   "code": "T-MACH-112569",
+   "title": "Self-Booking-BSc-SPZ-Graded",
+   "ects": 2,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "other"
+  },
+  {
+   "code": "T-MACH-112568",
+   "title": "Self-Booking-BSc-SPZ-Non-Graded",
+   "ects": 2,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-112681",
+   "title": "Self-Booking-BSc-StK-Graded",
+   "ects": 2,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "other"
+  },
+  {
+   "code": "T-MACH-112680",
+   "title": "Self-Booking-BSc-StK-Non-Graded",
+   "ects": 2,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-110961",
+   "title": "Steering of a Global Operating Company - The Robert BOSCH GmbH as an Example",
+   "ects": 2,
+   "terms": [
+    "WS"
+   ],
+   "examType": "coursework",
+   "gates": [
+    {
+     "requires": "Robert BOSCH seminar, ungraded alternative achievement: requires attendance on at least 12 lecture units",
+     "edge": "T-MACH-110961.attendance -> T-MACH-110961.coursework",
+     "page": 151
+    },
+    {
+     "requires": "Course T-MACH-106375 'The Value Stream in an Industrial Company - The Value Chain at BOSCH as an Example' must NOT have been started",
+     "edge": "T-MACH-106375.not-started -> T-MACH-110961.coursework",
+     "page": 151
+    }
+   ],
+   "notes": [
+    "Seminar is held in German although the program is English (p.151); registration via ILIAS, password announced in first session (p.152)"
+   ]
+  },
+  {
+   "code": "T-MACH-113572",
+   "title": "Structural Materials",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-MACH-113602",
+   "title": "Sustainable Internal Combustion Energy Conversion for Combined Heat Power and Mobility Applications",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "written"
+  },
+  {
+   "code": "T-MACH-113544",
+   "title": "Technical Thermodynamics and Heat Transfer I",
+   "ects": 6,
+   "terms": [
+    "WS"
+   ],
+   "examType": "written",
+   "parts": [
+    {
+     "code": "T-MACH-113542",
+     "type": "coursework",
+     "ects": 1,
+     "title": "Tutorial Technical Thermodynamics and Heat Transfer I",
+     "attendsTo": "T-MACH-113544"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "Successful participation in the tutorial Tutorial Technical Thermodynamics and Heat Transfer I (T-MACH-113542) is required for admission to the exam",
+     "edge": "T-MACH-113542.coursework -> T-MACH-113544.exam",
+     "page": 155
+    }
+   ]
+  },
+  {
+   "code": "T-MACH-113545",
+   "title": "Technical Thermodynamics and Heat Transfer II",
+   "ects": 6,
+   "terms": [
+    "SS"
+   ],
+   "examType": "written",
+   "parts": [
+    {
+     "code": "T-MACH-113543",
+     "type": "coursework",
+     "ects": 1,
+     "title": "Tutorial Technical Thermodynamics and Heat Transfer II",
+     "attendsTo": "T-MACH-113545"
+    }
+   ],
+   "gates": [
+    {
+     "requires": "Successful participation in the tutorial Tutorial Technical Thermodynamics and Heat Transfer II (T-MACH-113543) is required for admission to the exam",
+     "edge": "T-MACH-113543.coursework -> T-MACH-113545.exam",
+     "page": 156
+    }
+   ]
+  },
+  {
+   "code": "T-ZAK-113411",
+   "title": "The impact of sustainable steering: Insights for holistic decision-making",
+   "ects": 2,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113524",
+   "title": "Tutorial Basics of Mechatronics",
+   "ects": 1,
+   "terms": [
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113502",
+   "title": "Tutorial Engineering Mechanics I",
+   "ects": 1,
+   "terms": [
+    "WS"
+   ],
+   "examType": "coursework",
+   "gates": [
+    {
+     "requires": "Passing this coursework allows registration to the exam Engineering Mechanics I (T-MACH-113501)",
+     "edge": "T-MACH-113502.coursework -> T-MACH-113501.exam",
+     "page": 159
+    }
+   ]
+  },
+  {
+   "code": "T-MACH-113504",
+   "title": "Tutorial Engineering Mechanics II",
+   "ects": 1,
+   "terms": [
+    "SS"
+   ],
+   "examType": "coursework",
+   "gates": [
+    {
+     "requires": "Passing this coursework allows registration to the exam Engineering Mechanics II (T-MACH-113503)",
+     "edge": "T-MACH-113504.coursework -> T-MACH-113503.exam",
+     "page": 160
+    }
+   ]
+  },
+  {
+   "code": "T-MACH-113506",
+   "title": "Tutorial Engineering Mechanics III",
+   "ects": 1,
+   "terms": [
+    "WS"
+   ],
+   "examType": "coursework",
+   "gates": [
+    {
+     "requires": "Passing this coursework allows registration to the exam Engineering Mechanics III (T-MACH-113505)",
+     "edge": "T-MACH-113506.coursework -> T-MACH-113505.exam",
+     "page": 161
+    }
+   ]
+  },
+  {
+   "code": "T-MACH-113513",
+   "title": "Tutorial IT and Data Science",
+   "ects": 1,
+   "terms": [
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113542",
+   "title": "Tutorial Technical Thermodynamics and Heat Transfer I",
+   "ects": 1,
+   "terms": [
+    "WS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113543",
+   "title": "Tutorial Technical Thermodynamics and Heat Transfer II",
+   "ects": 1,
+   "terms": [
+    "SS"
+   ],
+   "examType": "coursework"
+  },
+  {
+   "code": "T-MACH-113605",
+   "title": "Vehicles in Sustainable Mobility Systems",
+   "ects": 4,
+   "terms": [
+    "WS"
+   ],
+   "examType": "written"
+  },
+  {
+   "code": "T-MACH-113564",
+   "title": "Virtual Engineering (Specific Topics)",
+   "ects": 4,
+   "terms": [
+    "SS"
+   ],
+   "examType": "oral"
+  },
+  {
+   "code": "T-FORUM-113835",
+   "title": "World history of state and law",
+   "ects": 2,
+   "terms": [
+    "WS",
+    "SS"
+   ],
+   "examType": "coursework"
+  }
+ ]
+}
