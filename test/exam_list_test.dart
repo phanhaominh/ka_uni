@@ -87,6 +87,61 @@ void main() {
         t("Fr, 16.04.2027, 2. Termin").startAt, DateTime(2027, 4, 16, 10, 0));
   });
 
+  test('English portal locale: US dates and AM/PM spans parse', () {
+    // an EN session renders the SAME sittings the German view shows as
+    // "Mi, 24.02.2027" / "11:00 - 13:00" as "Wed, 2/24/2027" /
+    // "11:00 AM - 1:00 PM" (observed live on CAS, exam 7700085)
+    ExamTerm t(String dayLabel, String time) => ExamTerm(dayLabel, time, "HS3");
+    expect(t("Wed, 2/24/2027", "11:00 AM - 1:00 PM").startAt,
+        DateTime(2027, 2, 24, 11, 0));
+    // a 1 PM sitting starts at 13:00, never 01:00
+    expect(
+        t("Thu, 3/4/2027", "1:00 PM - 3:00 PM").startAt,
+        DateTime(2027, 3, 4, 13, 0));
+    expect(t("Fri, 3/5/2027", "12:00 AM - 12:30 AM").startAt,
+        DateTime(2027, 3, 5, 0, 0));
+    expect(t("Fri, 3/5/2027", "12:00 PM - 12:30 PM").startAt,
+        DateTime(2027, 3, 5, 12, 0));
+    // the range guard holds for the US spelling too
+    expect(
+        t("2/24/2027 - 3/1/2027", "11:00 AM - 1:00 PM").startAt, isNull);
+    // nonsense month rejected
+    expect(t("13/40/2027", "11:00 AM - 1:00 PM").startAt, isNull);
+    // a label mixing both locale spellings is ambiguous -> refuse
+    expect(t("24.02. 2/24/2027", "10:00 - 12:00").startAt, isNull);
+    // cancelled sittings in EITHER language never count down
+    expect(ExamTerm("Wed, 2/24/2027", "cancelled", "HS3").isCancelled, isTrue);
+    expect(ExamTerm("Wed, 2/24/2027", "entfällt", "HS3").isCancelled, isTrue);
+    expect(
+        ExamTerm("Wed, 2/24/2027", "cancelled", "HS3").startAt, isNull);
+  });
+
+  test('English feed: Signed in / Register windows / US term cells', () {
+    // cell texts are verbatim live-feed strings (Signed in chip!)
+    final raw = File('test/fixtures/possibleexams_en.html').readAsStringSync();
+    final exams = ExamListParser.parse(raw);
+    expect(exams.length, 4);
+
+    final adv = exams.firstWhere((e) => e.examNumber == "76-T-MATH-113493");
+    expect(adv.registered, isTrue, reason: '"Signed in" is the EN chip');
+    expect(adv.terms.single.startAt, DateTime(2027, 3, 23, 11, 0));
+
+    final em1 = exams.firstWhere((e) => e.examNumber == "76-T-MACH-100282-e");
+    expect(em1.registered, isFalse, reason: '"Not registered" stays false');
+    expect(em1.windowStatus, ExamWindowStatus.open);
+    expect(em1.windowEnd, DateTime(2027, 3, 31, 23, 59));
+
+    final from = exams.firstWhere((e) => e.examNumber == "76-T-MATH-106718");
+    expect(from.windowStatus, ExamWindowStatus.closed);
+    expect(from.windowStart, DateTime(2026, 11, 15, 0, 0),
+        reason: '"12:00 AM" is midnight, not noon');
+
+    final unreg = exams.firstWhere((e) => e.examNumber == "76-T-WINN-104865");
+    expect(unreg.windowStatus, ExamWindowStatus.unknown,
+        reason: '"Unregister until" is the DEREGISTRATION deadline');
+    expect(unreg.windowEnd, isNull);
+  });
+
   test('examListHasRows separates the empty state from a cell reflow', () {
     // real data page: rows present => a zero-entry parse must count as
     // breakage, not the valid empty state the old gate waved through

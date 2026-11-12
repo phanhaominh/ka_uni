@@ -1,6 +1,7 @@
 import 'package:html/parser.dart';
 import 'package:kit_mobile/parsing/models/hierarchic_table_row.dart';
 
+import '../../exams/models/exam_list.dart';
 import '../../l10n/l10n.dart';
 import '../../module_info_table/models/module_info_table.dart';
 
@@ -100,19 +101,54 @@ class KITModule {
       pointsAvailable = elements.first.innerHtml;
     }
 
-    // parse exam date
-    final examDateStrSplit = examDateStr.trim().split(".");
-    List<int> dateSplitInt = [];
-    for (var element in examDateStrSplit) {
-      final currentDateElementInt = int.tryParse(element);
-      if (currentDateElementInt != null) {
-        dateSplitInt.add(currentDateElementInt);
-      }
+    // parse exam date (field spelling: German "24.02.2027" or, when the
+    // student browses the portal in English, US "2/24/2027" — the field
+    // follows the SESSION locale, and one MEI kid doing exactly that
+    // used to get "exam date unknown" while the date sat on the page)
+    examDateParsed = false;
+    final fieldDate = ExamTerm.parseCasDate(examDateStr);
+    if (fieldDate != null) {
+      examDate = fieldDate;
+      examDateParsed = true;
     }
 
-    examDateParsed = dateSplitInt.length == 3;
-    if (examDateParsed) {
-      examDate = DateTime(dateSplitInt[2], dateSplitInt[1], dateSplitInt[0]);
+    // Many bricks carry NO cagr_examdate-field at all: their sittings
+    // live only in the #EXAMLIST table as hidden collapsible sub-rows
+    // ("<span class=date>Wed, 2/24/2027</span>, <span class=time>11:00
+    // AM - 1:00 PM</span>, <a class=room>…</a>" — observed live on
+    // specificBrickView.asp, the very page this scrape fetches). Take
+    // the earliest FUTURE sitting as "the" exam date (all past -> the
+    // latest, so the card reads "X days ago" off real data); cancelled
+    // sittings ("entfällt"/"cancelled") never become the countdown.
+    if (!examDateParsed) {
+      final sittings = <DateTime>[];
+      for (final tr in document.querySelectorAll("table#EXAMLIST tr.collapsible")) {
+        final dateEl = tr.querySelector("span.date");
+        if (dateEl == null) continue;
+        final rowText = tr.text.toLowerCase();
+        if (rowText.contains("entfällt") ||
+            rowText.contains("cancell") ||
+            rowText.contains("canceled")) {
+          continue;
+        }
+        final d = ExamTerm.parseCasDate(dateEl.text);
+        if (d == null) continue;
+        final hour = ExamTerm.startHourOf(tr.querySelector("span.time")?.text ?? "");
+        sittings.add(DateTime(d.year, d.month, d.day, hour ?? 0, 0));
+      }
+      if (sittings.isNotEmpty) {
+        sittings.sort();
+        final today = DateTime.now();
+        final next = sittings.firstWhere(
+            (s) => !s.isBefore(DateTime(today.year, today.month, today.day)),
+            orElse: () => sittings.last);
+        examDate = next;
+        examDateParsed = true;
+        // the display string mirrors what the page itself shows
+        examDateStr = "${examDate.day.toString().padLeft(2, "0")}."
+            "${examDate.month.toString().padLeft(2, "0")}."
+            "${examDate.year}";
+      }
     }
 
     // parse all tables

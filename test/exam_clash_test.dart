@@ -35,6 +35,21 @@ void main() {
     expect(r.uncomparable, 0); // both ends proven
   });
 
+  test("English spelling: US dates + AM/PM spans are comparable", () {
+    // the strict-overlap pair above rendered in the EN locale session;
+    // this used to collapse BOTH ends to null -> the whole list became
+    // "uncomparable" for any student browsing Campus in English
+    final r = findExamClashes([
+      exam("01-A", terms: [ExamTerm("Wed, 2/24/2027", "11:00 AM - 1:00 PM", "")]),
+      exam("02-B", terms: [ExamTerm("Wed, 2/24/2027", "12:30 PM - 2:00 PM", "")]),
+    ], now);
+    expect(r.clashes.single.kind, ClashKind.overlap);
+    expect(r.clashes.single.when, DateTime(2027, 2, 24, 11));
+    expect(r.clashes.single.exactEndA, DateTime(2027, 2, 24, 13));
+    expect(r.clashes.single.exactEndB, DateTime(2027, 2, 24, 14));
+    expect(r.uncomparable, 0);
+  });
+
   test("back-to-back 17:30-19:00 vs 19:00-20:00 is NOT overlap", () {
     final r = findExamClashes([
       exam("01-A", terms: [term("20.01.2027", "17:30 - 19:00")]),

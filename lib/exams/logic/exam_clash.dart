@@ -48,35 +48,52 @@ class _Sitting {
 /// FULL-anchor "HH:MM - HH:MM" (hyphen or en/em dash). Anchored on
 /// purpose: "09:00 c.t." or "17:30 - 19:00 (Hörsaal)" must stay UNKNOWN
 /// rather than be half-parsed into a fabricated end.
-final _span = RegExp(r'^\s*(\d{1,2}):(\d{2})\s*[-\u2013\u2014]\s*(\d{1,2}):(\d{2})\s*$');
+// 24-h "17:30 - 19:00" and the EN portal's "11:00 AM - 1:00 PM" (the
+// locale follows the student: an English session used to make EVERY
+// span unparseable, collapsing the whole exam list to "uncomparable").
+final _span24 =
+    RegExp(r'^\s*(\d{1,2}):(\d{2})\s*[-\u2013\u2014]\s*(\d{1,2}):(\d{2})\s*$');
+final _spanAmPm = RegExp(
+    r'^\s*(\d{1,2}):(\d{2})\s*([AP]M)\s*[-\u2013\u2014]\s*(\d{1,2}):(\d{2})\s*([AP]M)\s*$',
+    caseSensitive: false);
 
-// Mirrors of the ExamTerm.startAt guards; ExamTerm keeps its own regexes
-// private and the clash code must resolve the DAY even when the model
-// refuses to guess a start (time token missing).
-final _date = RegExp(r'(\d{2})\.(\d{2})\.(\d{4})');
-final _dayFragment = RegExp(r'\d{1,2}\.\d{1,2}');
+// Day resolution goes through ExamTerm.parseCasDate - the single place
+// that knows Campus' two date spellings; a local mirror would drift the
+// moment the parser learns a third.
 
-/// Midnight of the concrete sitting date, same one-fragment rule as
+/// Midnight of the concrete sitting date, same one-date rule as
 /// `ExamTerm.startAt` (range labels like "27.02.-06.03.2027" stay
 /// unparseable and are simply not comparable - see that doc).
-DateTime? _dateOf(ExamTerm t) {
-  if (t.isCancelled) return null;
-  if (_dayFragment.allMatches(t.dayLabel).length != 1) return null;
-  final d = _date.firstMatch(t.dayLabel);
-  if (d == null) return null;
-  return DateTime(
-      int.parse(d.group(3)!), int.parse(d.group(2)!), int.parse(d.group(1)!));
+DateTime? _dateOf(ExamTerm t) =>
+    t.isCancelled ? null : ExamTerm.parseCasDate(t.dayLabel);
+
+int? _pmHour(String h, String ampm) {
+  final hour = int.parse(h);
+  if (hour < 1 || hour > 12) return null;
+  final pm = ampm.toUpperCase() == "PM";
+  if (pm && hour < 12) return hour + 12;
+  if (!pm && hour == 12) return 0;
+  return hour;
 }
 
 /// The proven end of a sitting, null unless the FULL anchored span
 /// parses AND lands after the start. A span crossing midnight
 /// ("22:00 - 00:30") is treated as unknown rather than invented onto the
-/// next day - a wrong next-day end would forge a cross-day clash.
+/// next day - a wrong next-day end would forge a cross-day clash; the
+/// AM/PM spelling makes "9:00 AM - 1:00 PM" provable instead.
 DateTime? _endOf(ExamTerm t, DateTime day, DateTime start) {
-  final m = _span.firstMatch(t.time);
-  if (m == null) return null;
-  final end = DateTime(day.year, day.month, day.day, int.parse(m.group(3)!),
-      int.parse(m.group(4)!));
+  final m24 = _span24.firstMatch(t.time);
+  if (m24 != null) {
+    final end = DateTime(day.year, day.month, day.day,
+        int.parse(m24.group(3)!), int.parse(m24.group(4)!));
+    return end.isAfter(start) ? end : null;
+  }
+  final mp = _spanAmPm.firstMatch(t.time);
+  if (mp == null) return null;
+  final eh = _pmHour(mp.group(4)!, mp.group(6)!);
+  if (eh == null) return null;
+  final end =
+      DateTime(day.year, day.month, day.day, eh, int.parse(mp.group(5)!));
   return end.isAfter(start) ? end : null;
 }
 

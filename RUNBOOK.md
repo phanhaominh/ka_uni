@@ -489,3 +489,27 @@ green, 0 analyzer errors.
   Async; asset load + dash + ledger-carry fixes from the UI lens;
   _AgendaLoad carries `occurrences` through ALL four setState sites
   (cockpit dues + prep hero died on every ILIAS-settling rebuild).
+
+## R30 — English portal sessions parsed (0.8.9+64)
+- Root cause, live-probed on the owner's own EN session (exam 7700085,
+  Advanced Mathematics I): CAS renders EVERY date/time cell in the
+  session locale; the app only spoke German, so an English-browsing
+  student saw "exam date unknown" while "Wed, 2/24/2027, 11:00 AM -
+  1:00 PM" sat on the very page being scraped.
+- ExamTerm.parseCasDate/startHourOf: the two locale spellings in one
+  place - German dd.mm.yyyy (fragment-count range guard kept intact)
+  and US M/D/YYYY (server en-US, not a guess), "1:00 PM" -> 13, "12:00
+  AM" -> 0, EN "cancelled" joins "entfällt" in isCancelled.
+- ExamListParser: EN reginfo phrases verbatim from the live feed -
+  "Register until/from", "Register not possible", and the NON-obvious
+  chip "Signed in" (= registered); "Unregister until" is the
+  DEREGISTRATION deadline and never sets a window; AM/PM term sort no
+  longer orders "11:00 AM" before "2:00 PM".
+- exam_clash: EN spans compare with proven ends (was: an EN session
+  made the whole list "uncomparable").
+- Module bricks: the sitting often exists ONLY as a hidden
+  #EXAMLIST collapsible sub-row (no cagr_examdate-field at all - the
+  Advanced-Math case); parseModulePage now mines the table, earliest
+  future non-cancelled sitting wins, hour included.
+- Fixtures: possibleexams_en.html holds the live EN strings, not
+  invented ones (the "Signed in" chip surprise is exactly why).
