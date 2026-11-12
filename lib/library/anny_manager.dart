@@ -11,11 +11,13 @@ import '../notifications/library_notifications.dart';
 import 'anny_auth.dart';
 import '../state_management/kit_login_manager.dart' show KITLoginManager;
 
-/// SharedPreferences keys. ANN_* deliberately, not DATA_*: the room catalog
-/// and free counts are PUBLIC Anny data (survive logout on a shared device,
-/// MensaKeys precedent) — while the session triple (jwt/alvo/uuid) is the
-/// only personal data in prefs; the password never lives here at all, only
-/// in the keychain ([AnnyKeys.pass]).
+/// SharedPreferences keys. ANN_* deliberately, not DATA_*: the room
+/// catalog and free counts are PUBLIC Anny data (cache-first across APP
+/// RESTARTS — MensaKeys precedent). Logout wipes ALL of ANN_* (the
+/// credentials_provider sweep + signOut): nothing library-related may
+/// survive on a shared device. Prefs never hold a live token: jwt stores
+/// only the "pending" marker; the password lives solely in the keychain
+/// ([AnnyKeys.pass]).
 class AnnyKeys {
   AnnyKeys._();
 
