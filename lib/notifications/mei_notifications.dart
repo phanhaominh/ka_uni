@@ -10,6 +10,7 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:workmanager/workmanager.dart';
 
+import '../agenda/logic/day_decision.dart';
 import '../exams/models/exam_list.dart';
 import '../l10n/l10n.dart';
 import '../signmeup/signmeup_manager.dart';
@@ -529,20 +530,28 @@ class MeiNotifications {
       final epoch = teardownEpoch;
       await _cancelRange(900, 999);
       final now = DateTime.now();
+      // R24 wave A: pending deltas let a free day NAME its cancellations;
+      // live async read (the poll isolate writes these from the diff)
+      final pendingChanges = IcsChange.decode(await SharedPreferencesAsync()
+              .getString(WebcalKeys.changes) ??
+          "");
       for (var ahead = 1; ahead <= 2; ahead++) {
         final day = DateTime(now.year, now.month, now.day + ahead);
-        final occ = feed.occurrences
-            .where((o) =>
-                o.start.year == day.year &&
-                o.start.month == day.month &&
-                o.start.day == day.day)
-            .toList()
-          ..sort((a, b) => a.start.compareTo(b.start));
+        final decision = DayDecision.compute(
+            feed: feed, day: day, feedFresh: true, changes: pendingChanges);
         final at = DateTime(day.year, day.month, day.day, 7, 30);
         if (!at.isAfter(now)) continue;
         final id = 900 + (day.day * 2 + ahead) % 100;
-        if (occ.isEmpty) continue; // no nagging on free days
-        final (title, body) = digestTexts(occ);
+        // R24: free/cancelled days now ANSWER instead of being skipped —
+        // the digest became the morning decision line ("no lectures" is
+        // the most relevant possible morning fact, and re-scheduling on
+        // every poll keeps it at most 30 min stale)
+        if (decision.kind == DayDecisionKind.noData ||
+            decision.kind == DayDecisionKind.staleFeed) {
+          continue; // never assert emptiness off data we do not trust
+        }
+        final (title, body) =
+            digestTexts(decision.lectures, decision.cancelledTitles);
         if (epoch != teardownEpoch) return; // logout mid-flight
         await _zoned(id, channelIdDaily, title, body, at,
             deadlines: false,
@@ -560,21 +569,12 @@ class MeiNotifications {
   /// "changed" hint - it was baked in up to 24 h ahead at schedule time
   /// and then fired as a stale claim long after the band had been
   /// dismissed; the CHANGED band + badge carry that signal at open time.
+  /// R24 wave A: empty days are no longer skipped upstream - the wording
+  /// lives in DayDecision.digestTexts (shared with the home banner).
   @visibleForTesting
-  static (String, String) digestTexts(List<IcsOccurrence> occ) {
-    final examOnly =
-        occ.isNotEmpty && occ.every((o) => o.title.startsWith("Klausur: "));
-    final first = _hm(occ.first.start);
-    return examOnly
-        ? (
-            L10n.t("notifs.digestTitleExam"),
-            L10n.t("notifs.digestBodyExam", [first, ""]),
-          )
-        : (
-            L10n.t("notifs.digestTitle", [occ.length]),
-            L10n.t("notifs.digestBody", [first, ""]),
-          );
-  }
+  static (String, String) digestTexts(List<IcsOccurrence> occ,
+          [List<String> cancelledTitles = const []]) =>
+      DayDecision.digestTexts(occ, cancelledTitles);
 
   /// Full reminder + background-job teardown for logout.
   static Future<void> cancelAllScheduled() async {

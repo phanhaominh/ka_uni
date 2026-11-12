@@ -15,7 +15,9 @@ import 'package:kit_mobile/common_ui/mei_failure_banner.dart';
 import 'package:kit_mobile/exams/views/exams_page.dart';
 import 'package:kit_mobile/agenda/views/agenda_page.dart';
 import 'package:kit_mobile/navigation/logic/push_page.dart';
+import 'package:kit_mobile/agenda/logic/day_decision.dart';
 import 'package:kit_mobile/agenda/logic/next_up.dart';
+import 'package:kit_mobile/agenda/views/day_decision_banner.dart';
 import 'package:kit_mobile/timetable/logic/now_clock.dart';
 import 'package:kit_mobile/timetable/models/webcal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -331,6 +333,10 @@ class NextUpHomeCard extends StatefulWidget {
 class _NextUpHomeCardState extends State<NextUpHomeCard>
     with WidgetsBindingObserver {
   WebcalFeed? _feed;
+
+  /// R24: pending feed deltas from [WebcalKeys.changes] (same snapshot the
+  /// agenda band renders) - the day banner names cancellations from them
+  List<IcsChange> _changes = const [];
   bool _clockArmed = false;
 
   /// last webcal fetch stamp rendered by this card: the campus write path
@@ -411,8 +417,12 @@ class _NextUpHomeCardState extends State<NextUpHomeCard>
     final stamp = await prefs.getString(WebcalKeys.fetchedAt);
     final feed =
         WebcalFeed.parse(await prefs.getString(WebcalKeys.icsCache) ?? "");
+    // R24: pending deltas name the cancellations on the day banner
+    final changes =
+        IcsChange.decode(await prefs.getString(WebcalKeys.changes) ?? "");
     if (!mounted) return;
     _seenFetchedAt = stamp;
+    _changes = changes;
     setState(() => _feed = feed);
   }
 
@@ -431,24 +441,55 @@ class _NextUpHomeCardState extends State<NextUpHomeCard>
         // never straddle a minute boundary between the two
         final now = NowClock.timeSource();
         final up = NextUp.compute(NextUp.heroWindow(_feed, now), now);
-        if (up == null) return const SizedBox.shrink();
-        return NextUpCard(
-          up: up,
-          onTap: () {
-            final nav = Navigator.of(context);
-            // with the agenda already on the stack pushPageOnce silently
-            // no-oped and the hero card looked dead; nudge the open page
-            // to resync + scroll to today instead
-            if (ActivePages.isOpen(nav, AgendaPage.routeName)) {
-              AgendaResync.request(scrollToToday: true);
-              return;
-            }
-            pushPageOnce(nav,
-                routeName: AgendaPage.routeName,
-                page: (_) => const AgendaPage(scrollToToday: true));
-          },
+        // R24 wave A: when the hero has nothing to point at, the morning
+        // decision line answers instead (free / cancelled / stale-feed) -
+        // on lecture days bannerText() is null and the hero speaks alone
+        final decision = DayDecision.compute(
+            feed: _feed,
+            day: now,
+            feedFresh: _feedFresh(),
+            changes: _changes);
+        final bannerText = decision.bannerText();
+        void openAgenda() {
+          final nav = Navigator.of(context);
+          // with the agenda already on the stack pushPageOnce silently
+          // no-oped and the hero card looked dead; nudge the open page
+          // to resync + scroll to today instead
+          if (ActivePages.isOpen(nav, AgendaPage.routeName)) {
+            AgendaResync.request(scrollToToday: true);
+            return;
+          }
+          pushPageOnce(nav,
+              routeName: AgendaPage.routeName,
+              page: (_) => const AgendaPage(scrollToToday: true));
+        }
+
+        final hero = up == null
+            ? const SizedBox.shrink()
+            : NextUpCard(up: up, onTap: openAgenda);
+        if (bannerText == null) return hero;
+        return Column(
+          children: [
+            DayDecisionBanner(
+                text: bannerText,
+                attention: decision.kind != DayDecisionKind.freeDay,
+                onTap: openAgenda),
+            const SizedBox(height: 6),
+            hero,
+          ],
         );
       },
     );
+  }
+
+  /// R24: the feed may only ever support a "no lectures" claim while the
+  /// 30-min poll proves itself alive; fetchedAt older than 30 h (= ~60
+  /// consecutive failed polls) or missing = untrusted, say so instead
+  bool _feedFresh() {
+    final s = _seenFetchedAt;
+    if (s == null) return false;
+    final t = DateTime.tryParse(s);
+    if (t == null) return false;
+    return DateTime.now().difference(t) < const Duration(hours: 30);
   }
 }

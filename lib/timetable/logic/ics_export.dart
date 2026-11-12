@@ -8,7 +8,10 @@ import 'dart:convert';
 /// Security contract: the exported file NEVER carries the subscription URL,
 /// its token or any other fetched-from info - only the cache body itself,
 /// with every URL line, feed-identifying header property and the internal
-/// sentinel markers removed. UIDs are kept verbatim: re-imports must keep
+/// sentinel markers removed. The X-PERSONAL-ICS block (the user's private
+/// calendar) is NEVER exported - a share sheet shares the STUDY schedule,
+/// never the private appointments that merely ride the same cache.
+/// UIDs are kept verbatim: re-imports must keep
 /// updating the same events instead of duplicating them.
 
 /// MIME type the file is shared under.
@@ -70,7 +73,23 @@ IcsExport? buildIcsExport(String mergedIcs, {DateTime? now}) {
 
   final out = <String>[];
   var eventCount = 0;
+  // R24: the X-PERSONAL-ICS-* block is the user's PRIVATE calendar (doctors,
+  // private life) that merely rides the merged cache for the agenda. The old
+  // code stripped only the sentinel LINES - the private VEVENTs between them
+  // went straight into every share sheet ("share my timetable" silently
+  // became "publish my appointments"). Excluded wholesale now. The exam /
+  // SignMeUp synth blocks are university data and stay shareable.
+  var inPersonalBlock = false;
   for (final line in _unfold(mergedIcs)) {
+    if (line.startsWith("X-PERSONAL-ICS-BEGIN")) {
+      inPersonalBlock = true;
+      continue;
+    }
+    if (line.startsWith("X-PERSONAL-ICS-END")) {
+      inPersonalBlock = false;
+      continue;
+    }
+    if (inPersonalBlock) continue;
     if (_isSentinel(line) || _isSourceInfo(line)) continue;
     if (line == "BEGIN:VEVENT") eventCount++;
     out.add(line);

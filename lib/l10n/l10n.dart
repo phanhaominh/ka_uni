@@ -238,6 +238,15 @@ class L10n {
     // round 4: exam sittings as calendar events
     "notifs.digestTitleExam": "Heute: Klausur",
     "notifs.digestBodyExam": " Klausur um {0}{1}",
+    // R24 wave A: morning decision line ("do I have lecture today?")
+    "agenda.dayStale":
+        "Stundenplan nicht aktuell – seit über einem Tag keine neuen Daten",
+    "agenda.dayFree": "Heute keine Vorlesungen",
+    "agenda.dayCancelled": "Heute entfällt alles: {0}",
+    "notifs.digestTitleFree": "Heute: vorlesungsfrei",
+    "notifs.digestBodyFree": " Keine Veranstaltungen – gute Lernzeit.",
+    "notifs.digestBodyCancelled": " Alles entfällt: {0}",
+    "notifs.digestCancelHint": "{0} entfällt",
     "notifs.reminderFrom": "ab {0}",
     // round 3: travel hints
     "agenda.walkOk": "Fußweg ca. {0} Min",
@@ -359,6 +368,14 @@ class L10n {
     // round 4: exam sittings as calendar events
     "notifs.digestTitleExam": "Today: exam",
     "notifs.digestBodyExam": " Exam at {0}{1}",
+    // R24 wave A: morning decision line ("do I have lecture today?")
+    "agenda.dayStale": "Timetable not current – feed older than a day",
+    "agenda.dayFree": "No lectures today",
+    "agenda.dayCancelled": "Everything cancelled today: {0}",
+    "notifs.digestTitleFree": "Today: no lectures",
+    "notifs.digestBodyFree": " Nothing scheduled – good studying day.",
+    "notifs.digestBodyCancelled": " All cancelled: {0}",
+    "notifs.digestCancelHint": "{0} cancelled",
     "notifs.reminderFrom": "from {0}",
     "agenda.walkOk": "~{0} min walk",
     "agenda.walkTight": "Only {0} min break – ~{1} min walk",

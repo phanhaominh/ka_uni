@@ -67,9 +67,16 @@ void main() {
             "END:VCALENDAR");
 
     final e = buildIcsExport(merged, now: DateTime(2026, 10, 31))!;
-    expect(e.eventCount, 32); // 30 feed + 1 personal + 1 synth
+    // R24: 30 feed + 1 synth — the PERSONAL block (1 event) is dropped
+    // wholesale: sharing the timetable must never publish private
+    // appointments (the old code only stripped the sentinel lines and
+    // exported the private VEVENT itself)
+    expect(e.eventCount, 31);
 
     final text = _text(e);
+    expect(text, isNot(contains("Eigene Vorlesung")),
+        reason: "personal ICS event leaked into a share sheet");
+    expect(text, isNot(contains("p1@own")));
     expect(text, isNot(contains("X-PERSONAL-ICS")));
     expect(text, isNot(contains("X-SIGNMEUP-SYNTH")));
     expect(text.toLowerCase(), isNot(contains("http")));
@@ -85,12 +92,13 @@ void main() {
     expect(header, isNot(contains("cascampus")));
     expect(header, isNot(contains("campus.studium.kit.edu")));
 
-    // the exported document holds exactly feed + injected events
-    expect(RegExp("BEGIN:VEVENT").allMatches(text).length, 32);
-    // and the app parser renders the injected ones like the feed's own
+    // the exported document holds feed + synth events only — never the
+    // personal block
+    expect(RegExp("BEGIN:VEVENT").allMatches(text).length, 31);
+    // and the app parser renders the injected synth one like the feed's own
     final feed = WebcalFeed.parse(text, now: DateTime(2026, 10, 30, 18));
     expect(feed, isNotNull);
-    expect(feed!.occurrences.any((o) => o.title == "Eigene Vorlesung"), isTrue);
+    expect(feed!.occurrences.any((o) => o.title == "Eigene Vorlesung"), isFalse);
     expect(feed.occurrences.any((o) => o.title == "Tutorium Synth"), isTrue);
   });
 
