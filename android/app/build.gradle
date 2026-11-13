@@ -79,4 +79,6 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+    // R37b: JVM-only source-drift guard (see DeepLinkTokensDriftTest)
+    testImplementation 'junit:junit:4.13.2'
 }

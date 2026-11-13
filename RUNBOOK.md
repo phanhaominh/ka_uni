@@ -968,3 +968,21 @@ Durable rule: a pool item is not DONE until its full report has been read - the
 one-line summaries in the pool output cut off mid-report; slice G shipped with
 findings [2..8] unread. Recover big pool outputs from the pool backing file, not
 from the summary.
+R37b part 2 (D5 + test infra): the four feed-rearm schedulers (lecture,
+morning, evening, last-lecture) had FIVE foreground call sites plus the poll
+isolate's tail, each four independent cancelRange+reschedule awaits over the
+SAME id bands - interleaving (main fetch vs poll, or two unawaited digests in
+ONE isolate) left tails cancelled or stale. All five quartets are now the ONE
+call MeiNotifications.rearmFromFeed(feed), which swaps the four bands under an
+OS file lock (systemTemp kauni-alarm-band.lock, dart:io lock() - non-blocking
+by default, retry loop 30 s, reentrant per isolate via depth counter). The
+LOSING writer SKIPS: the winner rebuilds the identical bands from the
+identical cache; every trigger re-arms anyway. Memos stay as same-isolate
+second belts; the poll's 12 s head start stays for plugin-init ordering only.
+Kotlin finally has a real JVM test (android/app/src/test):
+DeepLinkTokensDriftTest parses DeepLinkActivity.TOKENS against
+notification_payload.dart (value-set equality + the nine URL entry points) -
+run via ./gradlew :app:testDebugUnitTest. Rule: any new NotificationPayload
+constant needs the TOKENS mirror in the same commit or the Gradle test fails.
+Gradle/Kotlin string escapes: write \u0022 inside regex strings, never nested
+heredoc backslash-quote soup.

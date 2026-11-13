@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show Directory, File, Platform, RandomAccessFile;
 import 'dart:ui' show PlatformDispatcher;
 
 import '../agenda/logic/window_fsm.dart';
@@ -340,6 +340,74 @@ class MeiNotifications {
           payload: payload);
     } on Object catch (e) {
       if (kDebugMode) print("reminder $id failed: $e");
+    }
+  }
+
+  // R37b D5: the feed-driven re-arm quartet (lecture+morning+evening+
+  // last-lecture) is written by BOTH worlds - the main isolate after every
+  // webcal write and the WorkManager poll isolate after every refresh -
+  // and interleaved cancelRange/reschedule sequences in the SAME id bands
+  // leave tails cancelled or stale. Memos only guard one isolate, so the
+  // exclusion lives in an OS file lock (the one primitive that spans
+  // isolates AND short-lived WorkManager workers; a killed worker's FD
+  // dies with it, releasing the lock). The losing writer SKIPS: the other
+  // writer is rebuilding the identical bands from the identical cache
+  // right now, and every trigger re-arms anyway.
+  static int _rearmDepth = 0;
+  static RandomAccessFile? _rearmLockFile;
+
+  static Future<bool> _acquireRearmLock({int waitSeconds = 30}) async {
+    if (_rearmDepth > 0) {
+      _rearmDepth++; // same-isolate re-entry (rearmFromFeed -> schedule*)
+      return true;
+    }
+    final file = File("${Directory.systemTemp.path}/kauni-alarm-band.lock");
+    for (var attempt = 0; attempt <= waitSeconds * 5; attempt++) {
+      final raf = file.openSync();
+      try {
+        // Dart's lock() is NON-blocking by default (FileLock.block is the
+        // opt-in): on contention the future completes with an error, so a
+        // broad catch is the tryLock.
+        await raf.lock();
+        _rearmLockFile = raf;
+        _rearmDepth = 1;
+        return true;
+      } on Object {
+        await raf.close();
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+    }
+    return false;
+  }
+
+  static void _releaseRearmLock() {
+    if (_rearmDepth == 0) return;
+    if (--_rearmDepth > 0) return;
+    try {
+      _rearmLockFile?.unlock();
+      _rearmLockFile?.closeSync();
+    } on Object catch (_) {}
+    _rearmLockFile = null;
+  }
+
+  /// The ONE feed re-arm entry point (R37b): every world that just learned
+  /// something about the timetable calls this instead of the individual
+  /// band schedulers, so the four bands swap atomically under one lock.
+  static Future<void> rearmFromFeed(WebcalFeed feed) async {
+    if (!MeiNotifications.supported) return;
+    if (!await _acquireRearmLock()) {
+      if (kDebugMode) print("alarm re-arm skipped: band lock busy");
+      return;
+    }
+    try {
+      await scheduleLectureReminders(feed);
+      await scheduleMorningDigest(feed);
+      // R29 (R2): survives reboot like its morning sibling
+      await scheduleEveningDigest(feed);
+      // R33.4: ditto the last-lecture heads-up
+      await scheduleLastLectureAlarm(feed);
+    } finally {
+      _releaseRearmLock();
     }
   }
 
@@ -1151,12 +1219,7 @@ class MeiNotifications {
     final prefs = await SharedPreferences.getInstance();
     final feed = WebcalFeed.parse(prefs.getString("DATA_webcalIcsCache") ?? "");
     if (feed != null) {
-      await scheduleLectureReminders(feed);
-      await scheduleMorningDigest(feed);
-      // R29 (R2): survives reboot like its morning sibling
-      await scheduleEveningDigest(feed);
-      // R33.4: ditto the last-lecture heads-up
-      await scheduleLastLectureAlarm(feed);
+      await rearmFromFeed(feed); // R37b: atomic under the band lock
     }
     await _replayExamReminders(prefs);
   }
@@ -1566,13 +1629,10 @@ void meiBackgroundCallback() {
         return true; // logged out during the head start: never re-arm
       }
       final mergedFeed = WebcalFeed.parse(mergedRaw) ?? feed;
-      await MeiNotifications.scheduleLectureReminders(mergedFeed);
-      await MeiNotifications.scheduleMorningDigest(mergedFeed);
-      // R29 (R2): evening digest rides the same re-arm - the 30-min poll is
-      // what guarantees a 20:30 alarm exists before 20:30, app open or not
-      await MeiNotifications.scheduleEveningDigest(mergedFeed);
-      // R33.4: last-lecture heads-up rides the same feed re-arm
-      await MeiNotifications.scheduleLastLectureAlarm(mergedFeed);
+      // R37b D5: the whole re-arm swaps atomically against the main
+      // isolate's writers - the 12 s head start above stays as a second
+      // belt for plugin init ordering, but correctness is the lock's now
+      await MeiNotifications.rearmFromFeed(mergedFeed);
     } catch (e) {
       if (kDebugMode) {
         print("background poll failed: $e");

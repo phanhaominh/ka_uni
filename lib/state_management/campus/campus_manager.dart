@@ -2159,10 +2159,8 @@ class CampusManager extends KITLoginManager {
       // the same derived-everything tail as the other owners: agenda,
       // grid, cockpit read the feed; reminders/digests re-arm off it, so
       // a newly noted deadline gets its T−30 alarm immediately
-      unawaited(MeiNotifications.scheduleLectureReminders(feed));
-      unawaited(MeiNotifications.scheduleMorningDigest(feed));
-      unawaited(MeiNotifications.scheduleEveningDigest(feed));
-      unawaited(MeiNotifications.scheduleLastLectureAlarm(feed));
+      // R37b D5: one funnel, one lock - never four interleaved bands
+      unawaited(MeiNotifications.rearmFromFeed(feed));
       notificationCallback();
     }
   }
@@ -2376,10 +2374,8 @@ class CampusManager extends KITLoginManager {
     if (feed != null) {
       timetable = gridTemplate(feed);
       rememberEnrolledTitles(feed);
-      unawaited(MeiNotifications.scheduleLectureReminders(feed));
-      unawaited(MeiNotifications.scheduleMorningDigest(feed));
-      unawaited(MeiNotifications.scheduleEveningDigest(feed)); // R29
-      unawaited(MeiNotifications.scheduleLastLectureAlarm(feed)); // R33.4
+      // R37b D5: one funnel, one lock - never four interleaved bands
+      unawaited(MeiNotifications.rearmFromFeed(feed));
     }
     notificationCallback();
   }
@@ -2426,12 +2422,8 @@ class CampusManager extends KITLoginManager {
     if (feed != null) {
       timetable = gridTemplate(feed);
       rememberEnrolledTitles(feed);
-      unawaited(MeiNotifications.scheduleLectureReminders(feed));
-      // digest must see the injected tutorials too: without this, the
-      // "Today: N classes · First at ..." body kept the pre-SignMeUp set
-      unawaited(MeiNotifications.scheduleMorningDigest(feed));
-      unawaited(MeiNotifications.scheduleEveningDigest(feed)); // R29
-      unawaited(MeiNotifications.scheduleLastLectureAlarm(feed)); // R33.4
+      // R37b D5: one funnel, one lock - never four interleaved bands
+      unawaited(MeiNotifications.rearmFromFeed(feed));
       notificationCallback();
     }
   }
@@ -2476,10 +2468,8 @@ class CampusManager extends KITLoginManager {
     if (feed != null) {
       timetable = gridTemplate(feed);
       rememberEnrolledTitles(feed);
-      unawaited(MeiNotifications.scheduleLectureReminders(feed));
-      unawaited(MeiNotifications.scheduleMorningDigest(feed));
-      unawaited(MeiNotifications.scheduleEveningDigest(feed)); // R29
-      unawaited(MeiNotifications.scheduleLastLectureAlarm(feed)); // R33.4
+      // R37b D5: one funnel, one lock - never four interleaved bands
+      unawaited(MeiNotifications.rearmFromFeed(feed));
       notificationCallback();
     }
   }
@@ -3179,10 +3169,8 @@ class CampusManager extends KITLoginManager {
         await _webcalDiag("late: epoch $epoch/$_teardownEpoch");
         return false;
       }
-      unawaited(MeiNotifications.scheduleLectureReminders(merged ?? feed));
-      unawaited(MeiNotifications.scheduleMorningDigest(merged ?? feed));
-      unawaited(MeiNotifications.scheduleEveningDigest(merged ?? feed)); // R29
-      unawaited(MeiNotifications.scheduleLastLectureAlarm(merged ?? feed)); // R33.4
+      // R37b D5: one funnel, one lock - never four interleaved bands
+      unawaited(MeiNotifications.rearmFromFeed(merged ?? feed));
 
       // the subscription is fresh; give the personal calendar its quiet
       // top-up (throttled internally, keeps the old copy on any failure)
