@@ -513,3 +513,47 @@ green, 0 analyzer errors.
   future non-cancelled sitting wins, hour included.
 - Fixtures: possibleexams_en.html holds the live EN strings, not
   invented ones (the "Signed in" chip surprise is exactly why).
+
+## R31 — fleet audit + two-phase fix wave (0.8.9+65)
+Audit: audit/r31fleet/REPORT.md, adjudicated by a 5-lens panel (audit/r31fleet/PANEL.md -
+supersedes report rows F-1/F-2/F-3). Fix brief: audit/brief_FixR31.md. F-3 (tablet ruler
+"misalignment") was RETRACTED: zero wide-layout artifacts existed; cited shots measure 0px.
+Durable invariants this wave established:
+- HERO MEMORY HANDOFF (F-1): the home card is the only SharedPreferencesAsync reader of
+  DATA_webcalFetchedAt/icsCache while every writer is legacy getInstance - the async view
+  ghosts (null/stale) for these keys, documented on-device since the account-fence fix.
+  Foreground fetches now publish webcalWrittenAt (the EXACT stamp string, hoisted) +
+  webcalMergedFeed BEFORE notificationCallback; the card adopts them in-process. The async
+  probe is poll-isolate fallback ONLY, and _readCache may never latch a null pair (null =
+  unknown = keep last good state). Regression: test/home_hero_latch_test.dart.
+- CACHE PROJECTION FENCE (F-2): the R1 foreground write is a projection - every carried
+  layer = union(own canonical block, extractLayer(live cache)); it may grow, never shrink a
+  layer (shrinking belongs to the layer's owner: proven scrape via reapplySignMeUpSynth,
+  proven exam list, USER import, proven deadline board). signMeUpSynth carries on cold boot
+  (carrySignMeUpSynthFromCache, exam doctrine) and the feed-coverage dedupe is a merge-time
+  DOCUMENT filter - its trim never writes back to memory. URL-refreshed personal ICS may
+  restamp/grow but never shrink (setPersonalIcsFromRaw userInitiated flag; shrinking is
+  reserved to the user). EVERY content-changing RMW moves DATA_webcalFetchedAt - a stale
+  banner over fresh content is a bug by construction now. Poll re-splices into a moved
+  baseline (no CAS in SharedPreferences; window shrinks to one await).
+- INJECT LINE-START RULE: sentinel blocks always begin their own line (CRLF separator when
+  END:VCALENDAR doesn't start a line) - inject->strip is byte-stable, re-apply idempotent.
+  Smuggled " END:VCALENDAR" quirks used to hide blocks from strip and double-embed them.
+- DOCK CLEARANCE: kDockClearance=140 (constants/view_constants.dart) is bottom padding for
+  EVERY full-screen scrollable (home spacer, module, exams, agenda, grades). New pages:
+  apply it or the last row is untappable.
+- COUNTDOWN TIERS (D1): examCountdowns = registered (unchanged); conditionalCountdowns =
+  unregistered, window reachable (open now or closing <= horizon), dated future sitting -
+  NO isTakingThisSemester gate; card renders conditional rows muted below registered, shared
+  limit 6, "If you register · register by <deadline>" sub-line, error color <=3d. Live
+  subject on day one: ITDS 26.11 sitting (summer-term module, winter repeat sitting - the
+  catalog placement the audit first suspected was CORRECT, MHB recurrence check).
+- F-10: ModuleInfoTable.parseFromHtml dedups byte-identical rows (whitespace-normalized,
+  link+favorite-value in the key) at the choke point - CampusKIT ships 5x copies.
+- F-9: support bundle reports the RUNTIME version (PackageInfo); kAppVersion is the test
+  fallback only, still bump it with pubspec anyway.
+Device-verified on +65 (Pixel + Fire cold boots): hero + no banner, 3-layer grid stable at
+t+6s, countdown tier shows ITDS, single 24.02.2027 row, bundle "0.8.9+65".
+Known behavior seen during verification: exam-registration page "Try again" does NOT renew
+an expired session - a cold restart re-runs the boot-chain login. drive.py guards kept
+their promise twice (back-press exited to Lawnchair/chooser; taps refused, exit 3).
