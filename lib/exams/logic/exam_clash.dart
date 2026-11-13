@@ -1,3 +1,4 @@
+import '../../agenda/logic/walk_hint.dart';
 import '../models/exam_list.dart';
 
 /// R29: exam clash detection. Two registered exams whose sittings sit on
@@ -12,7 +13,7 @@ import '../models/exam_list.dart';
 /// is why the result carries an [ExamClashReport.uncomparable] count -
 /// without it an empty clash list would read "all clear" even when half
 /// the schedule was unparseable.
-enum ClashKind { overlap, sameDay }
+enum ClashKind { overlap, sameDay, walkImpossible }
 
 class ExamClash {
   final ExamEntry a;
@@ -30,8 +31,15 @@ class ExamClash {
   final DateTime? exactEndA;
   final DateTime? exactEndB;
 
+  /// R35.4: minutes of walking certified between the two sittings' rooms
+  /// (both rooms geocodable via the caller's resolver), null when either
+  /// room is a placeholder or unknown place. `walkImpossible` is exactly
+  /// "walkMinutes exceeds the proven gap" — the same geometry the agenda
+  /// Fußweg hint uses, escalated because a Klausur is not a lecture.
+  final int? walkMinutes;
+
   const ExamClash(this.a, this.b, this.when, this.kind,
-      {this.exactEndA, this.exactEndB});
+      {this.exactEndA, this.exactEndB, this.walkMinutes});
 }
 
 typedef ExamClashReport = ({List<ExamClash> clashes, int uncomparable});
@@ -41,8 +49,9 @@ class _Sitting {
   final DateTime day; // midnight of the parsed sitting date
   final DateTime? start; // null: no time token at all
   final DateTime? end; // null: no FULL span -> never guess
+  final String room; // raw ICS-style room text, "" when placeholder
 
-  _Sitting(this.exam, this.day, this.start, this.end);
+  _Sitting(this.exam, this.day, this.start, this.end, this.room);
 }
 
 /// FULL-anchor "HH:MM - HH:MM" (hyphen or en/em dash). Anchored on
@@ -122,7 +131,14 @@ const _lookback = Duration(days: 1);
 /// Deterministic: pairs sorted by (when, a.examNumber, b.examNumber),
 /// and within a pair `a` is the lower examNumber so the two sides - and
 /// their `exactEnd` fields - never swap between builds.
-ExamClashReport findExamClashes(List<ExamEntry> exams, DateTime now) {
+///
+/// [distance] (R35.4) resolves two raw room strings to great-circle
+/// metres, null when either does not name a known place. Without it (or
+/// without a resolvable room pair) the classifier behaves exactly as
+/// before: an unreachable-between is then simply not certifiable, and
+/// inventing one would be the worst verdict this file could ship.
+ExamClashReport findExamClashes(List<ExamEntry> exams, DateTime now,
+    {double? Function(String roomA, String roomB)? distance}) {
   final cutoff = now.subtract(_lookback);
   final sittings = <_Sitting>[];
   for (final e in exams) {
@@ -138,7 +154,8 @@ ExamClashReport findExamClashes(List<ExamEntry> exams, DateTime now) {
           ? !start.isBefore(cutoff)
           : !day.isBefore(_dayStart(cutoff));
       if (!futureish) continue;
-      sittings.add(_Sitting(e, day, start, start == null ? null : _endOf(t, day, start)));
+      sittings.add(_Sitting(e, day, start,
+          start == null ? null : _endOf(t, day, start), t.room));
     }
   }
 
@@ -160,13 +177,39 @@ ExamClashReport findExamClashes(List<ExamEntry> exams, DateTime now) {
           : x.day;
       final first = x.exam.examNumber.compareTo(y.exam.examNumber) <= 0;
       final lo = first ? x : y, hi = first ? y : x;
+      // R35.4 walk escalation: both spans proven, no strict overlap, but
+      // the gap between them is shorter than the certified walk between
+      // the two rooms -> red "nicht erreichbar", not a friendly same-day.
+      // Any missing piece (end, room, place) keeps the honest sameDay.
+      int? walkMin;
+      var kind = ClashKind.sameDay;
+      if (!overlap &&
+          distance != null &&
+          sa != null &&
+          sb != null &&
+          x.end != null &&
+          y.end != null) {
+        final earlier = sa.isBefore(sb) ? x : y;
+        final later = sa.isBefore(sb) ? y : x;
+        final gap = later.start!.difference(earlier.end!).inMinutes;
+        if (gap >= 0 &&
+            !ExamTerm.isPlaceholderRoom(earlier.room) &&
+            !ExamTerm.isPlaceholderRoom(later.room)) {
+          final meters = distance(earlier.room, later.room);
+          if (meters != null) {
+            walkMin = walkMinutesFor(meters);
+            if (walkMin > gap) kind = ClashKind.walkImpossible;
+          }
+        }
+      }
       clashes.add(ExamClash(
         lo.exam,
         hi.exam,
         when,
-        overlap ? ClashKind.overlap : ClashKind.sameDay,
+        overlap ? ClashKind.overlap : kind,
         exactEndA: lo.end,
         exactEndB: hi.end,
+        walkMinutes: walkMin,
       ));
     }
   }

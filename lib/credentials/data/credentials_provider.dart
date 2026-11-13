@@ -8,6 +8,7 @@ import 'package:kit_mobile/credentials/models/kit_credentials.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:workmanager/workmanager.dart';
 
+import '../../docwatch/docwatch.dart';
 import '../../local_files_storage/local_file_storage_manager.dart';
 import '../../main.dart';
 import '../../notifications/mei_notifications.dart';
@@ -372,6 +373,18 @@ class CredentialsProvider extends ChangeNotifier {
       }
     } on Object catch (e) {
       failures.add("legacy prefs sweep: $e");
+    }
+    try {
+      // R34.6: the keychain is not only the KIT credentials — the document
+      // expiry watch stores every user-noted DOC_* entry in the same
+      // FlutterSecureStorage. Same doctrine as the prefs sweeps: enumerate
+      // the LIVE store and delete exactly the family's keys (never
+      // deleteAll: username/password and the library copy have their own
+      // owners above). A keychain hiccup lands in `failures` below — the
+      // user sees "partial wipe", it is never swallowed here.
+      await DocWatchStore.purgeAll(_storage);
+    } on Object catch (e) {
+      failures.add("document keychain sweep: $e");
     }
     try {
       // library family first: explicit per-id cancel, so a partial

@@ -22,6 +22,8 @@ const Map<String, String> de_exams = {
   "exams.countdownIfRegister": "Bei Anmeldung",
   "exams.countdownRegisterBy": "Anmelden bis",
   "exams.clashOverlapTitle": "Zeitgleiche Prüfungen",
+  "exams.clashWalkTitle": "Prüfungen nicht erreichbar",
+  "exams.clashWalkLine": "{0} + {1} · {2} · {3} Min Fußweg dazwischen",
   "exams.clashSameDayTitle": "Prüfungen am selben Tag",
   "exams.clashLine": "{0} + {1} · {2}",
   "exams.clashUnknown":
@@ -57,6 +59,8 @@ const Map<String, String> en_exams = {
   "exams.countdownIfRegister": "If you register",
   "exams.countdownRegisterBy": "Register by",
   "exams.clashOverlapTitle": "Overlapping exams",
+  "exams.clashWalkTitle": "Exams not reachable",
+  "exams.clashWalkLine": "{0} + {1} · {2} · {3} min walk between",
   "exams.clashSameDayTitle": "Exams on the same day",
   "exams.clashLine": "{0} + {1} · {2}",
   "exams.clashUnknown":

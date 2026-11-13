@@ -83,6 +83,11 @@ class WalkHint {
   WalkHint(this.walkMinutes, this.tight);
 }
 
+/// Walking minutes for a metre distance at calm campus pace. Shared by
+/// the agenda hint and the exam-clash escalation (R35.4) so both speak
+/// the same minutes for the same geometry.
+int walkMinutesFor(double meters) => (meters / _walkSpeedMs / 60).ceil();
+
 /// Walk feasibility for a back-to-back lecture pair. Returns null when a
 /// place is unknown, the buildings coincide, or the pair is not interesting
 /// (tiny or huge gaps - nobody plans a coffee dash across campus for those).
@@ -93,7 +98,7 @@ WalkHint? computeWalkHint(KITPlace? from, KITPlace? to, int gapMinutes) {
   if (gapMinutes <= 4 || gapMinutes > 90) return null;
   final meters = const Distance().as(LengthUnit.Meter, a, b);
   if (meters < 250) return null; // same building cluster
-  final walkMinutes = (meters / _walkSpeedMs / 60).ceil();
+  final walkMinutes = walkMinutesFor(meters);
   return WalkHint(walkMinutes, walkMinutes > gapMinutes);
 }
 

@@ -41,6 +41,9 @@ const Map<String, String> de_notifs = {
       "Laut Plan ist {0} am {1} um {2} deine letzte Vorlesung des "
       "Semesters.",
   "notifs.digestLastLecture": "Letzte Vorlesung laut Plan: {0} um {1}",
+  // R34.1 FRISTENBUCH: a day made only of hand-noted "Frist:" rows is
+  // neither an Abgabe (ILIAS assignment) nor a lecture — honest word: Frist
+  "notifs.digestTitleFrb": "Heute: Frist",
   "notifs.bannerBotProtection":
       "KIT hat ihren Bot-Schutz geändert — Datenabruf bis auf Weiteres gestört. Update nötig.",
   "notifs.bannerBoth":
@@ -90,6 +93,8 @@ const Map<String, String> en_notifs = {
       "The schedule says {0} on {1} at {2} is your last lecture of the "
       "semester.",
   "notifs.digestLastLecture": "Last lecture (schedule says): {0} at {1}",
+  // R34.1 FRISTENBUCH: Fristenbuch-only day wording (see de_notifs)
+  "notifs.digestTitleFrb": "Today: deadline",
   "notifs.bannerBotProtection":
       "KIT changed its bot protection — data retrieval is disrupted until further notice. An update is needed.",
   "notifs.bannerBoth": "Could not read exams & timetable (KIT site changed?).",

@@ -512,14 +512,27 @@ class ExamsPage extends StatelessWidget {
   /// folded into an "all clear" the app cannot guarantee.
   Widget _clashCard(
       BuildContext context, List<ExamEntry> exams, DateTime now) {
-    final report = findExamClashes(exams, now);
+    // R35.4: room geometry rides the agenda's own resolver (building
+    // numbers first, fuzzy names only through the token fence) - the
+    // clash card and the Fußweg hint can never disagree about distance.
+    final places = Provider.of<KITProvider>(context, listen: false)
+        .topographyManager
+        .places;
+    final report = findExamClashes(exams, now, distance: (ra, rb) {
+      final pa = resolveRoomPlace(places, ra);
+      final pb = resolveRoomPlace(places, rb);
+      return pa == null || pb == null || pa.id == pb.id
+          ? null
+          : roomDistanceMeters(pa, pb);
+    });
     if (report.clashes.isEmpty && report.uncomparable == 0) {
       return const SizedBox.shrink();
     }
     final scheme = Theme.of(context).colorScheme;
-    final overlap =
-        report.clashes.any((c) => c.kind == ClashKind.overlap);
-    final color = overlap ? scheme.error : scheme.tertiary;
+    final red = report.clashes.any((c) =>
+        c.kind == ClashKind.overlap ||
+        c.kind == ClashKind.walkImpossible);
+    final color = red ? scheme.error : scheme.tertiary;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       shape: RoundedRectangleBorder(
@@ -534,14 +547,17 @@ class ExamsPage extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(overlap ? Icons.error_outline : Icons.warning_amber,
+                Icon(red ? Icons.error_outline : Icons.warning_amber,
                     size: 18, color: color),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                      L10n.t(overlap
+                      L10n.t(report.clashes.any((c) =>
+                              c.kind == ClashKind.overlap)
                           ? "exams.clashOverlapTitle"
-                          : "exams.clashSameDayTitle"),
+                          : red
+                              ? "exams.clashWalkTitle"
+                              : "exams.clashSameDayTitle"),
                       style: TextStyle(
                           fontWeight: FontWeight.w600, color: color)),
                 ),
@@ -552,8 +568,15 @@ class ExamsPage extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
                 child: Text(
-                    L10n.t("exams.clashLine",
-                        [c.a.title, c.b.title, L10n.stamp(c.when)]),
+                    c.walkMinutes == null
+                        ? L10n.t("exams.clashLine",
+                            [c.a.title, c.b.title, L10n.stamp(c.when)])
+                        : L10n.t("exams.clashWalkLine", [
+                            c.a.title,
+                            c.b.title,
+                            L10n.stamp(c.when),
+                            c.walkMinutes!
+                          ]),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

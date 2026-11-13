@@ -116,9 +116,14 @@ class DayDecision {
     // a submission deadline is no "Veranstaltung"/class: a due-only day
     // must not read "Today: 1 classes", mixed days must not count it in
     // the class total, and the stated time must name a real lecture
-    // (the due time itself was always honest)
-    final lectureList =
-        occ.where((o) => !o.title.startsWith("Due: ")).toList();
+    // (the due time itself was always honest). R34.1: a hand-noted
+    // "Frist:" row is the same non-class arm — it is a deadline the
+    // student typed, never a scraped lecture.
+    final lectureList = occ
+        .where((o) =>
+            !o.title.startsWith("Due: ") &&
+            !o.title.startsWith("Frist: "))
+        .toList();
     final examOnly = lectureList.isNotEmpty &&
         lectureList.every((o) => o.title.startsWith("Klausur: "));
     final firstOcc = lectureList.isEmpty ? occ.first : lectureList.first;
@@ -136,8 +141,14 @@ class DayDecision {
         ? ""
         : " · ${L10n.t("notifs.digestCancelHint", [cancelledTitles.first])}";
     if (lectureList.isEmpty) {
+      // a Fristenbuch-only day must not be called "Abgabe fällig" (an
+      // assignment due) — the honest word is "Frist"; a day that also
+      // carries a scraped due keeps the established due title
+      final frbOnly = occ.every((o) => o.title.startsWith("Frist: "));
       return (
-        L10n.t("notifs.digestTitleDue"),
+        frbOnly
+            ? L10n.t("notifs.digestTitleFrb")
+            : L10n.t("notifs.digestTitleDue"),
         L10n.t("notifs.digestBodyDue", [first, cancelHint]),
       );
     }

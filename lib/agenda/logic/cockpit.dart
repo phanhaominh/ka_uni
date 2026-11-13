@@ -1,5 +1,6 @@
 import '../../exams/models/exam_list.dart';
 import '../../exams/models/exam_synth.dart';
+import '../../fristenbuch/fristenbuch.dart';
 import '../../ilias/due_parse.dart';
 import '../../signmeup/signmeup_manager.dart';
 import '../../timetable/models/webcal.dart';
@@ -20,6 +21,12 @@ import '../../timetable/models/webcal.dart';
 /// together, so nothing here re-arms anything.
 enum CockpitKind {
   due,
+
+  /// R34.1: a manually noted Fristenbuch deadline ("Frist: <label>").
+  /// Same timeline seat as [due] but a DIFFERENT provenance: scraped
+  /// truth vs the student's own note — the card labels them apart, so an
+  /// own note never wears a KIT-deadline look.
+  frb,
   examSignupOpen,
   examSignupOpens,
 
@@ -82,7 +89,9 @@ List<CockpitItem> cockpitPlan({
   }
 
   for (final o in occurrences) {
-    if (o.uid.startsWith(dueSynthUidPrefix)) {
+    if (o.uid.startsWith(frbSynthUidPrefix)) {
+      add(CockpitKind.frb, o.start, o.title);
+    } else if (o.uid.startsWith(dueSynthUidPrefix)) {
       add(CockpitKind.due, o.start, o.title);
     } else if (o.uid.startsWith(examSynthUidPrefix)) {
       // exam sittings live in the semester-end block, routinely 6+ weeks

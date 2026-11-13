@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:kit_mobile/fristenbuch/fristenbuch.dart';
 import 'package:kit_mobile/ilias/models/ilias_models.dart';
 import 'package:kit_mobile/notifications/mei_notifications.dart';
 import 'package:kit_mobile/state_management/campus/campus_manager.dart';
@@ -398,9 +399,62 @@ void main() {
       expect(await stamp(), isNot(t0), reason: "publishDueBlock froze stamp");
       expect(await cacheDoc(), contains("X-DUE-SYNTH-BEGIN"));
 
+      // R34.1: the Fristenbuch owner write joins the one-stamp rule
+      await rewind();
+      await cm.reapplyFrB(buildFristenbuchBlock([
+        FristenbuchEntry(id: 1, label: "Frist", due: _at(9, 0))
+      ]));
+      expect(await stamp(), isNot(t0), reason: "reapplyFrB froze stamp");
+      expect(await cacheDoc(), contains("X-FRISTENBUCH-BEGIN"));
+
       await rewind();
       await MeiNotifications.mergePollCache(feedBody("Oscar", 6, 12));
       expect(await stamp(), isNot(t0), reason: "poll froze stamp");
+    });
+
+    test("R34.1 frb writer: the fifth layer survives every other writer, "
+        "the poll carries it, and the owner alone rules it", () async {
+      final entries = [
+        FristenbuchEntry(id: 1, label: "Wohnung kündigen", due: _at(9, 0))
+      ];
+      final frb = buildFristenbuchBlock(entries);
+      final doc0 = CampusManager.injectFrB(
+          CampusManager.injectExamSynth(
+              feedBody("Papa", 2, 8), examBlock("f1", 20, 9)),
+          frb);
+      await seed({
+        WebcalKeys.url: _wcUrl,
+        WebcalKeys.icsCache: doc0,
+        fristenbuchStoreKey: fristenbuchEntriesToJson(entries),
+      });
+      final cm = _FeedManager()..feedBody = feedBody("Quebec", 4, 10);
+
+      // R1 foreground write: the projection union carries the layer even
+      // on a cold memory copy
+      expect(await cm.fetchWebcalTimetable(), isTrue);
+      expect(CampusManager.extractFrB(await cacheDoc()), frb,
+          reason: "R1 cold start dropped the Fristenbuch layer");
+
+      // R2 poll merge: the frb block must ride the fresh feed exactly
+      // like the other four layers (mergePollLayers injectFrB arm)
+      await MeiNotifications.mergePollCache(feedBody("Romeo", 6, 12));
+      expect(CampusManager.extractFrB(await cacheDoc()), frb,
+          reason: "the poll dropped the Fristenbuch layer — the "
+              "mergePollLayers inject/extractFrB arm is missing");
+
+      // the owner grows it, other layers byte-intact
+      await cm.reapplyFrB(buildFristenbuchBlock(
+          [...entries, FristenbuchEntry(id: 2, label: "Visa Termin", due: _at(12, 0))]));
+      expect(CampusManager.extractFrB(await cacheDoc()),
+          contains("UID:kauni-frb-2"));
+      expect(CampusManager.extractExamSynth(await cacheDoc()),
+          contains("kauni-exam-f1"));
+
+      // and the owner shrinks it — the union may never veto the owner
+      await cm.reapplyFrB("");
+      expect(CampusManager.extractFrB(await cacheDoc()), isEmpty);
+      expect(CampusManager.extractExamSynth(await cacheDoc()),
+          contains("kauni-exam-f1"));
     });
   });
 }

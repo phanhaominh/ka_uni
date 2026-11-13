@@ -32,6 +32,8 @@ const _sentinelMarkers = [
   "X-EXAM-SYNTH-END",
   "X-DUE-SYNTH-BEGIN",
   "X-DUE-SYNTH-END",
+  "X-FRISTENBUCH-BEGIN",
+  "X-FRISTENBUCH-END",
 ];
 
 /// Feed header properties that describe WHO publishes the source calendar;

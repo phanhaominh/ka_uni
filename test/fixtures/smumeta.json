@@ -1,0 +1,352 @@
+{
+  "terms": [
+    {
+      "id": "5e19b2de-0bc9-4f32-9034-3c40922b855b",
+      "name": "WS 26/27",
+      "fullName": "Wintersemester 2026/27",
+      "isPublished": true,
+      "startDate": "2026-10-01T00:00:00Z",
+      "endDate": "2026-03-31T23:59:59Z",
+      "campusTermGuid": "0xD25DBD9C86874091993315DA11571AAF",
+      "nameEN": "WT 26/27",
+      "fullNameEN": "Winter term 2026/27",
+      "isActive": false,
+      "isDefault": false
+    },
+    {
+      "id": "cd0e6be1-ad3f-4289-9d12-494fa43b0891",
+      "name": "SS 2026",
+      "fullName": "Sommersemester 2026",
+      "isPublished": true,
+      "startDate": "2026-04-01T00:00:00Z",
+      "endDate": "2026-09-30T23:59:59Z",
+      "campusTermGuid": "0x716BD3EDCA404F938FB6C214F486D547",
+      "nameEN": "ST 2026",
+      "fullNameEN": "Summer Term 2026",
+      "isActive": false,
+      "isDefault": false
+    },
+    {
+      "id": "ca53d62f-7a18-4840-ad37-e8e286fbdbae",
+      "name": "WS 25/26",
+      "fullName": "Wintersemester 2025/26",
+      "isPublished": true,
+      "startDate": "2025-10-01T00:00:00Z",
+      "endDate": "2026-03-31T23:59:59Z",
+      "campusTermGuid": "0x89B9670294A44C26B314645E8C249B3F",
+      "nameEN": "WT 25/26",
+      "fullNameEN": "Winter term 2025/26",
+      "isActive": false,
+      "isDefault": false
+    },
+    {
+      "id": "3f6b1b4c-c5f5-4d33-9e4e-4f44cad9c37e",
+      "name": "SS 2025",
+      "fullName": "Sommersemester 2025",
+      "isPublished": true,
+      "startDate": "2025-04-01T00:00:00Z",
+      "endDate": "2025-09-30T23:59:59Z",
+      "campusTermGuid": "0x36588A116C38417CAA9C1861FE6D8370",
+      "nameEN": "ST 2025",
+      "fullNameEN": "Summer Term 2025",
+      "isActive": false,
+      "isDefault": false
+    },
+    {
+      "id": "cc38c524-61b2-4e3c-99a7-21b55cb1493e",
+      "name": "WS 24/25",
+      "fullName": "Wintersemester 2024/25",
+      "isPublished": true,
+      "startDate": "2024-10-01T00:00:00Z",
+      "endDate": "2025-03-31T23:59:59Z",
+      "campusTermGuid": "0x8B8BEF2D6B894380973363ED68D60E22",
+      "nameEN": "WT 24/25",
+      "fullNameEN": "Winter term 2024/25",
+      "isActive": false,
+      "isDefault": false
+    },
+    {
+      "id": "f75a1c10-81b0-4362-8b5a-1fbb5f6cde30",
+      "name": "SS 2024",
+      "fullName": "Sommersemester 2024",
+      "isPublished": true,
+      "startDate": "2024-04-01T00:00:00Z",
+      "endDate": "2024-09-30T23:59:59Z",
+      "campusTermGuid": "0xF75A1C1081B043628B5A1FBB5F6CDE30",
+      "nameEN": "ST 2024",
+      "fullNameEN": "Summer term 2024",
+      "isActive": false,
+      "isDefault": false
+    },
+    {
+      "id": "02e0655f-3c68-4712-ab30-2732e6709e71",
+      "name": "WS 23/24",
+      "fullName": "Wintersemester 2023/24",
+      "isPublished": true,
+      "startDate": "2023-10-01T00:00:00Z",
+      "endDate": "2024-03-31T23:59:59Z",
+      "campusTermGuid": "0x02E0655F3C684712AB302732E6709E71",
+      "nameEN": "WT 23/24",
+      "fullNameEN": "Winter term 2023/24",
+      "isActive": false,
+      "isDefault": false
+    },
+    {
+      "id": "40b784b4-3aed-4cc9-8573-35104533edfb",
+      "name": "SS 2023",
+      "fullName": "Sommersemester 2023",
+      "isPublished": true,
+      "startDate": "2023-04-01T00:00:00Z",
+      "endDate": "2023-09-30T23:59:59Z",
+      "campusTermGuid": "0x40B784B43AED4CC9857335104533EDFB",
+      "nameEN": "ST 2023",
+      "fullNameEN": "Summer term 2023",
+      "isActive": false,
+      "isDefault": false
+    },
+    {
+      "id": "b7532209-c526-4c53-a99d-9128a9f9a321",
+      "name": "WS 22/23",
+      "fullName": "Wintersemester 2022/23",
+      "isPublished": true,
+      "startDate": "2022-10-01T00:00:00Z",
+      "endDate": "2023-03-31T23:59:59Z",
+      "campusTermGuid": "0xB7532209C5264C53A99D9128A9F9A321",
+      "nameEN": "WT 22/23",
+      "fullNameEN": "Winter term 2022/23",
+      "isActive": false,
+      "isDefault": false
+    },
+    {
+      "id": "c25082dc-6a5f-4066-a1c6-f2258fbaa279",
+      "name": "SS 2022",
+      "fullName": "Sommersemester 2022",
+      "isPublished": true,
+      "startDate": "2022-04-01T00:00:00Z",
+      "endDate": "2022-09-30T23:59:59Z",
+      "campusTermGuid": "0xC25082DC6A5F4066A1C6F2258FBAA279",
+      "nameEN": "ST 2022",
+      "fullNameEN": "Summer term 2022",
+      "isActive": false,
+      "isDefault": false
+    }
+  ],
+  "headings": [
+    {
+      "id": 1,
+      "name": "KIT-Fakult\u00E4t f\u00FCr Architektur",
+      "nameEN": "KIT Department of Architecture",
+      "shortName": "ARCH",
+      "order": 10
+    },
+    {
+      "id": 2,
+      "name": "KIT-Fakult\u00E4t f\u00FCr Bauingenieur-, Geo- und Umweltwissenschaften",
+      "nameEN": "KIT Department of Civil Engineering, Geo and Environmental Sciences",
+      "shortName": "BGU",
+      "order": 20
+    },
+    {
+      "id": 3,
+      "name": "KIT-Fakult\u00E4t f\u00FCr Chemie und Biowissenschaften",
+      "nameEN": "KIT Department of Chemistry and Biosciences",
+      "shortName": "CHEMBIO",
+      "order": 30
+    },
+    {
+      "id": 4,
+      "name": "KIT-Fakult\u00E4t f\u00FCr Chemieingenieurwesen und Verfahrenstechnik",
+      "nameEN": "KIT Department of Chemical and Process Engineering",
+      "shortName": "CIV",
+      "order": 40
+    },
+    {
+      "id": 5,
+      "name": "KIT-Fakult\u00E4t f\u00FCr Elektrotechnik und Informationstechnik",
+      "nameEN": "KIT Department of Electrical Engineering and Information Technology",
+      "shortName": "ETIT",
+      "order": 50
+    },
+    {
+      "id": 6,
+      "name": "KIT-Fakult\u00E4t f\u00FCr Geistes- und Sozialwissenschaften",
+      "nameEN": "KIT Department of Humanities and Social Sciences",
+      "shortName": "GEISTSOZ",
+      "order": 60
+    },
+    {
+      "id": 7,
+      "name": "KIT-Fakult\u00E4t f\u00FCr Informatik",
+      "nameEN": "KIT Department of Informatics",
+      "shortName": "INFO",
+      "order": 70
+    },
+    {
+      "id": 8,
+      "name": "KIT-Fakult\u00E4t f\u00FCr Maschinenbau",
+      "nameEN": "KIT Department of Mechanical Engineering",
+      "shortName": "MACH",
+      "order": 80
+    },
+    {
+      "id": 9,
+      "name": "KIT-Fakult\u00E4t f\u00FCr Mathematik",
+      "nameEN": "KIT Department of Mathematics",
+      "shortName": "MATH",
+      "order": 90
+    },
+    {
+      "id": 10,
+      "name": "KIT-Fakult\u00E4t f\u00FCr Physik",
+      "nameEN": "KIT Department of Physics",
+      "shortName": "PHYSIK",
+      "order": 100
+    },
+    {
+      "id": 11,
+      "name": "KIT-Fakult\u00E4t f\u00FCr Wirtschaftswissenschaften",
+      "nameEN": "KIT Department of Economics and Management",
+      "shortName": "WIWI",
+      "order": 110
+    },
+    {
+      "id": 12,
+      "name": "House of Competence (HoC)",
+      "nameEN": "House of Competence (HoC)",
+      "shortName": "HOC",
+      "order": 120
+    },
+    {
+      "id": 13,
+      "name": "Studium Generale. Forum Wissenschaft und Gesellschaft (FORUM) (ehem. ZAK)",
+      "nameEN": "General Studies. Forum Science and Society (FORUM) (prev. ZAK)",
+      "shortName": "FORUM",
+      "order": 130
+    },
+    {
+      "id": 14,
+      "name": "STK-Sprachenzentrum",
+      "nameEN": "STK-Language Center",
+      "shortName": "SPZ",
+      "order": 140
+    },
+    {
+      "id": 18,
+      "name": "STK-Studienkolleg f\u00FCr internationale Studierende",
+      "nameEN": "STK-Studienkolleg f\u00FCr internationale Studierende",
+      "shortName": "STK",
+      "order": 150
+    },
+    {
+      "id": 17,
+      "name": "STK-MINT-Kolleg",
+      "nameEN": "STK-MINT-Kolleg",
+      "shortName": "MINT",
+      "order": 160
+    },
+    {
+      "id": 15,
+      "name": "Internationales",
+      "nameEN": "International Affairs",
+      "shortName": "INTL",
+      "order": 170
+    },
+    {
+      "id": 1001,
+      "name": "International Students Office",
+      "nameEN": "International Students Office",
+      "shortName": "ISTO",
+      "order": 171
+    },
+    {
+      "id": 16,
+      "name": "KIT Graduate Schools",
+      "nameEN": "KIT Graduate Schools",
+      "shortName": "KGS",
+      "order": 180
+    },
+    {
+      "id": 19,
+      "name": "Career Service \u0026 Alumni",
+      "nameEN": "Career Service \u0026 Alumni ",
+      "shortName": "CSA",
+      "order": 190
+    },
+    {
+      "id": 20,
+      "name": "Karlsruhe School of Education",
+      "nameEN": "Karlsruhe School of Education",
+      "shortName": "KSE",
+      "order": 200
+    },
+    {
+      "id": 999,
+      "name": "Andere",
+      "nameEN": "Other",
+      "shortName": "SONSTIGE",
+      "order": 999
+    }
+  ],
+  "eventTypes": [
+    {
+      "value": 0,
+      "name": "None",
+      "color": null,
+      "abbreviation": "N"
+    },
+    {
+      "value": 1,
+      "name": "Lecture",
+      "color": "blue",
+      "abbreviation": "V"
+    },
+    {
+      "value": 2,
+      "name": "Tutorial",
+      "color": "indigo",
+      "abbreviation": "T"
+    },
+    {
+      "value": 3,
+      "name": "Workshop",
+      "color": "brown",
+      "abbreviation": "W"
+    },
+    {
+      "value": 4,
+      "name": "Seminar",
+      "color": "green",
+      "abbreviation": "S"
+    },
+    {
+      "value": 5,
+      "name": "Practical",
+      "color": "purple",
+      "abbreviation": "P"
+    },
+    {
+      "value": 6,
+      "name": "Review",
+      "color": "deep-orange",
+      "abbreviation": "E"
+    },
+    {
+      "value": 7,
+      "name": "Other",
+      "color": "lime",
+      "abbreviation": "A"
+    },
+    {
+      "value": 8,
+      "name": "Appointment",
+      "color": "cyan",
+      "abbreviation": "TV"
+    },
+    {
+      "value": 9,
+      "name": "Course",
+      "color": "blue-grey",
+      "abbreviation": "C"
+    }
+  ]
+}

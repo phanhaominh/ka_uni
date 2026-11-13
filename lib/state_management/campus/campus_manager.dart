@@ -27,6 +27,7 @@ import '../../grades/models/grade_book.dart';
 import '../../handbook/ampel.dart';
 import '../../handbook/handbook_data.dart';
 import '../../handbook/prereq_alarm.dart';
+import '../../fristenbuch/fristenbuch.dart';
 import '../../ilias/due_parse.dart';
 import '../../ilias/models/ilias_models.dart';
 import '../../utils/string_prettifiers.dart';
@@ -347,6 +348,9 @@ class CampusManager extends KITLoginManager {
     examSynth = ""; // registered sittings are account data too
     dueSynth = ""; // A's ILIAS deadlines are A's account data as well
     _dueSynthLoaded = false;
+    // A's hand-noted deadlines are the most personal data of all five
+    // layers: the store dies in the DATA_* sweep, the block dies here
+    frbSynth = "";
     personalIcs = "";
     personalIcsUrl = "";
     _personalIcsLoaded = false;
@@ -1636,6 +1640,10 @@ class CampusManager extends KITLoginManager {
     // survive sanitizing and be extracted/re-injected as if genuine
     "X-DUE-SYNTH-BEGIN",
     "X-DUE-SYNTH-END",
+    // R34.1: the Fristenbuch block is the fifth injected family — same
+    // rule: no external ICS bytes may ever carry its sentinel lines
+    "X-FRISTENBUCH-BEGIN",
+    "X-FRISTENBUCH-END",
   ];
 
   /// Drop every line containing a sentinel token: external ICS bytes
@@ -2038,6 +2046,86 @@ class CampusManager extends KITLoginManager {
     }
   }
 
+  // ---- Fristenbuch synth (manually noted deadlines, R34.1) ----
+  // The fifth sentinel family, exact mirror of the due block above. The
+  // student is the layer's OWNER: the editor page (fristenbuch_page.dart)
+  // is the only writer, and reapplyFrB is its proven overwrite (grow AND
+  // shrink — the F-2 union may never veto the owner's own delete). The
+  // entries themselves live in DATA_fristenbuch (JSON, logout-swept); this
+  // isolate field holds the deterministic VEVENT block rebuilt from them.
+  static const frbSynthBegin = "X-FRISTENBUCH-BEGIN";
+  static const frbSynthEnd = "X-FRISTENBUCH-END";
+  String frbSynth = "";
+
+  static String stripFrB(String raw) =>
+      stripSentinelBlock(raw, frbSynthBegin, frbSynthEnd);
+
+  static String extractFrB(String raw) =>
+      extractSentinelBlock(raw, frbSynthBegin, frbSynthEnd);
+
+  static String injectFrB(String raw, String block) {
+    final base = stripFrB(raw);
+    if (block.isEmpty) return base;
+    final wrapped = "$frbSynthBegin\r\n$block$frbSynthEnd\r\n";
+    final at = base.lastIndexOf("END:VCALENDAR");
+    if (at < 0) return "$base$wrapped";
+    // line-start rule: see injectSignMeUpSynth
+    final sep = at == 0 || base[at - 1] == "\n" ? "" : "\r\n";
+    return base.replaceRange(at, at, "$sep$wrapped");
+  }
+
+  /// NOT load-once (ensureDueSynthLoaded's reason): the editor page writes
+  /// the store from the same process and another engine's write must not
+  /// be hidden behind the legacy snapshot; the block is derived, so the
+  /// LIVE store read IS the cache.
+  Future<void> ensureFrBLoaded() async {
+    frbSynth = buildFristenbuchBlock(await loadFristenbuchEntries());
+  }
+
+  /// The editor page's owner re-apply: rebuilds the cached feed (and
+  /// everything derived from it) with the current Fristenbuch block —
+  /// reapplyExamSynth's exact flow, including the teardown fences (an
+  /// editor commit straddling a logout must not write the DEAD account's
+  /// private deadlines past the sweep) and the persisted-cache no-op
+  /// compare (a byte-identical rebuild rewrites nothing: no CHANGED
+  /// churn, no alarm re-arm storm).
+  Future<void> reapplyFrB(String block) async {
+    final epoch = _teardownEpoch;
+    final prefs = await SharedPreferences.getInstance();
+    if (epoch != _teardownEpoch) return; // logout mid-await
+    // teardown fence, same as reapplyExamSynth: the test seam never
+    // provisions DATA_webcalUrl, so it stays exempt
+    if (testWebcalUrl.isEmpty &&
+        (prefs.getString(_webcalUrlKey) ?? "").isEmpty) {
+      return; // logged out (or not provisioned yet)
+    }
+    final cached = prefs.getString(_webcalIcsCacheKey);
+    if (cached == null || !cached.contains("BEGIN:VCALENDAR")) {
+      frbSynth = block;
+      return;
+    }
+    final merged = injectFrB(cached, block);
+    frbSynth = block;
+    if (merged == cached) return;
+    await prefs.setString(_webcalIcsCacheKey, merged);
+    // F-2/T5: content-changing RMW moves the stamp (see reapplySignMeUpSynth)
+    await prefs.setString(
+        WebcalKeys.fetchedAt, DateTime.now().toIso8601String());
+    final feed = WebcalFeed.parse(merged);
+    if (feed != null) {
+      timetable = gridTemplate(feed);
+      rememberEnrolledTitles(feed);
+      // the same derived-everything tail as the other owners: agenda,
+      // grid, cockpit read the feed; reminders/digests re-arm off it, so
+      // a newly noted deadline gets its T−30 alarm immediately
+      unawaited(MeiNotifications.scheduleLectureReminders(feed));
+      unawaited(MeiNotifications.scheduleMorningDigest(feed));
+      unawaited(MeiNotifications.scheduleEveningDigest(feed));
+      unawaited(MeiNotifications.scheduleLastLectureAlarm(feed));
+      notificationCallback();
+    }
+  }
+
   // ---- personal / faculty timetable ICS ----
   // The faculty sends first-semester MEI a timetable ICS by e-mail because
   // the big lectures (AM I, EM I, MSE I, MD A) carry no Belegungspflicht
@@ -2342,16 +2430,21 @@ class CampusManager extends KITLoginManager {
     }
   }
 
-  /// Home grid template WITHOUT the exam-synth occurrences: toWeeklyTemplate
-  /// is a per-(weekday, block) ONE-appointment template - a one-off exam
-  /// would repeat on every same-weekday carousel page, lose block collisions
-  /// to the recurring lectures and vanish on weekends entirely. The sittings
-  /// live in agenda / digest / reminders / ICS export, which read
-  /// feed.occurrences and the raw cache directly.
+  /// Home grid template WITHOUT the exam-synth or Fristenbuch occurrences:
+  /// toWeeklyTemplate is a per-(weekday, block) ONE-appointment template —
+  /// a one-off exam would repeat on every same-weekday carousel page, lose
+  /// block collisions to the recurring lectures and vanish on weekends
+  /// entirely. Date-only hand-noted deadlines were the second member of
+  /// that bug class (one per week, one weekday each — a single entry
+  /// duplicated across the carousel). They live in agenda / digest /
+  /// reminders / cockpit / ICS export, which read feed.occurrences and the
+  /// raw cache directly.
   @visibleForTesting
   static TimetableWeekly gridTemplate(WebcalFeed feed) => WebcalFeed(
           occurrences: feed.occurrences
-              .where((o) => !o.uid.startsWith(examSynthUidPrefix))
+              .where((o) =>
+                  !o.uid.startsWith(examSynthUidPrefix) &&
+                  !o.uid.startsWith(frbSynthUidPrefix))
               .toList(),
           raw: feed.raw)
       .toWeeklyTemplate();
@@ -2506,6 +2599,11 @@ class CampusManager extends KITLoginManager {
       // needsAction badges + 24 h registration alarms. SignMeUp UIDs
       // stay - an accepted tutorial IS a genuine enrolment.
       if (occ.uid.startsWith(examSynthUidPrefix)) continue;
+      // R34.1: Fristenbuch titles ("Frist: Wohnungs-Kündigung") are the
+      // student's own notes, not lectures — feeding them in would let a
+      // fuzzy lecture match flip isTakingThisSemester / module-card
+      // admission on a word the student typed freely.
+      if (occ.uid.startsWith(frbSynthUidPrefix)) continue;
       final k = lectureTitleKey(occ.title);
       if (k.length >= 4) out.add(k);
     }
@@ -2808,6 +2906,7 @@ class CampusManager extends KITLoginManager {
       await _webcalDiag("start");
       await ensurePersonalIcsLoaded();
       await ensureDueSynthLoaded();
+      await ensureFrBLoaded();
       await carryExamSynthFromCache();
       await carrySignMeUpSynthFromCache();
       await _webcalDiag("synth ok");
@@ -2928,8 +3027,8 @@ class CampusManager extends KITLoginManager {
       var changesLiveRaw = await live.getString(_webcalChangesKey) ?? "";
       if (previousFingerprint != null && previousFingerprint != fingerprint) {
         final changes = feed.changesSince(WebcalFeed.parse(
-            stripDueSynth(stripPersonalIcs(
-                stripSignMeUpSynth(stripExamSynth(cachedLive))))));
+            stripDueSynth(stripFrB(stripPersonalIcs(
+                stripSignMeUpSynth(stripExamSynth(cachedLive)))))));
         if (changes.isNotEmpty) {
           // an empty diff under a changed fingerprint is the rolling parse
           // window, not a real change - flagging it stuck the tab badge with
@@ -2960,10 +3059,17 @@ class CampusManager extends KITLoginManager {
           unionEventBlocks(personalIcs, extractPersonalIcs(cachedLive));
       final carriedDue =
           unionEventBlocks(dueSynth, extractDueSynth(cachedLive));
+      // the Fristenbuch layer carries like the other four: the editor
+      // page is its owner (reapplyFrB shrinks), this projection may only
+      // grow it — a cold boot with an empty memory copy must never drop
+      // the cached hand-noted deadlines
+      final carriedFrb =
+          unionEventBlocks(frbSynth, extractFrB(cachedLive));
       if (!examsLoaded) examSynth = carriedExam;
       signMeUpSynth = carriedSynth;
       personalIcs = carriedPersonal;
       dueSynth = carriedDue;
+      frbSynth = carriedFrb;
       // dedupe the carried-over tutorial block against the FRESH feed
       // before embedding (live capture b47: agenda double rows) - a
       // MERGE-TIME filter of the DOCUMENT only. Its trimmed result used
@@ -2973,13 +3079,15 @@ class CampusManager extends KITLoginManager {
       final synthBlock = dropSignMeUpSynthCoveredByFeed(feed.raw, carriedSynth);
       // ONE merged document for both the write and the parse (they used to
       // duplicate the inject ladder and could drift); R24 wave B adds the
-      // ILIAS deadline block to the ladder
-      final mergedCache = injectDueSynth(
-          injectPersonalIcs(
-              injectSignMeUpSynth(
-                  injectExamSynth(feed.raw, carriedExam), synthBlock),
-              carriedPersonal),
-          carriedDue);
+      // ILIAS deadline block to the ladder, R34.1 the Fristenbuch block
+      final mergedCache = injectFrB(
+          injectDueSynth(
+              injectPersonalIcs(
+                  injectSignMeUpSynth(
+                      injectExamSynth(feed.raw, carriedExam), synthBlock),
+                  carriedPersonal),
+              carriedDue),
+          carriedFrb);
       await prefs.setString(_webcalIcsCacheKey, mergedCache);
       // age stamp for the agenda stale-data footer (also written by the
       // background poll after it rewrites the cache); hoisted so the memory

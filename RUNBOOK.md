@@ -657,3 +657,64 @@ Process: notifications cluster inline + SOP lane (file-disjoint), tests + analyz
   FlutterSharedPreferences.preferences_pb). SOP row silent on a first-semester ledger (zero
   state = silence, by design; row logic pinned by test/sop_alarm_test).
 
+
+## Wave R34: "paper cuts closed" (0.11.0+68)
+Brief: `audit/brief_Roadmap.md` R34 (the biggest wave: Fristenbuch core, keychain work, editorial).
+Process: 3 file-disjoint lanes (FristenbuchCore / DocWatchStarter / TermJoin) + parent
+integration (mei_notifications poll chain, settings registration, agenda 90-day wiring, the
+CockpitKind.frb switch arms a mid-wave compile-blocker forced).
+- R34.1 FRISTENBUCH (`lib/fristenbuch/`): the FIFTH synth layer — student's own noted deadlines
+  (uid `kauni-frb-<id>`, sentinel X-FRISTENBUCH, DTSTART 23:59 Berlin date-only, mirrors the
+  due family EXACTLY: sanitizeSentinels -> icsFoldable -> escape, line-anchored strip/extract/
+  inject, carry-union in every writer, poll mergePollLayers carries it, diff strips it, grid +
+  enrolled skip-lists, cockpit kind frb, digest never counts a Frist as lecture/class,
+  lastUpcomingLecture never poses with one). Store DATA_fristenbuch = plain JSON in the DATA_*
+  sweep (logout regression test runs the REAL credentials_provider predicate). Editor: settings
+  -> Fristenbuch (list/add/delete, NO edit by contract, "selbst notiert" provenance).
+- R34.6 DOCWATCH (`lib/docwatch/`): expiry watch for visa/residence/insurance papers. DOC_*
+  keys live in the SECURE store (one JSON per key, accountName kit-student mirroring creds);
+  purgeAll enumerates DOC_* by name — never deleteAll — and rides logout()'s try/catch chain
+  (failure => PartialLogoutException, reported never skipped). 90/30/7 tier lines. VETO
+  enforced structurally: docwatch imports nothing from notifications — zero auto-alarms.
+- R34.2 STARTER PACK (`assets/starter_pack.json` + bureaucracy/): 9 rows (visa->abmeldung->
+  Rückmeldung->exmatrikulation...), EVERY url fetched+title-verified 2026-11-13; unverified
+  DNS-dead guesses were CUT, not shipped. Strict parse: non-https / missing stand: ISO date /
+  missing de-or-en copy / dup ids => FormatException. Rows render their stand: stamp.
+- R34.3 PAPIERKRAM launcher: 6 official-jargon portal rows (Aufenthaltserlaubnis, Wohnung-
+  sanmeldung, Rückmeldung, Studienverlauf, Katalog, Mensa), gated on matriculation number,
+  one-tap Matr.-Nr. copy; rows name the jargon the office pages actually use.
+- R34.4 TERMS (`lib/signmeup/signmeup_terms.dart`): plus.campus.kit.edu/api/signmeup/meta is
+  ANONYMOUS (no cookies — live-probed, fixture pinned). Term bounds = wire DATE prefix as
+  written (Z-suffix is pseudo-precision; a UTC shift would print SS end as 01.04.); the winter
+  endDate year bug (WS 26/27 ships 2026-03-31 BEFORE its own start) gets EXACTLY ONE
+  deterministic +1y bump, else UNKNOWN. No cancellation bound exists on the wire; model parses
+  4 plausible spellings for a future server addition, invents none.
+- R34.5 NÄCHSTE 90 TAGE (ninety_days.dart + agenda card): dues, sittings, exam/smu windows,
+  Fristenbuch rows and term bounds in ONE date-sorted cap-6 list with "+N mehr" and per-row
+  provenance ("(SignMeUp terms)", "Selbst notiert"); strictly-future, horizon 90d, unknown
+  dates never enter. Pure + 19 tests.
+- R34.7 WINDOW FSM (`lib/agenda/logic/window_fsm.dart`): open/closed/UNBEKANNT with the
+  doctrine baked in: unknown end never certifies a close, unknown start never certifies an
+  open, inverted bounds are unbekannt. smuOpenFire now fires on the FSM verdict; the fired
+  snapshot (DATA_smuOpensFired, id->start ISO) IS the persisted transition store: identity
+  (id,start) makes a re-opened window a NEW window.
+- Cross-lane compile-blocker lesson: adding an enum value to a shared kind (CockpitKind.frb)
+  breaks EVERY exhaustive switch consumer-tree-wide including other lanes' test runs — the
+  enum owner cannot fix them all (file ownership); coordinate before widening a shared enum.
+
+## Wave R35 (partial, inline with R34): "refusal + reachability"
+- R35.6 SCRAPE REFUSAL TEST (`test/scrape_refusal_test.dart`): every https?:// host literal in
+  lib/ AND assets/*.json must be on the pinned allowlist; a stale allowlist entry fails too
+  (both directions lie otherwise). Adding a host is a conscious act: fenced parser + a
+  won't-list justification here + proof no existing join answers it. Won't-list standing:
+  google/bing/maps directions APIs, general web search, analytics/crash reporters of any kind.
+- R35.4 GEO-CLASH (`exam_clash.dart` + exams_page): a same-day pair with PROVEN spans whose
+  gap is shorter than the certified walk between the two rooms escalates amber->red
+  ("Prüfungen nicht erreichbar", line gains "{n} Min Fußweg dazwischen"). Distance comes from
+  the agenda's OWN resolver (building-number fence first) — hint and clash can never disagree.
+  Placeholder rooms/unknown places/unproven ends can never escalate, they keep honest amber.
+- R35.8 DOCK DEAD-ENTRY: RESOLVED-STALE — the "fake empty PHPSESSID index-2 trap" the critic
+  named was already replaced in R31/R32 (one-page rule, per-tap getPHPSESSID()); verified no
+  dead path remains in kit_nav_container.dart.
+- Remaining R35 items (action list, DataTrust, home split, kauni://, gap-planner) + R36 wait
+  in the roadmap brief.

@@ -155,4 +155,87 @@ void main() {
     expect(r.clashes.single.when, DateTime(2027, 1, 20)); // honest midnight
     expect(r.uncomparable, 2);
   });
+
+  // ---- R35.4 walk escalation ----
+
+  ExamTerm roomTerm(String date, String time, String room) =>
+      ExamTerm("Do, $date", time, room);
+
+  test("proven gap shorter than the certified walk: red walkImpossible", () {
+    // 09:00-11:00 then 11:10-13:00, 3 km apart -> ~39 min walk > 10 min gap
+    final r = findExamClashes(
+      [
+        exam("01-A", terms: [roomTerm("20.01.2027", "09:00 - 11:00", "30.11")]),
+        exam("02-B",
+            terms: [roomTerm("20.01.2027", "11:10 - 13:00", "10.30")]),
+      ],
+      now,
+      distance: (a, b) => 3000,
+    );
+    final c = r.clashes.single;
+    expect(c.kind, ClashKind.walkImpossible);
+    expect(c.walkMinutes, 39);
+  });
+
+  test("reachable walk keeps the honest same-day amber (walk shown)", () {
+    final r = findExamClashes(
+      [
+        exam("01-A", terms: [roomTerm("20.01.2027", "09:00 - 11:00", "30.11")]),
+        exam("02-B",
+            terms: [roomTerm("20.01.2027", "11:10 - 13:00", "30.40")]),
+      ],
+      now,
+      distance: (a, b) => 100,
+    );
+    final c = r.clashes.single;
+    expect(c.kind, ClashKind.sameDay);
+    expect(c.walkMinutes, 2);
+  });
+
+  test("no resolver, unknown place, or placeholder room: never escalates",
+      () {
+    final pair = [
+      exam("01-A", terms: [roomTerm("20.01.2027", "09:00 - 11:00", "30.11")]),
+      exam("02-B", terms: [roomTerm("20.01.2027", "11:10 - 13:00", "10.30")]),
+    ];
+    // no resolver at all
+    expect(findExamClashes(pair, now).clashes.single.kind,
+        ClashKind.sameDay);
+    // resolver cannot place the rooms
+    expect(
+        findExamClashes(pair, now, distance: (a, b) => null)
+            .clashes
+            .single
+            .walkMinutes,
+        isNull);
+    // placeholder rooms: resolver must not even be consulted
+    var consulted = false;
+    findExamClashes(
+      [
+        exam("01-A", terms: [roomTerm("20.01.2027", "09:00 - 11:00", "-")]),
+        exam("02-B", terms: [roomTerm("20.01.2027", "11:10 - 13:00", "ILIAS")]),
+      ],
+      now,
+      distance: (a, b) {
+        consulted = true;
+        return 99999;
+      },
+    );
+    expect(consulted, isFalse);
+  });
+
+  test("walk escalation needs BOTH proven spans; unknown end stays amber", () {
+    final r = findExamClashes(
+      [
+        exam("01-A", terms: [roomTerm("20.01.2027", "09:00 c.t.", "30.11")]),
+        exam("02-B",
+            terms: [roomTerm("20.01.2027", "11:10 - 13:00", "10.30")]),
+      ],
+      now,
+      distance: (a, b) => 3000,
+    );
+    expect(r.clashes.single.kind, ClashKind.sameDay);
+    expect(r.clashes.single.walkMinutes, isNull);
+    expect(r.uncomparable, 1);
+  });
 }

@@ -13,6 +13,8 @@ import '../../exams/views/exams_page.dart';
 import '../../agenda/logic/walk_hint.dart';
 import '../../agenda/logic/cockpit.dart';
 import '../../agenda/logic/next_up.dart';
+import '../../agenda/logic/ninety_days.dart';
+import '../../fristenbuch/fristenbuch.dart' show fristenbuchUpcoming;
 import '../../agenda/logic/prep_bundle.dart';
 import '../../agenda/logic/sop_alarm.dart';
 import '../../grades/models/grade_book.dart';
@@ -120,6 +122,9 @@ class _AgendaPageState extends State<AgendaPage> {
   String? _feedDiag;
   bool _loading = true;
   bool _iliasLoading = false;
+  // R34.1: self-noted dates feeding the 90-day card, refreshed with the
+  // page; plain records so this file never learns the Fristenbuch types
+  List<FrbEntry> _frbRows = const [];
   // false until a cached ICS was found; drives the day-section spinner
   bool _feedCached = false;
 
@@ -269,6 +274,20 @@ class _AgendaPageState extends State<AgendaPage> {
   Future<void> _refreshOnce() async {
     final vm = context.read<KITProvider>();
     final now = DateTime.now();
+    // R34.1: self-noted Fristenbuch dates for the 90-day card - read
+    // off the UI path (local keychain-free DATA_* JSON, but still an
+    // async prefs hop); the card shows the previous list until it lands.
+    // Guarded: no frb rows is a merely poorer card, a page crash is not.
+    unawaited(() async {
+      try {
+        final rows = await fristenbuchUpcoming();
+        if (!mounted) return;
+        setState(() => _frbRows = rows);
+      } on Object catch (_) {
+        // platform async-prefs absent (tests) or poisoned store: the
+        // card simply omits self-noted rows this frame
+      }
+    }());
     // local data first, ALWAYS: the agenda must never sit on a spinner
     // because of network round-trips (a half-dead connection can hold the
     // SSO chain below for minutes). The live re-fetch runs after the
@@ -609,6 +628,9 @@ class _AgendaPageState extends State<AgendaPage> {
                   day: DateTime(now.year, now.month, now.day + 1)),
               _nextExamCard(context, vm, now),
               _cockpitCard(context, vm, now),
+              // R34.5: one card under the cockpit answers "what am I
+              // walking into this semester" over the 90-day horizon
+              _ninetyDaysCard(context, vm, now),
               _iliasSection(context),
               if (needAction.isNotEmpty)
                 _examsSection(context, needAction)
@@ -1176,6 +1198,7 @@ class _AgendaPageState extends State<AgendaPage> {
     final scheme = Theme.of(context).colorScheme;
     String label(CockpitKind k) => switch (k) {
           CockpitKind.due => L10n.t("agenda.cockpitDue"),
+          CockpitKind.frb => L10n.t("agenda.cockpitFrist"),
           CockpitKind.examSignupOpen => L10n.t("agenda.cockpitExamSignupOpen"),
           CockpitKind.examSignupOpens =>
             L10n.t("agenda.cockpitExamSignupOpens"),
@@ -1186,6 +1209,7 @@ class _AgendaPageState extends State<AgendaPage> {
         };
     IconData icon(CockpitKind k) => switch (k) {
           CockpitKind.due => Icons.assignment,
+          CockpitKind.frb => Icons.flag_outlined,
           CockpitKind.examSignupOpen ||
           CockpitKind.examSignupOpens =>
             Icons.how_to_reg,
@@ -1313,6 +1337,119 @@ class _AgendaPageState extends State<AgendaPage> {
           ),
         );
       },
+    );
+  }
+
+  /// R34.5: "Nächste 90 Tage" — the semester-overview card under the
+  /// cockpit. Where the cockpit answers "what acts on me in the next 4
+  /// weeks", this card answers "what am I walking into this term": dues,
+  /// sittings, registration windows, self-noted Fristenbuch dates and
+  /// the official SignMeUp term bounds in ONE date-sorted list. Rows
+  /// carry their provenance label; term rows state their source
+  /// citation "(SignMeUp terms)" per row (R34.4), Fristenbuch rows say
+  /// "self-noted" so a manual note never reads as scraped truth.
+  /// Collapsed to 6 rows + the shared "+N mehr" caption. No tap targets:
+  /// the cockpit's rows have none either, and a dead chevron is worse
+  /// than no chevron (F12 rule).
+  Widget _ninetyDaysCard(BuildContext context, KITProvider vm, DateTime now) {
+    final merged = ninetyDays(
+        now: now,
+        occurrences: _load.occurrences,
+        exams: vm.campusManager.exams,
+        // R34.1 integration point (parent-wired): plain (title, date)
+        // records from DATA_fristenbuch, refreshed with _refreshOnce
+        fristenbuch: _frbRows,
+        terms: vm.signMeUpManager.terms);
+    final rows = nextNinetyDays(merged, now);
+    if (rows.isEmpty) return const SizedBox.shrink();
+    final hidden = ninetyDaysHidden(merged, now);
+    final scheme = Theme.of(context).colorScheme;
+    String label(NinetyKind k) => switch (k) {
+          NinetyKind.due => L10n.t("agenda.cockpitDue"),
+          NinetyKind.examWindowClose =>
+            L10n.t("agenda.cockpitExamSignupOpen"),
+          NinetyKind.examWindowOpens =>
+            L10n.t("agenda.cockpitExamSignupOpens"),
+          NinetyKind.examSitting => L10n.t("agenda.cockpitExamSitting"),
+          NinetyKind.frb => L10n.t("agenda.ninetyFrb"),
+          NinetyKind.termStart => L10n.t("agenda.ninetyTermStart"),
+          NinetyKind.termEnd => L10n.t("agenda.ninetyTermEnd"),
+        };
+    IconData icon(NinetyKind k) => switch (k) {
+          NinetyKind.due => Icons.assignment,
+          NinetyKind.examWindowClose || NinetyKind.examWindowOpens =>
+            Icons.how_to_reg,
+          NinetyKind.examSitting => Icons.event,
+          NinetyKind.frb => Icons.edit_note,
+          NinetyKind.termStart || NinetyKind.termEnd => Icons.school,
+        };
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(Icons.calendar_month, color: scheme.primary),
+              const SizedBox(width: 6),
+              // Expanded like every card header: German titles overflow
+              // narrow phones beside a fixed icon
+              Expanded(
+                child: Text(L10n.t("agenda.ninetyTitle"),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, color: scheme.primary)),
+              ),
+            ]),
+            for (final r in rows)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Icon(icon(r.kind),
+                        size: 16, color: scheme.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(r.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w600)),
+                          Text(
+                            [
+                              label(r.kind),
+                              if (r.kind == NinetyKind.termStart ||
+                                  r.kind == NinetyKind.termEnd)
+                                L10n.t("agenda.ninetySrcTerms"),
+                              L10n.dayOffset(r.when, now),
+                              // stamp() already drops the " 00:00" tail
+                              // of the all-day rows (term bounds, notes)
+                              L10n.stamp(r.when),
+                            ].join(" · "),
+                            style: TextStyle(
+                                fontSize: 12, color: scheme.outline),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (hidden > 0)
+              // truncation without a count reads as "this is everything"
+              // — same "+N mehr" caption rule as the cockpit cards
+              Text(L10n.t("agenda.signmeupMineMore", [hidden]),
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                      color: scheme.outline)),
+          ],
+        ),
+      ),
     );
   }
 

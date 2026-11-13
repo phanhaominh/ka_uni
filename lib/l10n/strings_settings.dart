@@ -30,6 +30,8 @@ const Map<String, String> de_settings = {
   "settings.sectionSetup": "Einrichtung",
   "settings.setupPersonalIcs": "Persönlicher Kalender",
   "settings.setupAnny": "Bibliothek (Anny)",
+  // R34.1: manually noted deadlines (fristenbuch_page.dart)
+  "settings.setupFristenbuch": "Fristenbuch",
   "settings.setupOn": "aktiv",
   "settings.setupOff": "nicht eingerichtet",
   // R29 (X3): storage manifest - claims verified against manifest,
@@ -49,6 +51,40 @@ const Map<String, String> de_settings = {
   "settings.storageOutro":
       "Kein Cloud-Backup, keine Telemetrie. Beim Ausloggen werden alle "
       "personenbezogenen Daten gelöscht.",
+  // R34.6 + R34.2 + R34.3: Bureaucracy section — document expiry watch,
+  // starter pack, Papierkram launcher. Every wording is deliberately
+  // advisory; the document card NEVER promises a reminder.
+  "settings.sectionBureaucracy": "Bürokratie",
+  "settings.docsTitle": "Dokumente",
+  "settings.docsIntro":
+      "Ablaufdaten, die du selbst notierst (Reisepass, Aufenthaltstitel, Versicherung). Diese App erinnert dich nicht aktiv daran – die Liste zeigt nur, was bald abläuft.",
+  "settings.docsEmpty": "Noch keine Frist notiert",
+  "settings.docsAdd": "Dokument hinzufügen…",
+  "settings.docsAddTitle": "Neues Dokument",
+  "settings.docsLabelHint": "z. B. Reisepass, Aufenthaltstitel",
+  "settings.docsExpiry": "Ablaufdatum",
+  "settings.docsPickDate": "Datum wählen…",
+  "settings.docsSave": "Hinzufügen",
+  "settings.docsNeedLabel": "Bitte zuerst einen Namen eintragen",
+  "settings.docsNeedDate": "Bitte zuerst ein Ablaufdatum wählen",
+  "settings.docsSaved": "Dokument gespeichert",
+  "settings.docsDeleted": "Dokument entfernt",
+  "settings.docsLoadFailed": "Liste konnte nicht geladen werden",
+  "settings.docsDueToday": "läuft heute ab",
+  "settings.docsDueTomorrow": "läuft morgen ab",
+  "settings.docsExpiresIn": "läuft ab in {0} Tagen",
+  "settings.docsExpiredFor": "seit {0} Tagen abgelaufen",
+  "settings.docsExpiresOn": "läuft ab am {0}",
+  "settings.docsDelete": "Entfernen",
+  "settings.starterTitle": "Erste Schritte: Bürokratie",
+  "settings.starterIntro":
+      "Offizielle Seiten für den Start in Karlsruhe. Angaben ohne Gewähr – bitte die verlinkte Seite selbst prüfen; „stand“ zeigt, wann wir die Angaben zuletzt kontrolliert haben.",
+  "settings.starterStand": "stand: {0}",
+  "settings.papierkramTitle": "Papierkram",
+  "settings.papierkramIntro":
+      "Offizielle KIT- und Karlsruhe-Seiten direkt aufrufen. Die App öffnet nur den Browser – die Inhalte kommen unverändert von der jeweiligen Seite.",
+  "settings.copyMatr": "Matrikelnummer kopieren",
+  "settings.matrCopied": "Matrikelnummer kopiert",
   "settings.logout": "Ausloggen",
   "settings.loggedOut": "Ausgeloggt, alle Daten gelöscht",
   "settings.logoutFailed": "Ausloggen fehlgeschlagen – bitte erneut versuchen",
@@ -145,6 +181,8 @@ const Map<String, String> en_settings = {
   "settings.sectionSetup": "Setup",
   "settings.setupPersonalIcs": "Personal calendar",
   "settings.setupAnny": "Library (Anny)",
+  // R34.1: manually noted deadlines (fristenbuch_page.dart)
+  "settings.setupFristenbuch": "Deadline notes",
   "settings.setupOn": "active",
   "settings.setupOff": "not set up",
   // R29 (X3): storage manifest - claims verified against manifest,
@@ -163,6 +201,39 @@ const Map<String, String> en_settings = {
   "settings.storageOutro":
       "No cloud backup, no telemetry. Logging out deletes all personal "
       "data.",
+  // R34.6 + R34.2 + R34.3 mirror — keep key-set equal with de_settings
+  // (test/l10n_parity_test.dart guards the full table).
+  "settings.sectionBureaucracy": "Bureaucracy",
+  "settings.docsTitle": "Documents",
+  "settings.docsIntro":
+      "Expiry dates you note yourself (passport, residence permit, insurance). This app never pings you about them – the list only shows what is about to expire.",
+  "settings.docsEmpty": "No deadlines noted yet",
+  "settings.docsAdd": "Add document…",
+  "settings.docsAddTitle": "New document",
+  "settings.docsLabelHint": "e.g. passport, residence permit",
+  "settings.docsExpiry": "Expiry date",
+  "settings.docsPickDate": "Choose date…",
+  "settings.docsSave": "Add",
+  "settings.docsNeedLabel": "Enter a name first",
+  "settings.docsNeedDate": "Pick an expiry date first",
+  "settings.docsSaved": "Document saved",
+  "settings.docsDeleted": "Document removed",
+  "settings.docsLoadFailed": "Could not load the list",
+  "settings.docsDueToday": "expires today",
+  "settings.docsDueTomorrow": "expires tomorrow",
+  "settings.docsExpiresIn": "expires in {0} days",
+  "settings.docsExpiredFor": "expired {0} days ago",
+  "settings.docsExpiresOn": "expires on {0}",
+  "settings.docsDelete": "Remove",
+  "settings.starterTitle": "First steps: paperwork",
+  "settings.starterIntro":
+      "Official pages for your start in Karlsruhe. No guarantees – always check the linked page yourself; “stand” shows when we last verified the entries.",
+  "settings.starterStand": "as of: {0}",
+  "settings.papierkramTitle": "Paperwork",
+  "settings.papierkramIntro":
+      "Open official KIT and Karlsruhe pages directly. The app only launches the browser – the content comes unchanged from each page.",
+  "settings.copyMatr": "Copy matriculation number",
+  "settings.matrCopied": "Matriculation number copied",
   "settings.logout": "Log out",
   "settings.loggedOut": "Logged out, all data deleted",
   "settings.logoutFailed": "Logout failed - please try again",

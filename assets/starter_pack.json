@@ -1,0 +1,98 @@
+{
+  "meta": {
+    "stand": "2026-11-13",
+    "note": "Editorial list of official pages for the first months in Karlsruhe. Every URL was fetched and read on the row's stand date. No legal advice: check the cited page yourself; rules depend on your citizenship and situation."
+  },
+  "rows": [
+    {
+      "id": "visa",
+      "url": "https://www.make-it-in-germany.com/en/visa-residence/visas-types/study",
+      "stand": "2026-11-13",
+      "title": { "de": "Visum zum Studium prüfen", "en": "Check the study visa rules" },
+      "text": {
+        "de": "Staatsangehörige vieler Nicht-EU-Länder brauchen vor der Einreise ein Visum zum Studium. Was für dein Herkunftsland gilt, steht auf diesem Portal der Bundesregierung – prüfe es früh, Termine bei den Botschaften sind oft Monate im Voraus vergeben.",
+        "en": "Nationals of many non-EU countries need a study visa before entering Germany. What applies to you is on this German government portal – check early, embassy appointments are often booked out months ahead."
+      }
+    },
+    {
+      "id": "residence-permit",
+      "url": "https://web1.karlsruhe.de/service/Buergerdienste/leistung.php?id=6004469",
+      "stand": "2026-11-13",
+      "title": { "de": "Aufenthaltserlaubnis beantragen", "en": "Apply for the residence permit" },
+      "text": {
+        "de": "Studierende aus Staaten außerhalb der EU/EWR beantragen die Aufenthaltserlaubnis in der Regel nach der Immatrikulation bei der Ausländerbehörde der Stadt Karlsruhe – Termin online buchen. Welche Unterlagen in deinem Fall zählen, steht auf dieser Seite der Stadt.",
+        "en": "Students from outside the EU/EEA normally apply for the residence permit with the Karlsruhe city foreigners' office after enrolment – book the appointment online. The city's page lists the documents that apply in your case."
+      }
+    },
+    {
+      "id": "permit-renewal",
+      "url": "https://www1.karlsruhe.de/service/Buergerdienste/leistung.php?id=1846",
+      "stand": "2026-11-13",
+      "title": { "de": "Aufenthaltserlaubnis verlängern", "en": "Renew the residence permit" },
+      "text": {
+        "de": "Der Aufenthaltstitel hat ein festes Ablaufdatum. In der Regel kannst du vor dem Ablauf verlängern – melde dich frühzeitig (üblich: mehrere Wochen vorher) bei der Ausländerbehörde; das genaue Fenster und die Fristen stehen auf dieser Seite der Stadt Karlsruhe.",
+        "en": "The residence permit carries a hard expiry date. Normally you renew before it lapses – contact the foreigners' office well in time (usually several weeks ahead); the exact window and deadlines are on this City of Karlsruhe page."
+      }
+    },
+    {
+      "id": "address-registration",
+      "url": "https://web1.karlsruhe.de/service/Buergerdienste/leistung.php?id=6021867",
+      "stand": "2026-11-13",
+      "title": { "de": "Wohnung anmelden", "en": "Register your address" },
+      "text": {
+        "de": "Wer in Karlsruhe wohnt, meldet die Wohnung in der Regel innerhalb von zwei Wochen nach dem Einzug beim Bürgeramt an – die Wohnungsgeberbestätigung des Vermieters nicht vergessen. Die Seite nennt Weg, Unterlagen und mögliche Termine.",
+        "en": "If you live in Karlsruhe you normally register the flat with the citizens' office within two weeks of moving in – bring the landlord's confirmation (Wohnungsgeberbestätigung). The page lists the route, documents and appointments."
+      }
+    },
+    {
+      "id": "health-insurance",
+      "url": "https://www.intl.kit.edu/istudent/12698.php",
+      "stand": "2026-11-13",
+      "title": { "de": "Krankenversicherungsnachweis", "en": "Health insurance proof" },
+      "text": {
+        "de": "Ohne Nachweis einer Krankenversicherung schreibt dich das KIT in der Regel nicht ein. Diese KIT-Seite für Internationale Studierende erklärt, welche Versicherung für dich in Frage kommt und wie du den Nachweis einreichst – vor der Immatrikulation klären.",
+        "en": "Without health insurance proof the KIT normally will not enrol you. This KIT page for international students explains which insurance applies to you and how to submit the proof – settle it before enrolment."
+      }
+    },
+    {
+      "id": "semester-fee",
+      "url": "https://campus.studium.kit.edu/renewal/",
+      "stand": "2026-11-13",
+      "title": { "de": "Rückmeldung & Semesterbeitrag", "en": "Re-registration & semester fee" },
+      "text": {
+        "de": "Jedes Semester zahlst du den Semesterbeitrag (Rückmeldung); erst danach bist du für das Folgesemester eingeschrieben. Die jeweiligen Fristen stehen auf dieser CampusKIT-Seite – sie laufen in der Regel automatisch ab, eine Säumnis kann den Verlust des Studienplatzes zur Folge haben.",
+        "en": "Every semester you pay the semester fee (re-registration); only then are you enrolled for the next term. The current deadlines are on this CampusKIT page – they normally pass automatically, and missing one can cost your study place."
+      }
+    },
+    {
+      "id": "housing-cancel",
+      "url": "https://www.gesetze-im-internet.de/bgb/__573c.html",
+      "stand": "2026-11-13",
+      "title": { "de": "Mietvertrag: Kündigungsfrist", "en": "Rental contract: notice period" },
+      "text": {
+        "de": "Ein Mietvertrag kann in der Regel mit drei Monaten Frist zum Monatsende gekündigt werden (§ 573c BGB) – der Vertrag kann Abweichendes längere Fristen enthalten, prüfe deinen. Für den Auszug zurück in die Heimat: Kündigungsschreiben frühzeitig aufsetzen.",
+        "en": "A rental contract can normally be cancelled three months before the end of a month (§ 573c BGB) – your contract may contain longer notice, check it. Leaving town for good: write the cancellation early."
+      }
+    },
+    {
+      "id": "exmatriculation",
+      "url": "https://www.sle.kit.edu/imstudium/exmatrikulation.php",
+      "stand": "2026-11-13",
+      "title": { "de": "Exmatrikulation", "en": "Deregistration (Exmatrikulation)" },
+      "text": {
+        "de": "Wenn du das Studium beendest oder endgültig wegziehst, erfolgt in der Regel die Exmatrikulation auf Antrag beim KIT – die Seite erklärt Voraussetzungen und Fristen. Denk daran, bevor Visum-, Versicherungs- und Meldefragen geklärt sein wollen.",
+        "en": "If you end the programme or leave for good, deregistration from the KIT normally happens by application – the page explains the prerequisites and deadlines. Sort this out before visa, insurance and registration questions close around you."
+      }
+    },
+    {
+      "id": "certificates",
+      "url": "https://campus.studium.kit.edu/reports/studyreports.php",
+      "stand": "2026-11-13",
+      "title": { "de": "Studienbescheinigungen & Studienverlauf", "en": "Enrolment certificates & study record" },
+      "text": {
+        "de": "Studienbescheinigung, Studienverlauf und Notenspiegel lädst du dir hier selbst als PDF – du brauchst sie in der Regel für Visumverlängerung, Krankenversicherung und Nebenjob. Am Semesteranfang prüfen, ob das aktuelle Datum draufsteht.",
+        "en": "Enrolment certificate, study record and grade transcript are self-served here as PDFs – you normally need them for the visa renewal, health insurance and any working student job. Check at term start that the current date is on it."
+      }
+    }
+  ]
+}

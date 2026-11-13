@@ -61,6 +61,27 @@ const Map<String, String> de_timetable = {
   "timetable.chronicleCap":
       "{0} / max. {1} gespeichert · ältester Eintrag: {2}",
   "timetable.chronicleEmpty": "Noch keine Änderungen gespeichert.",
+  // R34.1 FRISTENBUCH ("Fristenbuch" page, settings > Einrichtung): the
+  // coverage header's honesty is load-bearing — these rows are the
+  // student's own notes, never scraped truth, and the header says so.
+  "timetable.frbTitle": "Fristenbuch",
+  "timetable.frbCoverage":
+      "Termine, die du selbst notierst – Fristen ohne KIT-Quelle, die die "
+      "App nicht kennen kann (Formulare, Wohnung, Anmeldungen außerhalb von "
+      "SignMeUp). Sie laufen wie alle anderen Fristen durch Agenda, "
+      "Cockpit, Morgengruß und Erinnerungen – geprüft wird nichts: das hier "
+      "ist deine eigene Notiz, nicht die Wahrheit des Servers.",
+  "timetable.frbEmpty": "Noch keine Fristen notiert.",
+  "timetable.frbAdd": "Frist hinzufügen",
+  "timetable.frbNew": "Neue Frist",
+  "timetable.frbLabelHint": "Was ist zu tun? (z. B. Wohnungs-Zusage annehmen)",
+  "timetable.frbDate": "Fällig am",
+  "timetable.frbNoteHint": "Notiz (optional)",
+  "timetable.frbYou": "selbst notiert",
+  "timetable.frbDelete": "Frist löschen",
+  "timetable.frbSave": "Hinzufügen",
+  // cockpit row label for CockpitKind.frb (agenda cockpit card)
+  "agenda.cockpitFrist": "Frist",
   "timetable.olderChanges": "Ältere Änderungen",
   // appointment detail sheet; home.profileLoading rides the flat l10n
   // map from here because slice rules confine new strings to this file
@@ -91,6 +112,16 @@ const Map<String, String> de_timetable = {
   "agenda.sopWarnCp": "Mindestens {0} LP errungen",
   "agenda.sopWarnExposed":
       "Nach PO endgültig nicht bestanden im dritten Versuch — laut Prüfungsledger: {0}",
+  // R34.5 "Nächste 90 Tage"-Karte. Die Fristenbuch-Zeile sagt ausdrücklich
+  // "selbst notiert": ein manuell eingetragener Termin ist niemals
+  // GeScraper-te Wahrheit, und die Karte darf ihn nicht als solche
+  // ausgeben. Die Semesterzeilen tragen pro Zeile den Quellen-Hinweis
+  // "(SignMeUp terms)" — die only-Zitierung, woher Start/Ende kommen.
+  "agenda.ninetyTitle": "Nächste 90 Tage",
+  "agenda.ninetyFrb": "Selbst notiert",
+  "agenda.ninetyTermStart": "Semesterbeginn",
+  "agenda.ninetyTermEnd": "Semesterende",
+  "agenda.ninetySrcTerms": "(SignMeUp terms)",
 };
 
 const Map<String, String> en_timetable = {
@@ -150,6 +181,24 @@ const Map<String, String> en_timetable = {
       "Changes the app itself saw while polling",
   "timetable.chronicleCap": "{0} / max {1} stored · oldest entry: {2}",
   "timetable.chronicleEmpty": "No changes stored yet.",
+  // R34.1 FRISTENBUCH (see de_timetable)
+  "timetable.frbTitle": "Deadline notes",
+  "timetable.frbCoverage":
+      "Dates you noted yourself – deadlines with no KIT source the app "
+      "could scrape (authorities forms, housing, registrations outside "
+      "SignMeUp). They flow through the same pipeline as every other "
+      "deadline: agenda, cockpit, morning digest and reminders – nothing "
+      "is verified: this is your own note, not the server's truth.",
+  "timetable.frbEmpty": "No deadlines noted yet.",
+  "timetable.frbAdd": "Add deadline",
+  "timetable.frbNew": "New deadline",
+  "timetable.frbLabelHint": "What is due? (e.g. accept housing offer)",
+  "timetable.frbDate": "Due",
+  "timetable.frbNoteHint": "Note (optional)",
+  "timetable.frbYou": "noted by me",
+  "timetable.frbDelete": "Delete deadline",
+  "timetable.frbSave": "Add",
+  "agenda.cockpitFrist": "Deadline",
   "timetable.olderChanges": "Older changes",
   "timetable.timeLabel": "Time:",
   "timetable.aliasesLabel": "Also known as:",
@@ -175,4 +224,12 @@ const Map<String, String> en_timetable = {
   "agenda.sopWarnCp": "At least {0} CP earned",
   "agenda.sopWarnExposed":
       "Under the exam regulations a third fail is final — per the grades ledger: {0}",
+  // R34.5 "Next 90 days" card; mirrors de_timetable — the self-noted
+  // provenance and the per-row "(SignMeUp terms)" citation are mandatory
+  // in BOTH languages.
+  "agenda.ninetyTitle": "Next 90 days",
+  "agenda.ninetyFrb": "Self-noted",
+  "agenda.ninetyTermStart": "Term starts",
+  "agenda.ninetyTermEnd": "Term ends",
+  "agenda.ninetySrcTerms": "(SignMeUp terms)",
 };

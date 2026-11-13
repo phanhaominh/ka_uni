@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../state_management/kit_login_manager.dart';
 import '../utils/ics_text.dart';
+import 'signmeup_terms.dart';
 
 class SignMeUpProcedure {
   final int id;
@@ -354,6 +355,11 @@ class SignMeUpManager {
 
   List<SignMeUpProcedure> procedures = [];
   List<SignMeUpRegistration> mine = [];
+
+  /// R34.4: official term calendar from the `meta` endpoint (see
+  /// signmeup_terms.dart); empty until the first successful parse.
+  List<SignMeUpTerm> terms = [];
+
   DateTime? termStart;
   bool loaded = false;
   bool loadedMine = false;
@@ -407,6 +413,10 @@ class SignMeUpManager {
       });
       loaded = true;
       lastFetch = DateTime.now();
+      // R34.4: term calendar rides the same fetch — same host, same
+      // netGet discipline; a failure keeps prior terms, never voids the
+      // procedures contract this call's bool carries.
+      await _fetchTerms(login);
       if (kDebugMode) {
         final open = procedures.where((p) => p.isOpen(DateTime.now())).length;
         print("SignMeUp: ${procedures.length} procedures, $open open now");
@@ -417,6 +427,25 @@ class SignMeUpManager {
         print("SignMeUp JSON malformed: $e");
       }
       return false;
+    }
+  }
+
+  /// R34.4: official term calendar. The `meta` endpoint answers
+  /// anonymously (live-verified 200 without cookies, 2026-11-13) but
+  /// goes through netGet like every other call of this manager: same
+  /// $_api host only — a new host is never introduced here. Transient
+  /// failures keep the previously parsed terms on purpose: the 90-day
+  /// card must not empty itself because one poll went offline.
+  Future<void> _fetchTerms(KITLoginManager login) async {
+    try {
+      final meta = await login.netGet(Uri.parse("$_api/meta"),
+          headers: {"Accept": "application/json"});
+      if (meta.statusCode != 200) return;
+      final parsed = SignMeUpTerm.listFromJson(jsonDecode(meta.body));
+      if (kDebugMode) print("SignMeUp terms: ${parsed.length} parsed");
+      if (parsed.isNotEmpty) terms = parsed;
+    } on Object catch (e) {
+      if (kDebugMode) print("SignMeUp terms threw: $e");
     }
   }
 
@@ -436,12 +465,18 @@ class SignMeUpManager {
     }
     if (meta.statusCode != 200) return false;
     try {
-      final terms =
-          ((jsonDecode(meta.body) as Map)["terms"] as List?) ?? const [];
+      final decoded = jsonDecode(meta.body);
+      // R34.4: the same body carries the official term calendar; parse it
+      // typed right here (fetching meta again would be pure waste). The
+      // selection below keeps its raw-instant semantics untouched.
+      final typedTerms = SignMeUpTerm.listFromJson(decoded);
+      if (typedTerms.isNotEmpty) terms = typedTerms;
+      final rawTerms =
+          (decoded is Map ? decoded["terms"] as List? : null) ?? const [];
       final now = DateTime.now().toUtc();
       Map<String, dynamic>? term;
       DateTime? bestStart;
-      for (final t in terms.whereType<Map<String, dynamic>>()) {
+      for (final t in rawTerms.whereType<Map<String, dynamic>>()) {
         final s = DateTime.tryParse("${t["startDate"]}");
         // the term's own endDate is unreliable (WS 26/27 says 2026-03-31);
         // pick the latest term that has already started

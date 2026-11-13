@@ -1,10 +1,15 @@
 import 'dart:convert' show utf8;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:kit_mobile/bureaucracy/papierkram.dart';
+import 'package:kit_mobile/bureaucracy/starter_pack.dart';
+import 'package:kit_mobile/docwatch/docwatch.dart';
 import 'package:kit_mobile/state_management/campus/campus_manager.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:url_launcher/url_launcher.dart';
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/common_ui/max_width_body.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
@@ -18,6 +23,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../agenda/views/chronicle_page.dart';
+import '../../fristenbuch/fristenbuch_page.dart';
 import '../../credentials/data/credentials_provider.dart';
 import '../../diagnostics/support_state.dart';
 import '../../info/views/info_page.dart';
@@ -354,8 +360,73 @@ class _SettingsPageState extends State<SettingsPage> {
                                     ? scheme.tertiary
                                     : scheme.outline)),
                       ),
+                      SettingRow(
+                        // R34.1: deadlines no scraper can know - own
+                        // screen, own DATA_* key, honest provenance
+                        title: L10n.t("settings.setupFristenbuch"),
+                        trailing: Icon(CupertinoIcons.chevron_forward,
+                            size: 14, color: scheme.primary),
+                        onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    FristenbuchPage(manager: cm))),
+                      ),
                     ],
                   ),
+                ),
+
+                // R34.6 + R34.2 + R34.3: the paperwork area. Deadlines the
+                // app cannot scrape (document expiry), the editorial
+                // starter list, and the portal launcher. Advisory through
+                // and through: nothing in here arms an alarm, and every
+                // card hides itself when its data does not exist.
+                SettingsSectionTitle(
+                    title: L10n.t("settings.sectionBureaucracy")),
+
+                BlockContainer(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(L10n.t("settings.docsTitle"),
+                          style: const TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(L10n.t("settings.docsIntro"),
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              color: scheme.onSurfaceVariant)),
+                      const _DocWatchSection(),
+                    ],
+                  ),
+                ),
+
+                // the launcher is only relevant once a profile exists:
+                // no login -> no Matrikel to copy -> the whole card is
+                // hidden (Student.empty carries the empty string)
+                if (vm.student.matriculationNumber.trim().isNotEmpty)
+                  BlockContainer(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(L10n.t("settings.papierkramTitle"),
+                            style: const TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 2),
+                        Text(L10n.t("settings.papierkramIntro"),
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                color: scheme.onSurfaceVariant)),
+                        const SizedBox(height: 4),
+                        for (final portal in kPortalRows)
+                          _PortalRow(
+                              row: portal,
+                              matriculation: vm.student.matriculationNumber),
+                      ],
+                    ),
+                  ),
+
+                BlockContainer(
+                  child: const _StarterPackSection(),
                 ),
 
                 // R29 (X3): the storage story existed only in code
@@ -883,5 +954,422 @@ class LanguageDropdown extends StatelessWidget {
                 .toList(),
             value: languageSetting.value,
             onChanged: (item) => languageSetting.set(item!)));
+  }
+}
+
+/// R34.6 — "Dokumente" card body: the user's self-noted expiry dates with
+/// the 90/30/7 advisory tiers. Add + delete only — editing a note means
+/// delete + re-add, which is fewer states to build and to reason about.
+/// The whole section NEVER schedules a reminder (auto-alarm VETOED): a
+/// card that colours a date is honest, a ping from a keychain read that
+/// failed once is not. Entries live in the keychain (DOC_* keys) and die
+/// with logout via `DocWatchStore.purgeAll`.
+class _DocWatchSection extends StatefulWidget {
+  const _DocWatchSection();
+
+  @override
+  State<_DocWatchSection> createState() => _DocWatchSectionState();
+}
+
+class _DocWatchSectionState extends State<_DocWatchSection> {
+  final _store = DocWatchStore();
+  List<DocEntry>? _docs; // null while loading
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  Future<void> _reload() async {
+    try {
+      final docs = await _store.load();
+      if (!mounted) return;
+      setState(() {
+        _docs = docs;
+        _failed = false;
+      });
+    } on Object catch (_) {
+      // a locked/unreadable keychain must not crash the settings page
+      if (!mounted) return;
+      setState(() => _failed = true);
+    }
+  }
+
+  String _date(DateTime d) => "${d.day.toString().padLeft(2, "0")}."
+      "${d.month.toString().padLeft(2, "0")}."
+      "${d.year}";
+
+  /// Tier line + colour; `null` tier = further out than 90 days = plain
+  /// expiry stamp, no warning colour ("ok" never shouts).
+  (String, Color)? _tier(DocEntry e, ColorScheme scheme) {
+    final now = DateTime.now();
+    final days = docDaysLeft(e.expiry, now);
+    switch (docTierFor(e.expiry, now)) {
+      case DocTier.none:
+        return null;
+      case DocTier.expired:
+        return (L10n.t("settings.docsExpiredFor", [-days]), scheme.error);
+      case DocTier.seven:
+        if (days == 0) {
+          return (L10n.t("settings.docsDueToday"), scheme.error);
+        }
+        if (days == 1) {
+          return (L10n.t("settings.docsDueTomorrow"), scheme.error);
+        }
+        return (L10n.t("settings.docsExpiresIn", [days]), scheme.error);
+      case DocTier.thirty:
+      case DocTier.ninety:
+        return (L10n.t("settings.docsExpiresIn", [days]), scheme.tertiary);
+    }
+  }
+
+  Future<void> _addDoc() async {
+    final labelCtrl = TextEditingController();
+    DateTime? picked;
+    final saved = await showDialog<bool>(
+        context: context,
+        builder: (dialogCtx) => StatefulBuilder(
+              builder: (dialogCtx, setDialogState) => AlertDialog(
+                title: Text(L10n.t("settings.docsAddTitle")),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: labelCtrl,
+                      textInputAction: TextInputAction.done,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: L10n.t("settings.docsLabelHint"),
+                        labelText: L10n.t("settings.docsExpiry"),
+                        labelStyle: TextStyle(fontSize: 11),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton(
+                      onPressed: () async {
+                        final now = DateTime.now();
+                        final date = await showDatePicker(
+                            context: dialogCtx,
+                            initialDate:
+                                DateTime(now.year, now.month, now.day + 180),
+                            firstDate: DateTime(now.year - 1),
+                            lastDate: DateTime(now.year + 15));
+                        if (date != null) {
+                          setDialogState(() => picked = date);
+                        }
+                      },
+                      child: Text(picked == null
+                          ? L10n.t("settings.docsPickDate")
+                          : _date(picked!)),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.of(dialogCtx).pop(false),
+                      child: Text(L10n.t("settings.cancel"))),
+                  FilledButton(
+                      onPressed: () => Navigator.of(dialogCtx).pop(true),
+                      child: Text(L10n.t("settings.docsSave"))),
+                ],
+              ),
+            ));
+    final label = labelCtrl.text.trim();
+    labelCtrl.dispose(); // read before disposing, kept dead on exit
+    if (saved != true || !mounted) return;
+    final toasts = context.read<ToastsProvider>();
+    if (label.isEmpty) {
+      toasts.showTextToast(L10n.t("settings.docsNeedLabel"));
+      return;
+    }
+    if (picked == null) {
+      toasts.showTextToast(L10n.t("settings.docsNeedDate"));
+      return;
+    }
+    try {
+      await _store.add(label, picked!);
+      if (!mounted) return;
+      toasts.showTextToast(L10n.t("settings.docsSaved"));
+    } on Object catch (_) {
+      if (!mounted) return;
+      toasts.showTextToast(L10n.t("settings.docsLoadFailed"));
+    }
+    await _reload();
+  }
+
+  Future<void> _remove(DocEntry e) async {
+    final toasts = context.read<ToastsProvider>();
+    try {
+      await _store.remove(e.id);
+    } on Object catch (_) {
+      // the key may already be gone (purged/evicted); the reload below
+      // shows the truth either way
+    }
+    await _reload();
+    if (!mounted) return;
+    toasts.showTextToast(L10n.t("settings.docsDeleted"));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (_failed) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Text(L10n.t("settings.docsLoadFailed"),
+            style: TextStyle(fontSize: 12.5, color: scheme.error)),
+      );
+    }
+    final docs = _docs;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (docs == null)
+          const Padding(
+              padding: EdgeInsets.only(top: 8), child: KITProgressIndicator())
+        else if (docs.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(L10n.t("settings.docsEmpty"),
+                style: TextStyle(fontSize: 12.5, color: scheme.outline)),
+          )
+        else
+          for (final e in docs)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Flexible + ellipsis: German labels wrap the card
+                        // otherwise (R16e row rule)
+                        Text(e.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600)),
+                        Text(
+                          _tier(e, scheme) == null
+                              ? L10n.t("settings.docsExpiresOn", [_date(e.expiry)])
+                              : "${_date(e.expiry)} · ${_tier(e, scheme)!.$1}",
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: _tier(e, scheme)?.$2 ?? scheme.outline),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: L10n.t("settings.docsDelete"),
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(CupertinoIcons.trash, size: 16),
+                    onPressed: () => _remove(e),
+                  ),
+                ],
+              ),
+            ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+              onPressed: _addDoc,
+              icon: const Icon(CupertinoIcons.plus, size: 16),
+              label: Text(L10n.t("settings.docsAdd"))),
+        ),
+      ],
+    );
+  }
+}
+
+/// R34.3 — one launcher row: EN label + the German official jargon under it
+/// (the pairing IS the service — that is what letters and portals call it).
+/// Tap launches the official page in the browser; the copy button puts the
+/// live profile's Matrikelnummer on the clipboard. The app certifies
+/// nothing about the target page and never scrapes it here.
+class _PortalRow extends StatelessWidget {
+  final PortalRow row;
+  final String matriculation;
+
+  const _PortalRow({required this.row, required this.matriculation});
+
+  /// Mirror of agenda_page's private `_launchExternal` (exams_page and the
+  /// signmeup card carry the same-named twins): only a well-formed http(s)
+  /// URL reaches the launcher, and a missing browser never throws in a tap.
+  void _launchExternal(String raw) {
+    try {
+      final uri = Uri.parse(raw);
+      if (uri.host.isEmpty ||
+          (uri.scheme != "http" && uri.scheme != "https")) {
+        return;
+      }
+      launchUrl(uri, mode: LaunchMode.externalApplication)
+          .catchError((_) => false);
+    } on Object catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Semantics(
+        button: true,
+        label: row.en,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _launchExternal(row.url),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(row.en,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w600)),
+                    Text(row.de,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                            TextStyle(fontSize: 12, color: scheme.outline)),
+                  ],
+                ),
+              ),
+              // the copy mini-action lives INSIDE the row; as a real
+              // button it wins its own hit-test, the row launch never
+              // swallows it (SettingRow's opaque-behind-control rule)
+              IconButton(
+                tooltip: L10n.t("settings.copyMatr"),
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(CupertinoIcons.doc_on_doc, size: 16),
+                onPressed: () async {
+                  await Clipboard.setData(
+                      ClipboardData(text: matriculation));
+                  if (context.mounted) {
+                    context
+                        .read<ToastsProvider>()
+                        .showTextToast(L10n.t("settings.matrCopied"));
+                  }
+                },
+              ),
+              Icon(CupertinoIcons.chevron_forward,
+                  size: 14, color: scheme.primary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// R34.2 — editorial starter pack: official pages for the first months,
+/// every row carrying its `stand:` verification stamp. The future is built
+/// once: an inline FutureBuilder re-parsed the asset on every unrelated
+/// rebuild (the _CacheSizeText lesson).
+class _StarterPackSection extends StatefulWidget {
+  const _StarterPackSection();
+
+  @override
+  State<_StarterPackSection> createState() => _StarterPackSectionState();
+}
+
+class _StarterPackSectionState extends State<_StarterPackSection> {
+  late final Future<StarterPack> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = StarterPack.load();
+  }
+
+  void _launchExternal(String raw) {
+    try {
+      final uri = Uri.parse(raw);
+      if (uri.host.isEmpty ||
+          (uri.scheme != "http" && uri.scheme != "https")) {
+        return;
+      }
+      launchUrl(uri, mode: LaunchMode.externalApplication)
+          .catchError((_) => false);
+    } on Object catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return FutureBuilder<StarterPack>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.hasError) {
+            // missing asset / bad JSON: say it, never render a half-truth
+            return Text(L10n.t("settings.docsLoadFailed"),
+                style: TextStyle(fontSize: 12.5, color: scheme.error));
+          }
+          final pack = snap.data;
+          if (pack == null) {
+            return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: KITProgressIndicator());
+          }
+          final english = L10n.isEnglish;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(L10n.t("settings.starterTitle"),
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Text(L10n.t("settings.starterIntro"),
+                  style: TextStyle(
+                      fontSize: 12.5, color: scheme.onSurfaceVariant)),
+              for (final row in pack.rows)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Semantics(
+                    button: true,
+                    label: row.title(english: english),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _launchExternal(row.url),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(row.title(english: english),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600)),
+                              ),
+                              Icon(CupertinoIcons.chevron_forward,
+                                  size: 14, color: scheme.primary),
+                            ],
+                          ),
+                          Text(row.text(english: english),
+                              style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: scheme.onSurfaceVariant)),
+                          Text(
+                              L10n.t("settings.starterStand", [row.stand]),
+                              style: TextStyle(
+                                  fontSize: 11, color: scheme.outline)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 6),
+            ],
+          );
+        });
   }
 }

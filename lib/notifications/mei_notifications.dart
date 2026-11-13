@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
 
+import '../agenda/logic/window_fsm.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
@@ -588,11 +590,22 @@ class MeiNotifications {
   @visibleForTesting
   static DateTime? smuOpenFire(SignMeUpProcedure p, DateTime now,
       Map<String, String> fired) {
+    // R34.7 formalized: fire iff the window is OPEN now and its
+    // (id, start) identity has no fired entry - the transition store is
+    // DATA_smuOpensFired, the persisted window state machine of the smu
+    // family (closed windows need no entry: absence + state covers them).
     final start = p.registrationStart;
     final end = p.registrationEnd;
     if (start == null || end == null || !end.isAfter(now)) return null;
+    // future window (start ahead of now): still "closed" by the FSM -
+    // its alarm arms at clamped T-0 regardless
     if (!start.isAfter(now)) {
-      // window is open RIGHT NOW: at most once per window via snapshot
+      // OPEN right now (FSM-certified, both bounds known): at most once
+      // per window via the transition store
+      if (windowState(start: start, end: end, now: now) !=
+          ExamWindowState.open) {
+        return null;
+      }
       if (fired["${p.id}"] == start.toIso8601String()) return null;
       // backfill: the alarm must still land in the FUTURE (a zonedSchedule
       // in the past is silently dropped) - two minutes out, work-hour
@@ -763,7 +776,8 @@ class MeiNotifications {
         // their day keeps the plain 07:30), lectures arrive sorted
         DateTime? firstLectureStart;
         for (final o in decision.lectures) {
-          if (!o.title.startsWith("Due: ")) {
+          if (!o.title.startsWith("Due: ") &&
+              !o.title.startsWith("Frist: ")) {
             firstLectureStart = o.start;
             break;
           }
@@ -880,7 +894,10 @@ class MeiNotifications {
         "${d.hour.toString().padLeft(2, "0")}:${d.minute.toString().padLeft(2, "0")}";
     final title = L10n.t("notifs.eveningTitle");
     if (occ.isEmpty) return (title, morning.$2); // free / cancelled: fits
-    final lectureList = occ.where((o) => !o.title.startsWith("Due: ")).toList();
+    final lectureList = occ
+        .where((o) =>
+            !o.title.startsWith("Due: ") && !o.title.startsWith("Frist: "))
+        .toList();
     if (lectureList.isEmpty) return (title, morning.$2); // due-only day
     final first = lectureList.first;
     if (lectureList.every((o) => o.title.startsWith("Klausur: "))) {
@@ -921,9 +938,11 @@ class MeiNotifications {
       if (!o.start.isAfter(now)) continue;
       if (o.title.startsWith("Due: ") ||
           o.title.startsWith("Abgabe: ") ||
+          o.title.startsWith("Frist: ") ||
           o.fromPersonalIcs ||
           o.uid.startsWith("kauni-exam-") ||
-          o.uid.startsWith("kauni-due-")) {
+          o.uid.startsWith("kauni-due-") ||
+          o.uid.startsWith("kauni-frb-")) {
         // exam sittings and ILIAS dues are not LECTURES (synth uid
         // prefixes verbatim from exam_synth.dart/due_parse.dart; the
         // Due:/Abgabe: title arms above stay as belt-and-braces for
@@ -1176,16 +1195,18 @@ class MeiNotifications {
   /// fresh feed pull too (rebuilt from announcements every cycle, carried
   /// between).
   static String mergePollLayers(String feedBody, String carriedCache) =>
-      CampusManager.injectDueSynth(
-          CampusManager.injectPersonalIcs(
-              CampusManager.injectSignMeUpSynth(
-                  CampusManager.injectExamSynth(feedBody,
-                      CampusManager.extractExamSynth(carriedCache)),
-                  CampusManager.dropSignMeUpSynthCoveredByFeed(
-                      feedBody,
-                      CampusManager.extractSignMeUpSynth(carriedCache))),
-              CampusManager.extractPersonalIcs(carriedCache)),
-          CampusManager.extractDueSynth(carriedCache));
+      CampusManager.injectFrB(
+          CampusManager.injectDueSynth(
+              CampusManager.injectPersonalIcs(
+                  CampusManager.injectSignMeUpSynth(
+                      CampusManager.injectExamSynth(feedBody,
+                          CampusManager.extractExamSynth(carriedCache)),
+                      CampusManager.dropSignMeUpSynthCoveredByFeed(
+                          feedBody,
+                          CampusManager.extractSignMeUpSynth(carriedCache))),
+                  CampusManager.extractPersonalIcs(carriedCache)),
+              CampusManager.extractDueSynth(carriedCache)),
+          CampusManager.extractFrB(carriedCache));
 
   /// Read-modify-write of the poll into DATA_webcalIcsCache: the baseline
   /// is read LIVE (the legacy snapshot this isolate loaded can predate a
@@ -1393,9 +1414,10 @@ void meiBackgroundCallback() {
       final prefsLive = SharedPreferencesAsync();
       final cacheLive = await prefsLive.getString("DATA_webcalIcsCache");
       final strippedOld = WebcalFeed.parse(CampusManager.stripDueSynth(
-          CampusManager.stripPersonalIcs(
-              CampusManager.stripSignMeUpSynth(
-                  CampusManager.stripExamSynth(cacheLive ?? "")))));
+          CampusManager.stripFrB(
+              CampusManager.stripPersonalIcs(
+                  CampusManager.stripSignMeUpSynth(
+                      CampusManager.stripExamSynth(cacheLive ?? ""))))));
       // feed-source guard mirrors the foreground fetch: never diff a
       // baseline that belongs to a different calendar URL
       final previousSource = prefs.getString("DATA_webcalFeedSource");
