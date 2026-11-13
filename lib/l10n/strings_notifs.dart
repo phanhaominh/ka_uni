@@ -9,7 +9,25 @@ const Map<String, String> de_notifs = {
   "notifs.channelLibraryDesc": "Check-in für gebuchte Lernplätze",
   "notifs.examDeadlineTitle": "Prüfungsanmeldung schließt bald",
   "notifs.examDeadlineBody": "{0} — noch nicht angemeldet, Frist {1}",
+  // R32.3: T−24h ping for the deregistration deadline of a REGISTERED
+  // exam ("Abmelden bis"); {1} is the long L10n.deadline stamp.
+  "notifs.deregTitle": "Prüfungs-Abmeldung endet bald",
+  "notifs.deregBody": "{0} — Abmelden bis {1}",
+  // R32.5: prereq-gate heads-up. "bekannte Sperre" on purpose: only
+  // already-FAILED prerequisite parts count, so the push must never
+  // claim the list is complete (prereqNote says so out loud).
+  "notifs.prereqTitle": "Neue bekannte Sperre",
+  "notifs.prereqLine": "{0} — bekannte Sperre durch: {1}",
+  "notifs.prereqNote":
+      "Nur bereits nicht bestandene Zulassungsvoraussetzungen zählen — "
+      "weitere Sperren möglich.",
+  // R32.3 cockpit row label (agenda.* rides the flattened merge — the
+  // R32 lane's strings live in this file, the prefix does namespacing)
+  "agenda.cockpitDereg": "Abmeldefrist",
   "notifs.changesDetails": "Details in der Agenda.",
+  // R32.1: placeholder/empty rooms in the morning digest lecture line —
+  // the feed says "there is a room we do not know", never "no room".
+  "notifs.digestRoomTba": "Raum folgt",
   "notifs.bannerBotProtection":
       "KIT hat ihren Bot-Schutz geändert — Datenabruf bis auf Weiteres gestört. Update nötig.",
   "notifs.bannerBoth":
@@ -36,7 +54,21 @@ const Map<String, String> en_notifs = {
   "notifs.channelLibraryDesc": "Check-in for booked study seats",
   "notifs.examDeadlineTitle": "Exam registration closing soon",
   "notifs.examDeadlineBody": "{0} — not registered yet, deadline {1}",
+  // R32.3: deregistration-deadline ping (see de_notifs)
+  "notifs.deregTitle": "Exam deregistration closing soon",
+  "notifs.deregBody": "{0} — unregister until {1}",
+  // R32.5: prereq-gate heads-up — "known block" wording mirrors DE: the
+  // app only ever sees already-failed prerequisite parts, never the full
+  // admission ruleset, so completeness is never asserted.
+  "notifs.prereqTitle": "New known block",
+  "notifs.prereqLine": "{0} — known block by: {1}",
+  "notifs.prereqNote":
+      "Only already-failed prerequisite parts count — other blocks "
+      "may exist.",
+  // R32.3 cockpit row label (see de_notifs)
+  "agenda.cockpitDereg": "Deregistration deadline",
   "notifs.changesDetails": "Details in the agenda.",
+  "notifs.digestRoomTba": "Room TBA",
   "notifs.bannerBotProtection":
       "KIT changed its bot protection — data retrieval is disrupted until further notice. An update is needed.",
   "notifs.bannerBoth": "Could not read exams & timetable (KIT site changed?).",

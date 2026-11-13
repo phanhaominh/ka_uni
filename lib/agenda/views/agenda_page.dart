@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
 import 'package:kit_mobile/common_ui/max_width_body.dart';
 import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:provider/provider.dart';
@@ -27,6 +26,8 @@ import '../../signmeup/signmeup_mine_card.dart';
 import '../../state_management/kit_provider.dart';
 import '../../timetable/models/webcal.dart';
 import '../../navigation/logic/push_page.dart';
+import 'chronicle_page.dart';
+import 'room_change_line.dart';
 import '../../timetable/logic/ics_export_action.dart';
 
 /// Merged agenda: ICS "CHANGED" band + today/tomorrow lectures + ILIAS
@@ -722,14 +723,29 @@ class _AgendaPageState extends State<AgendaPage> {
                       fontSize: 12,
                       fontStyle: FontStyle.italic,
                       color: scheme.onTertiaryContainer)),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Semantics(
-                button: true,
-                child: TextButton(
-                    onPressed: _dismissChanges,
-                    child: Text(L10n.t("agenda.dismiss"))),
-              ),
+            // R32.7: the band only shows deltas with `when >= today` (see
+            // freshChanges — that filter stays); the chronicle shows the
+            // WHOLE store, cap and all, and admits its own coverage there.
+            // Wrap (not Row+Spacer): at Pixel-3-minus widths both German
+            // labels share one line only when they fit — the 240 dp band
+            // regression test stacks them instead of overflowing
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 4,
+              children: [
+                TextButton(
+                  onPressed: () => pushPageOnce<void>(Navigator.of(context),
+                      routeName: ChroniclePage.routeName,
+                      page: (_) => ChroniclePage(changes: _load.changes)),
+                  child: Text(L10n.t("timetable.olderChanges")),
+                ),
+                Semantics(
+                  button: true,
+                  child: TextButton(
+                      onPressed: _dismissChanges,
+                      child: Text(L10n.t("agenda.dismiss"))),
+                ),
+              ],
             ),
           ],
         ),
@@ -956,7 +972,21 @@ class _AgendaPageState extends State<AgendaPage> {
     final up = NextUp.compute([..._load.today, ..._load.tomorrow], now);
     if (up == null) return const SizedBox.shrink();
     // R27: tapping the hero opens the prep bundle for exactly this lecture
-    return NextUpCard(up: up, onTap: () => _openPrepSheet(up));
+    final card = NextUpCard(up: up, onTap: () => _openPrepSheet(up));
+    // R32.6: a stored room swap that matches THIS hero occurrence exactly
+    // (and a feed the 30 h trust rule still vouches for) strikes the old
+    // room through next to the new one; anything else leaves the hero
+    // byte-identical (see heroRoomDelta / RoomChangeLine)
+    final delta = heroRoomDelta(
+        occ: up.occ,
+        changes: _load.changes,
+        feedFresh: _load.fetchedAt != null &&
+            now.difference(_load.fetchedAt!) < heroRoomFeedFreshness);
+    if (delta == null) return card;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [card, RoomChangeLine(delta: delta)],
+    );
   }
 
   /// Wave E (R27): bottom sheet with the lecture's certified ILIAS bind,
@@ -1140,6 +1170,7 @@ class _AgendaPageState extends State<AgendaPage> {
             L10n.t("agenda.cockpitExamSignupOpen"),
           CockpitKind.examSignupOpens =>
             L10n.t("agenda.cockpitExamSignupOpens"),
+          CockpitKind.examDereg => L10n.t("agenda.cockpitDereg"),
           CockpitKind.examSitting => L10n.t("agenda.cockpitExamSitting"),
           CockpitKind.smuOpen => L10n.t("agenda.cockpitSmuOpen"),
           CockpitKind.smuOpens => L10n.t("agenda.cockpitSmuOpens"),
@@ -1148,6 +1179,7 @@ class _AgendaPageState extends State<AgendaPage> {
           CockpitKind.due => Icons.assignment,
           CockpitKind.examSignupOpen || CockpitKind.examSignupOpens =>
             Icons.how_to_reg,
+          CockpitKind.examDereg => Icons.person_off,
           CockpitKind.examSitting => Icons.event,
           CockpitKind.smuOpen || CockpitKind.smuOpens => Icons.school,
         };

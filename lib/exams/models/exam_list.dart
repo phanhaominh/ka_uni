@@ -137,6 +137,13 @@ class ExamEntry {
   ExamWindowStatus windowStatus;
   DateTime? windowStart; // "Anmeldung ab ..."
   DateTime? windowEnd; // "Anmelden bis ..."
+
+  /// R32.3: "Abmelden bis ..."/"Unregister until ..." — the deadline until
+  /// which a REGISTERED exam may still be deregistered. Deliberately NOT
+  /// a window bound (windowStatus/windowStart/windowEnd stay untouched by
+  /// it); no serialization anywhere -> no snapshot migration.
+  final DateTime? deregEnd;
+
   final List<ExamTerm> terms = [];
 
   ExamEntry({
@@ -148,6 +155,7 @@ class ExamEntry {
     required this.windowStatus,
     this.windowStart,
     this.windowEnd,
+    this.deregEnd,
   });
 
   bool windowIsOpen(DateTime now) {
@@ -194,6 +202,23 @@ class ExamListParser {
   // between n and r inside the word).
   static final _enDateTime = RegExp(
       r'\bRegister\s+(until|from)\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})\s*([AP])M\b',
+      caseSensitive: false);
+
+  // R32.3: the DEREGISTRATION deadline ("Abmelden bis 19.02.2027 23:59" /
+  // EN "Unregister until 2/19/2027 11:59 PM", both verbatim live cells).
+  // Deliberate non-use of \b in the EN arm: the word-boundary trick of
+  // _enDateTime keeps "Unregister until" OUT of the window parse; here the
+  // literal "Unregister" IS the pattern, so no boundary games are needed
+  // and none belong in the code. The captured "(until)" group is NOT a
+  // matcher feature - it holds the group INDICES at _enDateTime's shape
+  // (month=2 ... AM/PM=7) so [enWindowDate] rehydrates unchanged.
+  // _deDateTime stays untouched: "Anmelden bis" never matching
+  // "Abmelden bis" (An ≠ Ab) is exactly why the window arms never saw
+  // this date.
+  static final _deDeregDateTime = RegExp(
+      r'Abmelden bis\s+(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2}))?');
+  static final _enDeregDateTime = RegExp(
+      r'Unregister\s+(until)\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})\s*([AP])M',
       caseSensitive: false);
 
   static DateTime enWindowDate(RegExpMatch em) {
@@ -281,6 +306,28 @@ class ExamListParser {
         }
       }
 
+      // R32.3: capture the DEREGISTRATION deadline right where it used to
+      // be discarded. Window semantics above are untouched: "Unregister
+      // until" never enters them (the else-if skips the whole arm), and
+      // "Abmelden bis" parses to null there (see _deDeregDateTime note) -
+      // this is now the ONLY consumer of that date.
+      DateTime? deregEnd;
+      if (registerText.contains("Abmelden bis") ||
+          registerText.contains("Unregister until")) {
+        final dm = _deDeregDateTime.firstMatch(registerText);
+        final em = _enDeregDateTime.firstMatch(registerText);
+        deregEnd = dm != null
+            ? DateTime(
+                int.parse(dm.group(3)!),
+                int.parse(dm.group(2)!),
+                int.parse(dm.group(1)!),
+                int.tryParse(dm.group(4) ?? "0") ?? 0,
+                int.tryParse(dm.group(5) ?? "0") ?? 0)
+            : em != null
+                ? enWindowDate(em)
+                : null;
+      }
+
       final statusLower = statusText.toLowerCase();
       // EN chip is NOT the obvious "Registered" - live feed says
       // "Signed in" (and "Not registered")
@@ -301,6 +348,7 @@ class ExamListParser {
         windowStatus: status,
         windowStart: start,
         windowEnd: end,
+        deregEnd: deregEnd,
       );
       result.add(current);
     }

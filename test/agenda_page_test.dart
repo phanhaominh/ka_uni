@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kit_mobile/agenda/logic/next_up.dart';
 import 'package:kit_mobile/agenda/views/agenda_page.dart';
+import 'package:kit_mobile/agenda/views/chronicle_page.dart';
+import 'package:kit_mobile/agenda/views/room_change_line.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:kit_mobile/timetable/models/webcal.dart';
@@ -35,6 +38,7 @@ Future<void> drainRefetchTail(WidgetTester tester) async {
 Future<void> pumpAgenda(WidgetTester tester,
     {String? ics,
     List<IcsChange> changes = const [],
+    String? fetchedAt,
     required String marker,
     Size surface = const Size(800, 1200)}) async {
   tester.view.physicalSize = surface;
@@ -43,6 +47,7 @@ Future<void> pumpAgenda(WidgetTester tester,
   SharedPreferences.setMockInitialValues({
     if (ics != null) "DATA_webcalIcsCache": ics,
     if (changes.isNotEmpty) "DATA_webcalChanges": IcsChange.encode(changes),
+    if (fetchedAt != null) "DATA_webcalFetchedAt": fetchedAt,
   });
   await tester.pumpWidget(ChangeNotifierProvider<KITProvider>(
     create: (_) => KITProvider(),
@@ -234,5 +239,124 @@ void main() {
     expect(find.ancestor(of: header, matching: find.byType(Expanded)),
         findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets("hero strikes the old room when a fresh feed confirms the swap",
+      (tester) async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day, now.hour, now.minute)
+        .add(const Duration(hours: 3));
+    await pumpAgenda(tester,
+        ics: icsDoc([
+          ev("h@kit", start, start.add(const Duration(hours: 1)), "Hero V",
+              "HS 999"),
+        ]),
+        changes: [
+          IcsChange(
+              kind: IcsChangeKind.changed,
+              title: "Hero V",
+              when: start,
+              room: "HS 999",
+              oldRoom: "HS 104"),
+        ],
+        fetchedAt: now.toIso8601String(),
+        marker: "Hero V");
+    expect(find.byType(NextUpCard), findsOneWidget);
+    final line = tester.widget<RoomChangeLine>(find.byType(RoomChangeLine));
+    expect(line.delta.oldRoom, "HS 104");
+    expect(line.delta.room, "HS 999");
+  });
+
+  testWidgets("a stale feed keeps the hero silent about the swap",
+      (tester) async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day, now.hour, now.minute)
+        .add(const Duration(hours: 3));
+    await pumpAgenda(tester,
+        ics: icsDoc([
+          ev("h@kit", start, start.add(const Duration(hours: 1)), "Hero V",
+              "HS 999"),
+        ]),
+        changes: [
+          IcsChange(
+              kind: IcsChangeKind.changed,
+              title: "Hero V",
+              when: start,
+              room: "HS 999",
+              oldRoom: "HS 104"),
+        ],
+        fetchedAt: now.subtract(const Duration(hours: 31)).toIso8601String(),
+        marker: "Hero V");
+    // the hero itself renders from the cache — only the struck-room CLAIM
+    // needs a feed the 30 h freshness rule still vouches for
+    expect(find.byType(NextUpCard), findsOneWidget);
+    expect(find.byType(RoomChangeLine), findsNothing);
+  });
+
+  testWidgets("a swap about another occurrence leaves the hero untouched",
+      (tester) async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day, now.hour, now.minute)
+        .add(const Duration(hours: 3));
+    await pumpAgenda(tester,
+        ics: icsDoc([
+          ev("h@kit", start, start.add(const Duration(hours: 1)), "Hero V",
+              "HS 999"),
+        ]),
+        changes: [
+          // right title, different occurrence
+          IcsChange(
+              kind: IcsChangeKind.changed,
+              title: "Hero V",
+              when: start.add(const Duration(days: 1)),
+              room: "HS 999",
+              oldRoom: "HS 104"),
+          // right slot, different lecture
+          IcsChange(
+              kind: IcsChangeKind.changed,
+              title: "Fremd V",
+              when: start,
+              room: "HS 999",
+              oldRoom: "HS 104"),
+        ],
+        fetchedAt: now.toIso8601String(),
+        marker: "Hero V");
+    expect(find.byType(NextUpCard), findsOneWidget);
+    expect(find.byType(RoomChangeLine), findsNothing);
+  });
+
+  testWidgets("the band footer opens the chronicle over the whole store",
+      (tester) async {
+    final now = DateTime.now();
+    final cOld = IcsChange(
+        kind: IcsChangeKind.removed,
+        title: "Alt Entfall",
+        when: DateTime(now.year, now.month, now.day - 5, 10),
+        room: "HS 1");
+    final cNew = IcsChange(
+        kind: IcsChangeKind.changed,
+        title: "Neu Raum",
+        when: DateTime(now.year, now.month, now.day + 1, 10),
+        room: "HS 9",
+        oldRoom: "HS 8");
+    await pumpAgenda(tester,
+        changes: [cOld, cNew], marker: L10n.t("agenda.timetableChangedN", [1]));
+    // the band filter (when>=today) keeps the past delta out of the band...
+    expect(find.text(cOld.describe()), findsNothing);
+    expect(find.text(L10n.t("timetable.olderChanges")), findsOneWidget);
+    await tester.tap(find.text(L10n.t("timetable.olderChanges")));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    // ...the chronicle shows it anyway and states its own coverage (the
+    // band keeps rendering below the pushed route — assert inside the
+    // chronicle, not app-wide)
+    final page = find.byType(ChroniclePage);
+    expect(page, findsOneWidget);
+    expect(find.text(L10n.t("timetable.chronicleTitle")), findsOneWidget);
+    expect(find.text(L10n.t("timetable.chronicleCoverage")), findsOneWidget);
+    expect(find.descendant(of: page, matching: find.text(cOld.describe())),
+        findsOneWidget);
+    expect(find.descendant(of: page, matching: find.text(cNew.describe())),
+        findsOneWidget);
   });
 }

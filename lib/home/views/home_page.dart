@@ -18,6 +18,7 @@ import 'package:kit_mobile/navigation/logic/push_page.dart';
 import 'package:kit_mobile/agenda/logic/day_decision.dart';
 import 'package:kit_mobile/agenda/logic/next_up.dart';
 import 'package:kit_mobile/agenda/views/day_decision_banner.dart';
+import 'package:kit_mobile/agenda/views/room_change_line.dart';
 import 'package:kit_mobile/timetable/logic/now_clock.dart';
 import 'package:kit_mobile/timetable/models/webcal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -485,9 +486,22 @@ class _NextUpHomeCardState extends State<NextUpHomeCard>
               page: (_) => const AgendaPage(scrollToToday: true));
         }
 
-        final hero = up == null
-            ? const SizedBox.shrink()
-            : NextUpCard(up: up, onTap: openAgenda);
+        // R32.6: same struck-through old room the agenda hero shows —
+        // one matcher, one line widget, gated on THIS card's own 30 h
+        // feed-freshness; without a matching delta the hero is exactly
+        // the pre-R32.6 tree (see heroRoomDelta / RoomChangeLine)
+        Widget hero = const SizedBox.shrink();
+        if (up != null) {
+          final card = NextUpCard(up: up, onTap: openAgenda);
+          final delta = heroRoomDelta(
+              occ: up.occ, changes: _changes, feedFresh: _feedFresh());
+          hero = delta == null
+              ? card
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [card, RoomChangeLine(delta: delta)],
+                );
+        }
         if (bannerText == null) return hero;
         return Column(
           children: [

@@ -43,4 +43,36 @@ void main() {
       }
     }
   });
+
+  // R32.2: morning digest slot = max(07:30, first lecture - 75 min)
+  // (same pure-slot-math pattern as changeSlot above)
+  group("digestSlot", () {
+    final day = DateTime(2026, 11, 15);
+    DateTime slotAt(int h, [int m = 0]) =>
+        MeiNotifications.digestSlot(day, DateTime(2026, 11, 15, h, m));
+
+    test("a 09:30 lecture pulls the digest to 08:15", () {
+      expect(slotAt(9, 30), DateTime(2026, 11, 15, 8, 15));
+    });
+
+    test("never before 07:30, free/unknown days keep the plain slot", () {
+      // -75 min of an 08:00 lecture would mean a 06:45 wake-up: refused
+      expect(slotAt(8), DateTime(2026, 11, 15, 7, 30));
+      expect(slotAt(7, 45), DateTime(2026, 11, 15, 7, 30));
+      // no lecture to catch (free day / day we cannot name) -> 07:30
+      expect(MeiNotifications.digestSlot(day, null),
+          DateTime(2026, 11, 15, 7, 30));
+    });
+
+    test("exact boundary: 08:45 start is still the plain slot", () {
+      // 08:45 - 75min == 07:30 -> the max resolves to the same instant,
+      // and a hair later already moves the alarm
+      expect(slotAt(8, 45), DateTime(2026, 11, 15, 7, 30));
+      expect(slotAt(8, 46), DateTime(2026, 11, 15, 7, 31));
+    });
+
+    test("an evening lecture moves the digest, never off the day", () {
+      expect(slotAt(20), DateTime(2026, 11, 15, 18, 45));
+    });
+  });
 }

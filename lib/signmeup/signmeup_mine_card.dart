@@ -49,6 +49,8 @@ class SignMeUpMineCard extends StatelessWidget {
       r.outcome != SignMeUpOutcome.unknown ||
       r.stateLabel.trim().isNotEmpty ||
       (r.rank ?? 0) > 0 ||
+      // R32.4: a seat fill the server announced is content in its own right
+      r.placesNumber > 0 ||
       r.nextMilestone(now) != null;
 
   @override
@@ -117,6 +119,19 @@ class SignMeUpMineCard extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        // R32.4: seats-filled sub-line. Gate on placesNumber > 0: the
+        // model's `?? 0` conflation of absent-with-zero means a non-positive
+        // value is "seats unknown", and unknown never renders as "0/0".
+        // (registration rows carry no allocationType on the wire model, so
+        // the allocation join only exists where the procedure data is
+        // in hand - the exam cards, see ExamsPage.seatsLine.)
+        if (r.placesNumber > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Text(L10n.t("exams.seatsFilled",
+                [r.registrationsCount, r.placesNumber]),
+                style: TextStyle(fontSize: 11.5, color: scheme.outline)),
+          ),
         Wrap(
           spacing: 6,
           runSpacing: 2,

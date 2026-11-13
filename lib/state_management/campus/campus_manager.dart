@@ -24,6 +24,9 @@ import '../../exams/models/exam_list.dart';
 import '../../exams/models/exam_synth.dart';
 import '../../grades/logic/ledger_diff.dart';
 import '../../grades/models/grade_book.dart';
+import '../../handbook/ampel.dart';
+import '../../handbook/handbook_data.dart';
+import '../../handbook/prereq_alarm.dart';
 import '../../ilias/due_parse.dart';
 import '../../ilias/models/ilias_models.dart';
 import '../../utils/string_prettifiers.dart';
@@ -722,6 +725,10 @@ class CampusManager extends KITLoginManager {
                 : "notifs.gradePublishedTitle"),
             L10n.t("notifs.gradePublishedBody", [e.title, e.gradeLabel]));
       }
+      // R32.5: the same freshly persisted ledger re-runs the Ampel's
+      // gate check - a KNOWN prerequisite block that appeared with this
+      // fetch gets exactly one heads-up (pure diff: prereq_alarm.dart)
+      await _diffPrereqAlarm(prefs, epoch, book);
     } on Object catch (e) {
       if (kDebugMode) print("ledger diff failed: $e");
     }
@@ -729,6 +736,52 @@ class CampusManager extends KITLoginManager {
 
   static const _ledgerSnapshotKey = "DATA_ledgerSnapshot";
   static const _ledgerAnnouncedKey = "DATA_ledgerAnnounced";
+
+  /// R32.5: prereq-gate alarm riding [_diffLedgerAndNotify]. Recomputes
+  /// the Schein-Ampel over the just-persisted ledger, diffs its known
+  /// block map against the last diff's snapshot (DATA_prereqAlarm), and
+  /// pushes ONE heads-up listing the newly blocked modules and their
+  /// blockers when the map GREW. The snapshot is rewritten on EVERY diff
+  /// (shrinks and quiet runs advance it too - it mirrors the ledger, not
+  /// the news), the first-ever snapshot seeds silently
+  /// ([prereqAlarmDiff]), and a missing handbook asset stays silent: the
+  /// catalogue is an enhancement, never a crash path or a claim.
+  Future<void> _diffPrereqAlarm(
+      SharedPreferences prefs, int epoch, GradeBook book) async {
+    final handbook = await Handbook.load();
+    if (handbook == null) return;
+    final now = DateTime.now();
+    final plan = ampelPlan(
+        handbook: handbook,
+        book: book,
+        // same inputs the grades page card feeds - one gate definition
+        signupOpenKeys: {
+          for (final e in exams)
+            if (e.needsAction(now) && isTakingThisSemester(e) != false)
+              lectureTitleKey(e.title)
+        },
+        takingKeys: enrolledLectureTitles);
+    final blocked = prereqSnapshot(plan);
+    final grew = prereqAlarmDiff(
+        blockedNow: blocked, snapshotRaw: prefs.getString(_prereqAlarmKey));
+    // C81 fence before ANY write (same await-gap discipline as the ledger
+    // snapshot above: a logout during Handbook.load must not re-seed the
+    // swept DATA_prereqAlarm key with the old account's blocks)
+    if (epoch != _teardownEpoch) return; // logout mid-flight
+    await prefs.setString(_prereqAlarmKey, jsonEncode(blocked));
+    if (grew.isEmpty) return;
+    final body = [
+      for (final g in grew)
+        L10n.t("notifs.prereqLine", [g.module, g.newBlockers.join(", ")]),
+      // the honesty line: the app only ever sees FAILED prerequisite
+      // parts, so the push names known blocks and says so out loud
+      L10n.t("notifs.prereqNote"),
+    ].join("\n");
+    await MeiNotifications.notifyPrereqBlocked(
+        L10n.t("notifs.prereqTitle"), body);
+  }
+
+  static const _prereqAlarmKey = "DATA_prereqAlarm";
 
   Future<bool> fetchModulesForRows(List<HierarchicTableRow> rowsToFetch,
       {inParallel = true}) async {

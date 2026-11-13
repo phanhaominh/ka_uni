@@ -28,6 +28,11 @@ const Map<String, String> de_exams = {
       "{0} Prüfungen ohne Uhrzeit – Überschneidung nicht prüfbar",
   "exams.chipNotRegisteredNow": "NICHT angemeldet",
   "exams.chipNotRegistered": "nicht angemeldet",
+  // R32.4: seats-filled sub-line ("13/20 belegt · First Come First Served")
+  // on exam cards and the SignMeUp "mine" card
+  "exams.seatsFilled": "{0}/{1} belegt",
+  // R32.3: muted deregistration-deadline chip on registered exam cards
+  "exams.chipDeregUntil": "abmelden bis {0}",
 };
 
 const Map<String, String> en_exams = {
@@ -58,4 +63,9 @@ const Map<String, String> en_exams = {
       "{0} exams without a time – overlap cannot be checked",
   "exams.chipNotRegisteredNow": "NOT registered",
   "exams.chipNotRegistered": "not registered",
+  // R32.4: seats-filled sub-line ("13/20 seats taken · First Come First
+  // Served") on exam cards and the SignMeUp "mine" card
+  "exams.seatsFilled": "{0}/{1} seats taken",
+  // R32.3: muted deregistration-deadline chip on registered exam cards
+  "exams.chipDeregUntil": "unregister until {0}",
 };

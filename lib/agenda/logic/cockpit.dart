@@ -10,13 +10,26 @@ import '../../timetable/models/webcal.dart';
 ///  * ILIAS assignment deadlines   (kauni-due synth events, merged feed)
 ///  * exam sittings                (kauni-exam synth events, merged feed)
 ///  * exam registration windows    (exam list, not in the feed)
+///  * exam deregistration deadlines (R32.3, exam list: "Abmelden bis" of
+///    a REGISTERED exam)
 ///  * SignMeUp course allocation   (procedure windows, not in the feed)
 /// Pure logic: no context, injected `now`, deterministic. The alarms for
 /// these dates already exist (id bands 500-600 exam signup, 700-799
 /// SignMeUp, 10-400 T−30 lecture reminders which cover every merged-feed
 /// event incl. dues); the cockpit is the one place the student SEES them
 /// together, so nothing here re-arms anything.
-enum CockpitKind { due, examSignupOpen, examSignupOpens, examSitting, smuOpen, smuOpens }
+enum CockpitKind {
+  due,
+  examSignupOpen,
+  examSignupOpens,
+
+  /// R32.3: deregistration deadline of a REGISTERED exam ("Abmelden bis")
+  /// - the one date on a registered exam the student can still act on.
+  examDereg,
+  examSitting,
+  smuOpen,
+  smuOpens
+}
 
 class CockpitItem {
   final CockpitKind kind;
@@ -80,7 +93,14 @@ List<CockpitItem> cockpitPlan({
   }
 
   for (final e in exams) {
-    if (e.registered) continue; // sittings already came from the feed
+    if (e.registered) {
+      // R32.3: a future "Abmelden bis" inside the horizon is actionable
+      // even though the registration itself is done; [add] keeps it
+      // strictly future (tomorrow onward, same rule as every other row)
+      final d = e.deregEnd;
+      if (d != null) add(CockpitKind.examDereg, d, e.title);
+      continue; // sittings already came from the feed
+    }
     if (e.windowStatus == ExamWindowStatus.impossible) continue;
     if (e.needsAction(now)) {
       if (e.windowEnd != null) {

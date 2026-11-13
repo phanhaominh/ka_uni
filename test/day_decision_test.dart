@@ -106,4 +106,55 @@ void main() {
     expect(t4, L10n.t("notifs.digestTitle", [1]));
     expect(b4, contains("Übung")); // cancel hint rides along
   });
+
+  // R32.1: the lecture line names the door; every other digest body
+  // (free, cancelled, exam-only, due-only) keeps its exact wording.
+  test("R32.1 lecture line gains the first lecture's room", () {
+    final (t, b) = DayDecision.digestTexts(
+        [occ("Thermo II", 11), occ("Analysis I", 8)], []);
+    // lectureList is sorted by the caller; room comes from the FIRST
+    // lecture — the one whose time the "Erste um" already names
+    final (t2, b2) = DayDecision.digestTexts(
+        [occ("Analysis I", 8), occ("Thermo II", 11)], []);
+    expect(b, contains(" · HS"));
+    expect(b2, contains("Erste um 08:00 · HS"));
+    expect(t2, L10n.t("notifs.digestTitle", [2]));
+  });
+
+  test("R32.1 placeholder/empty rooms never go silent — 'Raum folgt'", () {
+    IcsOccurrence occRoom(String title, int hour, String room) =>
+        IcsOccurrence(
+            start: DateTime(2026, 11, 12, hour),
+            end: DateTime(2026, 11, 12, hour + 1),
+            title: title,
+            room: room,
+            uid: "r-$title-$room",
+            seriesEnd: null,
+            endGuessed: false,
+            url: null);
+    for (final junk in ["-", "--", "ILIAS", ""]) {
+      final (_, b) = DayDecision.digestTexts([occRoom("AdM V", 8, junk)], []);
+      expect(b, contains("Raum folgt"), reason: "placeholder '$junk'");
+      if (junk.isNotEmpty) {
+        // the placeholder itself must never be announced as a room
+        expect(b, isNot(contains(" · $junk")), reason: "placeholder '$junk'");
+      }
+    }
+    // real rooms pass through cleanRoom's dedup ("Gottlieb-Daimler-HS HS"
+    // style duplication is folded before display)
+    final (_, b) =
+        DayDecision.digestTexts([occRoom("AdM V", 8, "Gebäude 50.20 HS")], []);
+    expect(b, contains(" · Gebäude 50.20 HS"));
+  });
+
+  test("R32.1 room stays out of exam/due/free bodies", () {
+    final exam = DayDecision.digestTexts([occ("Klausur: EM I", 9)], []);
+    expect(exam.$2, contains("Klausur um 09:00"));
+    expect(exam.$2, isNot(contains(" · HS")));
+    final due = DayDecision.digestTexts([occ("Due: AM I", 18)], []);
+    expect(due.$2, isNot(contains("HS")));
+    expect(due.$2, isNot(contains("Raum folgt")));
+    final free = DayDecision.digestTexts([], []);
+    expect(free.$2, L10n.t("notifs.digestBodyFree"));
+  });
 }

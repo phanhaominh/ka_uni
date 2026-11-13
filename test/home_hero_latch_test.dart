@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kit_mobile/agenda/logic/next_up.dart';
 import 'package:kit_mobile/agenda/views/day_decision_banner.dart';
+import 'package:kit_mobile/agenda/views/room_change_line.dart';
 import 'package:kit_mobile/home/views/home_page.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:kit_mobile/timetable/logic/now_clock.dart';
@@ -16,6 +17,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 // ignore: depend_on_referenced_packages
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/types.dart';
 
 /// R31 F-1 regression: a ghost-null stamp/cache read used to be ADOPTED by
 /// the hero (_seenFetchedAt=null, empty feed) => stale banner + no hero +
@@ -156,6 +159,44 @@ void main() {
     provider.notifyListeners();
     await tester.pumpAndSettle();
     expectHero("Memory Lecture");
+    await unmount(tester);
+  });
+
+  testWidgets("room-change line rides the fresh hero and goes with the delta",
+      (tester) async {
+    // R32.6 on home: the store's room swap for the HERO's own occurrence
+    // strikes the old room under the card — while the delta lives; the
+    // hero itself (and the latch semantics above) stay untouched
+    final start = DateTime(today.year, today.month, today.day, 10);
+    await store.setString(WebcalKeys.fetchedAt, freshStamp(), opts);
+    await store.setString(WebcalKeys.icsCache, ics("Gamma Lecture", 10), opts);
+    await store.setString(
+        WebcalKeys.changes,
+        IcsChange.encode([
+          IcsChange(
+              kind: IcsChangeKind.changed,
+              title: "Gamma Lecture",
+              when: start,
+              room: "HS 100",
+              oldRoom: "HS 42"),
+        ]),
+        opts);
+    final provider = await mount(tester);
+    expectHero("Gamma Lecture");
+    expect(find.byType(RoomChangeLine), findsOneWidget);
+
+    // delta leaves the store (band dismissed): the hero keeps its room,
+    // the struck-through claim disappears with it (stamp bump re-fires the
+    // probe, the probe path re-reads WebcalKeys.changes)
+    await store.clear(
+        ClearPreferencesParameters(
+            filter: PreferencesFilters(allowList: {WebcalKeys.changes})),
+        opts);
+    await store.setString(WebcalKeys.fetchedAt, freshStamp(), opts);
+    provider.notifyListeners();
+    await tester.pumpAndSettle();
+    expectHero("Gamma Lecture");
+    expect(find.byType(RoomChangeLine), findsNothing);
     await unmount(tester);
   });
 }

@@ -19,7 +19,8 @@ void main() {
           {bool registered = false,
           ExamWindowStatus status = ExamWindowStatus.open,
           DateTime? wStart,
-          DateTime? wEnd}) =>
+          DateTime? wEnd,
+          DateTime? deregEnd}) =>
       ExamEntry(
           examNumber: "01-XX",
           title: title,
@@ -28,7 +29,8 @@ void main() {
           registered: registered,
           windowStatus: status,
           windowStart: wStart,
-          windowEnd: wEnd);
+          windowEnd: wEnd,
+          deregEnd: deregEnd);
 
   SignMeUpProcedure proc(int id, String name,
           {DateTime? start, DateTime? end}) =>
@@ -117,6 +119,68 @@ void main() {
       now: now,
     );
     expect(plan.map((i) => i.kind).toList(), [CockpitKind.examSignupOpens]);
+  });
+
+  // R32.3: the deregistration deadline of a REGISTERED exam is the one
+  // date on a registered exam that still has a decision to make
+  test("registered exam shows a dereg row only for a future in-horizon "
+      "deregEnd", () {
+    final plan = cockpitPlan(
+      occurrences: [],
+      exams: [
+        exam("Wind Energy",
+            registered: true, deregEnd: DateTime(2026, 11, 19, 23, 59)),
+        exam("Fired", registered: true, deregEnd: DateTime(2026, 11, 10)),
+        exam("Plain registered", registered: true),
+        exam("Unregistered", deregEnd: DateTime(2026, 11, 19, 23, 59)),
+      ],
+      procedures: [],
+      registeredProcedureIds: {},
+      smuProven: false,
+      now: now,
+    );
+    // past deadline: history, not a row. No deregEnd: nothing to show.
+    // UNREGISTERED with a stray deregEnd: nothing to deregister from.
+    expect(plan.map((i) => i.kind).toList(), [CockpitKind.examDereg]);
+    expect(plan.single.title, "Wind Energy");
+    expect(plan.single.when, DateTime(2026, 11, 19, 23, 59));
+  });
+
+  test("dereg deadline today belongs to the today section, far out to "
+      "nobody", () {
+    final plan = cockpitPlan(
+      occurrences: [],
+      exams: [
+        exam("Tonight",
+            registered: true, deregEnd: now.add(const Duration(hours: 9))),
+        exam("Far out",
+            registered: true,
+            deregEnd: now.add(const Duration(days: 29, hours: 1))),
+      ],
+      procedures: [],
+      registeredProcedureIds: {},
+      smuProven: false,
+      now: now,
+    );
+    expect(plan, isEmpty);
+  });
+
+  test("existing rows keep sorting with the dereg row", () {
+    final plan = cockpitPlan(
+      occurrences: [
+        occ("kauni-due-7-d", DateTime(2026, 11, 20, 18), "Due: Blatt 4"),
+      ],
+      exams: [
+        exam("Wind Energy",
+            registered: true, deregEnd: DateTime(2026, 11, 17, 23, 59)),
+      ],
+      procedures: [],
+      registeredProcedureIds: {},
+      smuProven: true,
+      now: now,
+    );
+    expect(plan.map((i) => i.kind).toList(),
+        [CockpitKind.examDereg, CockpitKind.due]);
   });
 
   test("unproven SignMeUp fetch stays silent", () {

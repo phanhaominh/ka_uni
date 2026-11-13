@@ -1,11 +1,15 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../agenda/logic/walk_hint.dart';
 import '../../common_ui/max_width_body.dart';
 import '../../constants/view_constants.dart';
+import '../../geo/logic/maps_url.dart';
+import '../../geo/models/kit_place.dart';
 import '../../l10n/l10n.dart';
+import '../../signmeup/signmeup_manager.dart';
 import '../../state_management/campus/campus_manager.dart';
 import '../../toasts/models/toasts_provider.dart';
 import '../../state_management/kit_provider.dart';
@@ -135,20 +139,24 @@ class ExamsPage extends StatelessWidget {
                     if (open.isNotEmpty)
                       _section(
                           context, L10n.t("exams.sectionActNow"), open, now,
-                          danger: true),
+                          vm: vm, danger: true),
                     if (upcoming.isNotEmpty)
                       _section(context, L10n.t("exams.sectionOpensSoon"),
-                          upcoming, now),
+                          upcoming, now,
+                          vm: vm),
                     if (registered.isNotEmpty)
                       _section(context, L10n.t("exams.sectionRegistered"),
-                          registered, now),
+                          registered, now,
+                          vm: vm),
                     if (rest.isNotEmpty)
                       _section(
-                          context, L10n.t("exams.sectionOther"), rest, now),
+                          context, L10n.t("exams.sectionOther"), rest, now,
+                          vm: vm),
                     if (catalog.isNotEmpty)
                       _section(
-                          context, L10n.t("exams.sectionCatalog"), catalog, now,
-                          quiet: true),
+                          context, L10n.t("exams.sectionCatalog"), catalog,
+                          now,
+                          vm: vm, quiet: true),
                     _freshFooter(context, cm),
                   ],
                 ),
@@ -184,9 +192,9 @@ class ExamsPage extends StatelessWidget {
       (a.windowStart ?? DateTime(2100))
           .compareTo(b.windowStart ?? DateTime(2100));
 
-  Widget _section(
-      BuildContext context, String title, List<ExamEntry> exams, DateTime now,
-      {bool danger = false, bool quiet = false}) {
+  Widget _section(BuildContext context, String title, List<ExamEntry> exams,
+      DateTime now,
+      {required KITProvider vm, bool danger = false, bool quiet = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -197,14 +205,14 @@ class ExamsPage extends StatelessWidget {
                   color: danger ? Theme.of(context).colorScheme.error : null,
                   fontWeight: FontWeight.bold)),
         ),
-        ...exams
-            .map((e) => _card(context, e, now, danger: danger, quiet: quiet)),
+        ...exams.map((e) =>
+            _card(context, e, now, vm: vm, danger: danger, quiet: quiet)),
       ],
     );
   }
 
   Widget _card(BuildContext context, ExamEntry e, DateTime now,
-      {bool danger = false, bool quiet = false}) {
+      {required KITProvider vm, bool danger = false, bool quiet = false}) {
     // quiet = not on the current timetable: an open window here is NOT
     // something the student must act on, so no red chip
     final urgent = !quiet && e.needsAction(now);
@@ -225,6 +233,27 @@ class ExamsPage extends StatelessWidget {
       e.examType,
     ];
 
+    // R32.8: door handoff for every distinct non-cancelled sitting room the
+    // directory can certify; R32.4: seats-filled sub-line when this exam's
+    // matching SignMeUp procedure is already in memory
+    final routes = <({String room, String url})>[];
+    {
+      final places = vm.topographyManager.places;
+      final seen = <String>{};
+      for (final t in e.terms) {
+        if (t.isCancelled) continue;
+        final r = routeHandoff(places, t.room);
+        if (r != null && seen.add(r.room)) routes.add(r);
+      }
+    }
+    final seats =
+        seatsLine(vm.signMeUpManager.procedures, e.title);
+    // R32.3: a deregistration deadline renders only while it is still
+    // actionable — a passed "Abmelden bis" is history, never a live chip
+    final deregRaw = e.registered ? e.deregEnd : null;
+    final dereg =
+        (deregRaw != null && deregRaw.isAfter(now)) ? deregRaw : null;
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       shape: RoundedRectangleBorder(
@@ -243,6 +272,15 @@ class ExamsPage extends StatelessWidget {
             Text(details.join("\n"),
                 style:
                     TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
+            // R32.4: muted seat fill right under the details — a lecture
+            // that is already 159/300 full is a different decision than an
+            // empty one, and the numbers were on the wire all along
+            if (seats != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(seats,
+                    style: TextStyle(fontSize: 11.5, color: scheme.outline)),
+              ),
             const SizedBox(height: 6),
             Wrap(
               spacing: 6,
@@ -256,6 +294,16 @@ class ExamsPage extends StatelessWidget {
                   _urgentChip(L10n.t("exams.chipNotRegisteredNow"), scheme)
                 else
                   _chip(L10n.t("exams.chipNotRegistered"), scheme.outline),
+                // R32.3: muted "abmelden bis X" on registered cards — the
+                // "Register by" tier styling, quiet while there is runway
+                // and error-colored once under three days remain; expired
+                // deadlines render nothing at all
+                if (dereg != null)
+                  _chip(
+                      L10n.t("exams.chipDeregUntil", [L10n.stamp(dereg)]),
+                      L10n.daysFromNow(dereg, now) <= 3
+                          ? scheme.error
+                          : scheme.outline),
                 if (e.examNumber.isNotEmpty)
                   // plain caption, not a second pill: an identical chip
                   // for the module number invites taps that do nothing
@@ -263,10 +311,124 @@ class ExamsPage extends StatelessWidget {
                       style: TextStyle(fontSize: 11, color: scheme.outline)),
               ],
             ),
+            // R32.8: one tappable handoff row per distinct resolved room —
+            // tap opens Maps walking directions from wherever the student
+            // stands. Unresolved or online rooms never render a row, so a
+            // miss can never send the student to the wrong door.
+            for (final r in routes)
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _launchExternal(r.url),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Icon(Icons.directions_walk,
+                          size: 15, color: scheme.primary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                            "${r.room} · ${L10n.t("timetable.directions")}",
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12.5, color: scheme.primary)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
+  }
+
+  /// R32.8 seam: resolve a sitting room string through the same directory
+  /// resolver the agenda's walk hints use, then build the Maps URL. Returns
+  /// null whenever nothing is certified about the room (empty/online text,
+  /// directory miss) — the Route line is then never rendered.
+  @visibleForTesting
+  static ({String room, String url})? routeHandoff(
+      List<KITPlace> places, String room) {
+    if (room.trim().isEmpty) return null;
+    final place = _resolveRoom(places, room);
+    if (place == null) return null;
+    // same destination preference as the timetable's "Route here": exact
+    // coordinates become precise directions, an approximate place goes to
+    // Maps as a search string instead of a wrong-precise pin
+    final exact = place.latLngFromList;
+    return (
+      room: room.trim(),
+      url: exact != null
+          ? mapsDirectionsUrl(exact)
+          : mapsSearchUrl("${place.title} KIT Karlsruhe"),
+    );
+  }
+
+  /// agenda's room-cache idiom (its `_roomCache`) — class-level here because
+  /// this page is stateless: fuzzy resolution runs against the whole ~800
+  /// place directory per distinct room, not per card per rebuild; the epoch
+  /// is the directory size, exactly like the agenda's.
+  static KITPlace? _resolveRoom(List<KITPlace> places, String room) {
+    if (_roomCacheEpoch != places.length) {
+      _roomCache.clear();
+      _roomCacheEpoch = places.length;
+    }
+    return _roomCache.putIfAbsent(room, () => resolveRoomPlace(places, room));
+  }
+
+  static final Map<String, KITPlace?> _roomCache = {};
+  static int _roomCacheEpoch = -1;
+
+  /// R32.4 seam: the seats-filled sub-line for an exam — rendered only when
+  /// the matching SignMeUp procedure is already in memory (normalized title
+  /// equality, never a fetch). The models' `?? 0` defaults conflate
+  /// absent-with-zero seats; both mean "unknown" and the `placesNumber > 0`
+  /// gate excludes them, since the wire only ever carried a positive count.
+  @visibleForTesting
+  static String? seatsLine(
+      List<SignMeUpProcedure> procedures, String examTitle) {
+    if (procedures.isEmpty) return null;
+    final key = _normTitle(examTitle);
+    if (key.isEmpty) return null;
+    for (final p in procedures) {
+      if (_normTitle(p.name) != key) continue;
+      if (p.placesNumber <= 0) continue; // absent or zero: seats unknown
+      final seats =
+          L10n.t("exams.seatsFilled", [p.registrations, p.placesNumber]);
+      final allocation = _allocationWords(p.allocationType);
+      return allocation.isEmpty ? seats : "$seats · $allocation";
+    }
+    return null;
+  }
+
+  static final _titleWs = RegExp(r"\s+");
+
+  static String _normTitle(String s) =>
+      s.toLowerCase().replaceAll(_titleWs, " ").trim();
+
+  /// allocation type joins the line verbatim-ish: the camelCase wire value is
+  /// only re-split into its own words ("FirstComeFirstServed" → "First Come
+  /// First Served"), never translated or reworded.
+  static final _camelBound = RegExp(r"(?<=[a-z0-9])(?=[A-Z])");
+
+  static String _allocationWords(String type) =>
+      type.trim().replaceAllMapped(_camelBound, (_) => " ");
+
+  /// Mirror of agenda_page's private `_launchExternal` (the signmeup card
+  /// carries the same-named twin): only a well-formed http(s) URL reaches the
+  /// launcher, and a missing or refusing Maps app never throws inside a tap.
+  void _launchExternal(String raw) {
+    try {
+      final uri = Uri.parse(raw);
+      if (uri.host.isEmpty ||
+          (uri.scheme != "http" && uri.scheme != "https")) {
+        return;
+      }
+      launchUrl(uri, mode: LaunchMode.externalApplication)
+          .catchError((_) => false);
+    } on Object catch (_) {}
   }
 
   /// R29: day counter for every registered sitting ("in 12 Tagen ·

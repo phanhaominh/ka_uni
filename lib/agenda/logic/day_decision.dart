@@ -1,3 +1,4 @@
+import '../../exams/models/exam_list.dart';
 import '../../l10n/l10n.dart';
 import '../../timetable/models/webcal.dart';
 
@@ -120,10 +121,20 @@ class DayDecision {
         occ.where((o) => !o.title.startsWith("Due: ")).toList();
     final examOnly = lectureList.isNotEmpty &&
         lectureList.every((o) => o.title.startsWith("Klausur: "));
-    final first = hm((lectureList.isEmpty ? occ.first : lectureList.first).start);
+    final firstOcc = lectureList.isEmpty ? occ.first : lectureList.first;
+    final first = hm(firstOcc.start);
+    // R32.1: the lecture line names the door of that first lecture.
+    // KIT placeholder rooms ("-", "--", "ILIAS", empty — the single
+    // set ExamTerm.isPlaceholderRoom knows) carry no location, so the
+    // line says the localized "Raum folgt" instead of going silent.
+    final roomHint = lectureList.isEmpty
+        ? ""
+        : " · ${ExamTerm.isPlaceholderRoom(firstOcc.displayRoom)
+            ? L10n.t("notifs.digestRoomTba")
+            : firstOcc.displayRoom}";
     final cancelHint = cancelledTitles.isEmpty
         ? ""
-        : " · " + L10n.t("notifs.digestCancelHint", [cancelledTitles.first]);
+        : " · ${L10n.t("notifs.digestCancelHint", [cancelledTitles.first])}";
     if (lectureList.isEmpty) {
       return (
         L10n.t("notifs.digestTitleDue"),
@@ -137,7 +148,12 @@ class DayDecision {
           )
         : (
             L10n.t("notifs.digestTitle", [lectureList.length]),
-            L10n.t("notifs.digestBody", [first, cancelHint]),
+            // R32.1: the lecture line names the FIRST lecture's room -
+            // the door you actually walk to. KIT placeholders ("-", "--",
+            // "ILIAS", empty) are no location, so they get the localized
+            // "Raum folgt" instead of an empty or lying segment.
+            L10n.t("notifs.digestBody",
+                [first, "$roomHint$cancelHint"]),
           );
   }
 }

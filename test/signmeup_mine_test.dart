@@ -325,4 +325,83 @@ void main() {
           scheme.outline);
     });
   });
+
+  group("seats sub-line (R32.4)", () {
+    Future<void> pumpCard(
+        WidgetTester tester, List<SignMeUpRegistration> rows) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: SignMeUpMineCard(rows: rows, now: DateTime(2026, 11, 8, 8)),
+          ),
+        ),
+      ));
+    }
+
+    List<SignMeUpRegistration> mineFixture() {
+      final decoded =
+          jsonDecode(File('test/fixtures/myregs.json').readAsStringSync());
+      return (decoded['registrations'] as List)
+          .map((e) =>
+              SignMeUpRegistration.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+
+    test('the live fixture announces seats for exactly one registration', () {
+      final withSeats =
+          mineFixture().where((r) => r.placesNumber > 0).toList();
+      expect(withSeats.map((r) => r.name), ["Advanced Mathematics I"]);
+      expect(withSeats.single.registrationsCount, 159);
+      expect(withSeats.single.placesNumber, 300);
+    });
+
+    test('the ?? 0 conflation: absent and explicit zero both stay '
+        'non-positive, so the > 0 card gate hides both "unknown" shapes', () {
+      final absent = reg({"name": "Fehlt"});
+      final zero = reg(
+          {"name": "Null", "placesNumber": 0, "registrations": 479});
+      expect(absent.placesNumber, 0);
+      expect(zero.placesNumber, 0);
+      expect(absent.registrationsCount, 0);
+      // 479 registrations with 0 announced places is "unknown", not full
+      expect(zero.registrationsCount, 479);
+    });
+
+    testWidgets('positive places render the fill line, absent/zero never do',
+        (tester) async {
+      await pumpCard(tester, [
+        reg({
+          "name": "Belegter Kurs",
+          "stateLabel": "open",
+          "placesNumber": 20,
+          "registrations": 13,
+        }),
+        reg({"name": "Ohne Zahl", "stateLabel": "accepted"}),
+        reg({
+          "name": "Plätze 0",
+          "stateLabel": "accepted",
+          "placesNumber": 0,
+          "registrations": 479,
+        }),
+      ]);
+      expect(find.text("13/20 belegt"), findsOneWidget);
+      // the 479 registrations of the placesNumber-0 row must not leak into
+      // any "479/0"-style line
+      expect(find.textContaining(RegExp(r"\d+/\d+ belegt")), findsOneWidget);
+      expect(find.textContaining("479"), findsNothing);
+    });
+
+    testWidgets('live fixture: the 159/300 row shows its fill',
+        (tester) async {
+      await pumpCard(tester, mineFixture());
+      expect(find.text("159/300 belegt"), findsOneWidget);
+    });
+
+    test('a seats-only row is content: activeRows keeps it', () {
+      final only = reg(
+          {"name": "Nur Sitze", "placesNumber": 20, "registrations": 13});
+      expect(SignMeUpMineCard.activeRows([only], DateTime(2026, 11, 8, 8)),
+          contains(same(only)));
+    });
+  });
 }

@@ -41,6 +41,28 @@ void main() {
         startsWith("from 09:00"));
   });
 
+  // R32.1: the room placeholder wording is localized, the real room is not
+  test("english digest says 'Room TBA', german 'Raum folgt'", () async {
+    SharedPreferences.setMockInitialValues({L10n.languagePrefKey: "en"});
+    await L10n.reload();
+    addTearDown(() async {
+      SharedPreferences.setMockInitialValues({});
+      await L10n.reload();
+    });
+    final tba = MeiNotifications.digestTexts([
+      IcsOccurrence(
+          start: DateTime(2026, 11, 3, 8),
+          end: DateTime(2026, 11, 3, 9),
+          title: "Analysis I",
+          room: "-",
+          uid: "tba-en")
+    ]);
+    expect(tba.$2, contains("Room TBA"));
+    final roomed = MeiNotifications.digestTexts([_occ("Analysis I", 8)]);
+    expect(roomed.$2, contains("AVI 105"));
+    expect(roomed.$2, isNot(contains("Room TBA")));
+  });
+
   test("exam-only digest day says 'Klausur um HH:MM', not the count", () {
     final (title, body) = MeiNotifications.digestTexts(
         [_occ("Klausur: EM I", 9), _occ("Klausur: EM II", 14)]);

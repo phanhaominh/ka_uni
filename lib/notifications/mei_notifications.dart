@@ -39,6 +39,9 @@ const String channelIdLibrary = "mei_library";
 /// · 900-999 morning digest · 1000-1019 CHANGED heads-up rotation ·
 /// 1100-1199 evening digest (R29, id = 1100 + day-of-month of TOMORROW) ·
 /// 1200-1239 grade-published pushes (R29, immediate, wall-clock slot like
+/// [changeSlot]) · 1300-1319 exam deregistration T−24h pings (R32.3, one
+/// dense sweep rebuilt with the 500-band exam family) · 1320-1339
+/// prereq-gate heads-ups (R32.5, immediate, wall-clock slot like
 /// [changeSlot]).
 class MeiNotifications {
   static final FlutterLocalNotificationsPlugin _plugin =
@@ -482,6 +485,24 @@ class MeiNotifications {
               payload: NotificationPayload.exams);
         }
       }
+      // R32.3: the MIRROR case - an already-registered exam can still be
+      // talked out of its attempt until "Abmelden bis". One T−24h ping per
+      // exam with a future deregEnd (fresh band 1300-1319). Rebuilt
+      // together with the window family above, which is the whole dedup
+      // story: cancelRange first, arm dense from the fresh list, and
+      // [deregSelection] refuses an alarm whose moment has already
+      // passed - a ping that fired is never re-armed by the next fetch.
+      await _cancelRange(1300, 1319);
+      var deregId = 1300;
+      for (final sel in deregSelection(exams, now)) {
+        if (epoch != teardownEpoch) return; // logout mid-flight
+        final (dTitle, dBody) = deregTexts(sel.exam);
+        await _zoned(deregId++, channelIdDeadlines, dTitle, dBody,
+            sel.remindAt,
+            deadlines: true,
+            // the chip the ping names renders on the exam card
+            payload: NotificationPayload.exams);
+      }
       // snapshot only ever describes a LIVE account: fence the write
       // exactly like the alarms above (C78's live-url probe pattern)
       if (epoch != teardownEpoch ||
@@ -500,12 +521,49 @@ class MeiNotifications {
                 "s": e.windowStart?.toIso8601String(),
                 "e": e.windowEnd?.toIso8601String(),
                 "w": e.windowStatus.name,
+                // R32.3: dereg deadline rides the same snapshot (a
+                // missing "d" on an old snapshot simply means "unknown",
+                // so this needs no migration)
+                "d": e.deregEnd?.toIso8601String(),
               }
           ]));
     } on Object catch (e) {
       if (kDebugMode) print("exam reminders failed: $e");
     }
   }
+
+  /// R32.3 pure selection for the 1300-1319 dereg band: only a REGISTERED
+  /// exam with a deregEnd more than 24 h out gets a ping, exactly once.
+  /// A reminder whose moment already passed is never re-armed - that
+  /// one-shot either fired (cancel+rebuild after it cannot find it again:
+  /// the moment stays in the past) or was skipped while the app slept,
+  /// and re-arming it at, say, 3 h before the deadline would nag at the
+  /// wrong time. [max] mirrors the band size (1300-1319).
+  @visibleForTesting
+  static List<({ExamEntry exam, DateTime remindAt})> deregSelection(
+      List<ExamEntry> exams, DateTime now,
+      {int max = 20}) {
+    final out = <({ExamEntry exam, DateTime remindAt})>[];
+    for (final e in exams) {
+      final end = e.deregEnd;
+      if (end == null || !e.registered) continue;
+      final remindAt = end.subtract(const Duration(hours: 24));
+      if (!remindAt.isAfter(now)) continue;
+      out.add((exam: e, remindAt: remindAt));
+      if (out.length >= max) break;
+    }
+    return out;
+  }
+
+  /// Title/body pair of one dereg ping (pure, testable): names the
+  /// module and the full deadline (long `L10n.deadline` form - unlike a
+  /// window end seen the same day, a T−24h ping crosses days, so hour+
+  /// minute alone would be ambiguous).
+  @visibleForTesting
+  static (String, String) deregTexts(ExamEntry exam) => (
+        L10n.t("notifs.deregTitle"),
+        L10n.t("notifs.deregBody", [exam.title, L10n.deadline(exam.deregEnd!)]),
+      );
 
   /// 24 h before a SignMeUp registration window closes while the student
   /// still has not signed up (missed Übungsgruppen slot = semester stall).
@@ -557,8 +615,16 @@ class MeiNotifications {
   }
 
   /// Morning digest: one calm summary per upcoming lecture-day, scheduled
-  /// at 07:30 local for the next two days (id keyed by weekday-of-target
-  /// so daily reschedules overwrite, never stack).
+  /// for the next two days (id keyed by weekday-of-target so daily
+  /// reschedules overwrite, never stack).
+  ///
+  /// R32.2 (slot): a day with lectures wakes the digest WITH its first
+  /// lecture, not at a fixed 07:30 - [digestSlot] = max(07:30, first
+  /// lecture − 75 min), computed from the cached feed AT SCHEDULE TIME.
+  /// Free/cancelled/unknown days keep the plain 07:30. "Tomorrow's first
+  /// start moved" needs no new hook: every fetch already re-arms this
+  /// family (fetch tails + the 30-min poll call this method), and the
+  /// 900-999 cancel-then-rearm makes the recompute replace the old slot.
   static Future<void> scheduleMorningDigest(WebcalFeed feed) async {
     if (!MeiNotifications.supported) return;
     // C61: contained fire-and-forget scheduler (see the lecture family).
@@ -581,7 +647,16 @@ class MeiNotifications {
         final day = DateTime(now.year, now.month, now.day + ahead);
         final decision = DayDecision.compute(
             feed: feed, day: day, feedFresh: true, changes: pendingChanges);
-        final at = DateTime(day.year, day.month, day.day, 7, 30);
+        // R32.2: first lecture of the day (Due rows are no lectures -
+        // their day keeps the plain 07:30), lectures arrive sorted
+        DateTime? firstLectureStart;
+        for (final o in decision.lectures) {
+          if (!o.title.startsWith("Due: ")) {
+            firstLectureStart = o.start;
+            break;
+          }
+        }
+        final at = digestSlot(day, firstLectureStart);
         if (!at.isAfter(now)) continue;
         final id = 900 + (day.day * 2 + ahead) % 100;
         // R24: free/cancelled days now ANSWER instead of being skipped —
@@ -603,6 +678,20 @@ class MeiNotifications {
     } on Object catch (e) {
       if (kDebugMode) print("morning digest failed: $e");
     }
+  }
+
+  /// R32.2 pure slot math for [scheduleMorningDigest]: the digest fires
+  /// at max(07:30, first lecture − 75 min) on its day — enough lead to
+  /// shower and travel, never before 07:30, and on a day without a
+  /// lecture (free/cancelled, or nothing we can name) the plain 07:30.
+  /// Pure so the boundary is pinned in test/notification_change_slot_test
+  /// exactly like [changeSlot]'s band math.
+  @visibleForTesting
+  static DateTime digestSlot(DateTime day, DateTime? firstLectureStart) {
+    final base = DateTime(day.year, day.month, day.day, 7, 30);
+    if (firstLectureStart == null) return base;
+    final earlier = firstLectureStart.subtract(const Duration(minutes: 75));
+    return earlier.isAfter(base) ? earlier : base;
   }
 
   /// Title/body pair for one digest day (pure, testable). A day whose
@@ -739,6 +828,33 @@ class MeiNotifications {
 
   static int _gradeSlotRotation = 0;
 
+  /// R32.5: prereq-gate heads-up - ONE push per "the Ampel's known-block
+  /// map grew" event, posted immediately by the ledger diff in
+  /// CampusManager. Same wall-clock-slot discipline as [notifyGradePublished]
+  /// (fresh band 1320-1339); deadlines channel, grades deep link (the
+  /// blocked rows are the Schein-Ampel card on the grades page).
+  static Future<void> notifyPrereqBlocked(String title, String body) async {
+    if (!MeiNotifications.supported) return;
+    if (!_ready) await init(requestPermissions: false);
+    try {
+      await _plugin.show(
+          1320 +
+              changeSlot(DateTime.now().millisecondsSinceEpoch,
+                  _prereqSlotRotation++),
+          title,
+          body,
+          NotificationDetails(
+              android: AndroidNotificationDetails(
+                  channelIdDeadlines, L10n.t("notifs.channelDeadlines"),
+                  importance: Importance.max)),
+          payload: NotificationPayload.grades);
+    } on Object catch (e) {
+      if (kDebugMode) print("prereq push failed: $e");
+    }
+  }
+
+  static int _prereqSlotRotation = 0;
+
   /// Full reminder + background-job teardown for logout.
   static Future<void> cancelAllScheduled() async {
     teardownEpoch++;
@@ -835,7 +951,8 @@ class MeiNotifications {
                     orElse: () => ExamWindowStatus.unknown),
                 windowStart:
                     DateTime.tryParse(e["s"] as String? ?? ""),
-                windowEnd: DateTime.tryParse(e["e"] as String? ?? ""));
+                windowEnd: DateTime.tryParse(e["e"] as String? ?? ""),
+                deregEnd: DateTime.tryParse(e["d"] as String? ?? ""));
           } on Object {
             return null; // one unreadable snapshot row is a dropped row
           }

@@ -46,7 +46,7 @@ void main() {
     final raw =
         File('test/fixtures/possibleexams_edgecases.html').readAsStringSync();
     final exams = ExamListParser.parse(raw);
-    expect(exams.length, 3);
+    expect(exams.length, 4);
 
     final reg = exams.firstWhere((e) => e.examNumber == "01-A-9001");
     expect(reg.registered, isTrue);
@@ -69,6 +69,20 @@ void main() {
     final openEnded = exams.firstWhere((e) => e.examNumber == "01-A-9003");
     expect(openEnded.needsAction(DateTime(2026, 11, 20)), isTrue);
     expect(openEnded.windowEnd, isNull);
+
+    // R32.3: German "Abmelden bis" lands on deregEnd - and on NOTHING
+    // else. "Abmelden bis" must never feed the window fields (An ≠ Ab in
+    // _deDateTime; this pins that it stays that way): the deadline of a
+    // registered exam is not an Anmeldung window.
+    final dereg = exams.firstWhere((e) => e.examNumber == "01-A-9004");
+    expect(dereg.registered, isTrue);
+    expect(dereg.deregEnd, DateTime(2027, 2, 19, 23, 59));
+    expect(dereg.windowStatus, ExamWindowStatus.unknown,
+        reason: "dereg date must never set a window status");
+    expect(dereg.windowStart, isNull,
+        reason: "dereg date must never feed windowStart");
+    expect(dereg.windowEnd, isNull,
+        reason: "dereg date must never feed windowEnd");
   });
 
   test('range guard counts date fragments, not dash spelling', () {
@@ -140,6 +154,12 @@ void main() {
     expect(unreg.windowStatus, ExamWindowStatus.unknown,
         reason: '"Unregister until" is the DEREGISTRATION deadline');
     expect(unreg.windowEnd, isNull);
+    expect(unreg.windowStart, isNull,
+        reason: "dereg date must never feed windowStart");
+    // R32.3: the EN literal parses onto deregEnd (US M/D + 11:59 PM ->
+    // 23:59 via the shared enWindowDate rehydration)
+    expect(unreg.registered, isTrue, reason: '"Signed in" chip');
+    expect(unreg.deregEnd, DateTime(2027, 2, 19, 23, 59));
   });
 
   test('examListHasRows separates the empty state from a cell reflow', () {

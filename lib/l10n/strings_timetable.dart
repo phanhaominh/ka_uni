@@ -52,6 +52,16 @@ const Map<String, String> de_timetable = {
   "timetable.changeMoved": "Verschoben: {0} · {1} → {2}{3}",
   "timetable.changeChanged": "Geändert: {0} · {1}{2}",
   "timetable.changeRoomDelta": " · Raum {0} → {1}",
+  // R32.7 CHRONICLE ("letzte Änderungen" page) + its agenda band entry;
+  // R32.6 hero line needs no string (struck room → new room, rooms are
+  // identifiers and the arrow is punctuation)
+  "timetable.chronicleTitle": "Letzte Änderungen",
+  "timetable.chronicleCoverage":
+      "Änderungen, die die App seit dem letzten Poll sah",
+  "timetable.chronicleCap":
+      "{0} / max. {1} gespeichert · ältester Eintrag: {2}",
+  "timetable.chronicleEmpty": "Noch keine Änderungen gespeichert.",
+  "timetable.olderChanges": "ältere Änderungen",
   // appointment detail sheet; home.profileLoading rides the flat l10n
   // map from here because slice rules confine new strings to this file
   "timetable.idLabel": "ID:",
@@ -125,6 +135,13 @@ const Map<String, String> en_timetable = {
   "timetable.changeMoved": "Moved: {0} · {1} → {2}{3}",
   "timetable.changeChanged": "Changed: {0} · {1}{2}",
   "timetable.changeRoomDelta": " · Room {0} → {1}",
+  // R32.7 CHRONICLE + agenda band entry (see de_timetable)
+  "timetable.chronicleTitle": "Recent changes",
+  "timetable.chronicleCoverage":
+      "Changes the app saw since the last poll",
+  "timetable.chronicleCap": "{0} / max {1} stored · oldest entry: {2}",
+  "timetable.chronicleEmpty": "No changes stored yet.",
+  "timetable.olderChanges": "older changes",
   "timetable.timeLabel": "Time:",
   "timetable.aliasesLabel": "Also known as:",
   "timetable.openCampusMap": "Open in campus map",
