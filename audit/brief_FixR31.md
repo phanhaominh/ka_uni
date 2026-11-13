@@ -3,17 +3,16 @@ Prereq context: audit/r31fleet/REPORT.md, audit/r31fleet/PANEL.md.
 Order = panel consensus (Pragmatist costs + RootCause/DataIntegrity findings);
 AdversarialVerifier adjudication appends at bottom when delivered.
 
-## 0. Ground-truth gate (owner input required — decides item B's severity)
-`isTakingThisSemester == false` (lecture absent from the webcal timetable) silently gates ALL
-urgency surfaces: deadline alarms (campus_manager:2777 `!= false`), Act-now (exams_page:58 via
-catalog :52-55), agenda Deadlines rows (agenda_page:559). Observed victim: "IT and Data Science"
-(exam 26.11.2026, registration closes 22.11.) — zero alarms, invisible from all three.
-OWNER QUESTION: is ITDS actually planned this term?
-  YES  -> tri-state must not vote false from timetable absence alone. Rule: an exam whose
-          registration window is OPEN forces the verdict to null ("unknown -> stay loud").
-          One function, campus_manager.isTakingThisSemester; + tri-state test (open window +
-          absent lecture => !false) + alarm-schedule test.
-  NO   -> app is correct; catalog section label is doing its job. Downgrade to none.
+## 0. Ground-truth gate — RESOLVED 2026-11-13: app behavior was CORRECT (non-issue)
+OWNER ANSWER: ITDS not this term. Handbook cross-check confirms: M-MACH-106708 "IT and Data
+Science", Fundamentals of Engineering subject, 7 CP, mandatory *to the degree overall*,
+recurrence **each summer term** (recommended 2. Semester = SS 2027). The 26.11.2026 exam with
+22.11 registration close is the winter-term repeat/early-credit sitting (§1.3 at least one exam
+date per semester) — catalog placement + alarm silence + agenda exclusion all correct.
+isTakingThisSemester heuristic kept as-is; no tri-state change this wave.
+(Ancillary durable facts: Orientation Exam = AM I + EM I, must pass by end of 2. Semester;
+subjects' CP: Fundamentals 127 / Specialization 12 (pick major) / International Studies 14 /
+Internship 12 / Thesis 15 double-weighted; total 180.)
 
 ## A. F-9 support-bundle version drift (~25 min, do first — later bundles measure correctly)
 kAppVersion const (diagnostics/support_state.dart:11) prints 0.8.9+63 on +64 installs.

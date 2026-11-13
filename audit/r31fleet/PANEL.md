@@ -67,8 +67,10 @@ F-4/F-7/F-11/F-12 batch.
 D4 Fire clock: 30-min timebox, else permanent RUNBOOK rule "Fire clock untrusted; drive.py stamps
 host wall-time on artifacts; date verdicts normalized host-side".
 FINAL MERGED ORDER (post-adjudication): F-9 -> F-6 -> F-1 (probe first, see PANEL F-1) -> F-10 ->
-F-2 fence -> D1 countdown tier. Ground-truth gate for the ITDS alarm bug in brief_FixR31 item 0
-awaits owner answer.
+F-2 fence -> D1 countdown tier. Ground-truth gate RESOLVED (owner + handbook: ITDS is a summer-term
+module, catalog placement was correct; collateral downgraded to non-issue — see brief_FixR31 item 0).
+Feature direction from owner: module-handbook integration -> audit/brief_Handbook.md (Wave R32
+candidate, after the R31 fix wave).
 
 ## F-1 mechanism — ROOTCAUSE ENGINEER (conf 0.8; report's "probe never fires" RETRACTED)
 - Notify chain PROVEN intact (single root KITProvider; notify strictly after durable stamp write;
