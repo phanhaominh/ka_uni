@@ -842,6 +842,56 @@ class MeiNotifications {
         }(),
     ].whereType<ExamEntry>().toList());
   }
+
+  /// The poll's carried-layer merge (pure): fresh feed body + every
+  /// sentinel layer block the carried cache document holds. The feed-
+  /// coverage dedupe of the carried synth block judges against the fresh
+  /// feed alone (b48: the poll re-seeded the pre-dedupe block verbatim,
+  /// reviving double agenda rows the foreground paths now filter) -
+  /// suppress only feed-covered events, keep synth-only ones (AdvMath,
+  /// MINT tutorials). R24 wave B: the ILIAS deadline block survives a
+  /// fresh feed pull too (rebuilt from announcements every cycle, carried
+  /// between).
+  static String mergePollLayers(String feedBody, String carriedCache) =>
+      CampusManager.injectDueSynth(
+          CampusManager.injectPersonalIcs(
+              CampusManager.injectSignMeUpSynth(
+                  CampusManager.injectExamSynth(feedBody,
+                      CampusManager.extractExamSynth(carriedCache)),
+                  CampusManager.dropSignMeUpSynthCoveredByFeed(
+                      feedBody,
+                      CampusManager.extractSignMeUpSynth(carriedCache))),
+              CampusManager.extractPersonalIcs(carriedCache)),
+          CampusManager.extractDueSynth(carriedCache));
+
+  /// Read-modify-write of the poll into DATA_webcalIcsCache: the baseline
+  /// is read LIVE (the legacy snapshot this isolate loaded can predate a
+  /// foreground write), the fresh feed is merged with the carried layers,
+  /// and the merged document is committed.
+  ///
+  /// F-2/T4 fence (C10 family): the change-diff above sits many platform
+  /// awaits behind that baseline; a main-isolate reapply* landing in
+  /// between owns NEWER synth/exam/due/personal layers, and committing
+  /// the baseline-merged document would blind-overwrite them (live
+  /// device: tutorials vanished behind a successful-looking poll).
+  /// SharedPreferences offers no CAS, so the guard is re-read-and-re-
+  /// splice: when the body moved since the baseline, splice the fresh
+  /// feed into the MOVED body instead; worst case shrinks to one await.
+  @visibleForTesting
+  static Future<String> mergePollCache(String feedBody) async {
+    final live = SharedPreferencesAsync();
+    final prefs = await SharedPreferences.getInstance();
+    final baseline = (await live.getString(WebcalKeys.icsCache)) ?? "";
+    var merged = mergePollLayers(feedBody, baseline);
+    final moved = (await live.getString(WebcalKeys.icsCache)) ?? "";
+    if (moved != baseline) merged = mergePollLayers(feedBody, moved);
+    await prefs.setString(WebcalKeys.icsCache, merged);
+    // F-2/T5: content-changing RMW moves the stamp (same rule as the
+    // reapply* writes; the banner tells the truth after a poll too)
+    await prefs.setString(
+        WebcalKeys.fetchedAt, DateTime.now().toIso8601String());
+    return merged;
+  }
 }
 
 /// C28: one background ILIAS announcements diff, piggy-backed on the same
@@ -1044,31 +1094,9 @@ void meiBackgroundCallback() {
       // keep the synthetic tutorials, exam sittings AND the imported
       // personal ICS in the cache: the agenda renders today/tomorrow
       // straight from it and a cold start may fail to re-inject (expired
-      // plus session)
-      final staleCache =
-          (await prefsLive.getString("DATA_webcalIcsCache")) ?? "";
-      var mergedRaw = CampusManager.injectDueSynth(
-          CampusManager.injectPersonalIcs(
-              CampusManager.injectSignMeUpSynth(
-                  CampusManager.injectExamSynth(
-                      body, CampusManager.extractExamSynth(staleCache)),
-                  // feed-coverage dedupe of the CARRIED synth block (b48: the
-                  // poll re-seeded the pre-dedupe block verbatim, reviving
-                  // double agenda rows the foreground paths now filter):
-                  // judge the carried block against the FRESH feed alone
-                  // (same rule as CampusManager's foreground embed) - suppress
-                  // only feed-covered events, keep synth-only ones (AdvMath,
-                  // MINT tutorials)
-                  CampusManager.dropSignMeUpSynthCoveredByFeed(
-                      body, CampusManager.extractSignMeUpSynth(staleCache)),
-              ),
-              CampusManager.extractPersonalIcs(staleCache)),
-          // R24 wave B: ILIAS deadline block survives a fresh feed pull too
-          // (it is rebuilt from announcements every cycle, carried between)
-          CampusManager.extractDueSynth(staleCache));
-      await prefs.setString("DATA_webcalIcsCache", mergedRaw);
-      await prefs.setString(
-          "DATA_webcalFetchedAt", DateTime.now().toIso8601String());
+      // plus session). R31 F-2: read-merge-commit incl. the age stamp
+      // lives in mergePollCache (baseline read LIVE, re-splice fence).
+      var mergedRaw = await MeiNotifications.mergePollCache(body);
       // body first, fingerprint second (C10): the pair must never present
       // a new baseline over an old body; worst case a change resurfaces
       if (advanceFingerprint) {

@@ -18,6 +18,9 @@ const Map<String, String> de_exams = {
   "exams.chipRegistered": "angemeldet",
   // R29: countdown card + exam-clash warner
   "exams.countdownTitle": "Countdown",
+  // R31 D1: "If you register" tier sub-line: "<prefix> · <registerBy> <date>"
+  "exams.countdownIfRegister": "Bei Anmeldung",
+  "exams.countdownRegisterBy": "Anmelden bis",
   "exams.clashOverlapTitle": "Zeitgleiche Prüfungen",
   "exams.clashSameDayTitle": "Prüfungen am selben Tag",
   "exams.clashLine": "{0} + {1} · {2}",
@@ -45,6 +48,9 @@ const Map<String, String> en_exams = {
   "exams.chipRegistered": "registered",
   // R29: countdown card + exam-clash warner
   "exams.countdownTitle": "Countdown",
+  // R31 D1: "If you register" tier sub-line: "<prefix> · <registerBy> <date>"
+  "exams.countdownIfRegister": "If you register",
+  "exams.countdownRegisterBy": "Register by",
   "exams.clashOverlapTitle": "Overlapping exams",
   "exams.clashSameDayTitle": "Exams on the same day",
   "exams.clashLine": "{0} + {1} · {2}",

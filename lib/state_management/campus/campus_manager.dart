@@ -1641,7 +1641,13 @@ class CampusManager extends KITLoginManager {
     final wrapped = "$synthBegin\r\n$block$synthEnd\r\n";
     final at = base.lastIndexOf("END:VCALENDAR");
     if (at < 0) return "$base$wrapped";
-    return base.replaceRange(at, at, wrapped);
+    // the sentinel must own its line (see _sentinelLineStart) - a marker
+    // that does not start a line (sanitized smuggled docs carry the
+    // " END:VCALENDAR" quirk) would leave the begin line unfindable:
+    // strip/extract miss it and every re-apply embeds the block a second
+    // time. The CRLF keeps inject->strip byte-stable.
+    final sep = at == 0 || base[at - 1] == "\n" ? "" : "\r\n";
+    return base.replaceRange(at, at, "$sep$wrapped");
   }
 
   // ---- feed-coverage dedupe of the SignMeUp block (live capture b47) ----
@@ -1742,6 +1748,61 @@ class CampusManager extends KITLoginManager {
     return out.toString();
   }
 
+  // ---- F-2 fence union (R31 brief C) ----
+  // Every writer that carries a layer through a cache rewrite merges it
+  // as union(own canonical block, the layer as the LIVE cache holds it):
+  // a layer may GROW here, it may only SHRINK at its owner's proven event
+  // (a fresh SignMeUp scrape, a proven exam list, a user import, a proven
+  // deadline board). Same UID means the same event - all four emitters
+  // key UIDs by content; UID-less events dedupe by byte-equality, and a
+  // source whose events do not match the VEVENT regex at all (legacy
+  // LF-only caches) rides along whole rather than being silently lost.
+  static final _eventIdLine = RegExp(r"^UID:(.*)$", multiLine: true);
+
+  static String unionEventBlocks(String a, String b) {
+    if (a.isEmpty) return b;
+    if (b.isEmpty) return a;
+    final seen = <String>{};
+    final out = StringBuffer();
+    for (final src in [a, b]) {
+      final events = _synthEventBlock.allMatches(src).toList();
+      if (events.isEmpty) {
+        if (seen.add(src)) out.write(src);
+        continue;
+      }
+      for (final m in events) {
+        final ev = m.group(0)!;
+        final uid = _eventIdLine.firstMatch(ev)?.group(1)?.trim();
+        if (seen.add(uid == null || uid.isEmpty ? ev : "uid:$uid")) {
+          out.write(ev);
+        }
+      }
+    }
+    return out.toString();
+  }
+
+  /// The fence's shrink veto (T3): true when [next] carries every event
+  /// [current] does (UID-keyed; UID-less events by byte-equality). Event
+  /// times may move within a UID - that is a reschedule the refresh MUST
+  /// apply; dropping an event the owner never retracted is the poison.
+  static bool _blockSupersedes(String current, String next) {
+    if (current.isEmpty) return true;
+    final keys = <String>{};
+    for (final m in _synthEventBlock.allMatches(next)) {
+      final ev = m.group(0)!;
+      final uid = _eventIdLine.firstMatch(ev)?.group(1)?.trim();
+      keys.add(uid == null || uid.isEmpty ? ev : "uid:$uid");
+    }
+    for (final m in _synthEventBlock.allMatches(current)) {
+      final ev = m.group(0)!;
+      final uid = _eventIdLine.firstMatch(ev)?.group(1)?.trim();
+      if (!keys.contains(uid == null || uid.isEmpty ? ev : "uid:$uid")) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   // ---- Exam synthetic events (registered sittings from the exam list) ----
   // Same sentinel-bracketed VEVENT text as the SignMeUp block above: built
   // whenever the exam list parses successfully (exam_synth.dart, see
@@ -1767,7 +1828,9 @@ class CampusManager extends KITLoginManager {
     final wrapped = "$examSynthBegin\r\n$block$examSynthEnd\r\n";
     final at = base.lastIndexOf("END:VCALENDAR");
     if (at < 0) return "$base$wrapped";
-    return base.replaceRange(at, at, wrapped);
+    // line-start rule: see injectSignMeUpSynth
+    final sep = at == 0 || base[at - 1] == "\n" ? "" : "\r\n";
+    return base.replaceRange(at, at, "$sep$wrapped");
   }
 
   // ---- ILIAS deadline synth (announcement-titled due dates, Wave B) ----
@@ -1793,7 +1856,9 @@ class CampusManager extends KITLoginManager {
     final wrapped = "$dueSynthBegin\r\n$block$dueSynthEnd\r\n";
     final at = base.lastIndexOf("END:VCALENDAR");
     if (at < 0) return "$base$wrapped";
-    return base.replaceRange(at, at, wrapped);
+    // line-start rule: see injectSignMeUpSynth
+    final sep = at == 0 || base[at - 1] == "\n" ? "" : "\r\n";
+    return base.replaceRange(at, at, "$sep$wrapped");
   }
 
   Future<void> ensureDueSynthLoaded() async {
@@ -1861,6 +1926,9 @@ class CampusManager extends KITLoginManager {
     final merged = injectDueSynth(cached, block);
     if (merged != cached) {
       await prefs.setString(_webcalIcsCacheKey, merged);
+      // F-2/T5: content-changing RMW moves the stamp (see reapplySignMeUpSynth)
+      await prefs.setString(
+          WebcalKeys.fetchedAt, DateTime.now().toIso8601String());
       // a logout landing inside the write hops above: undo both writes
       // (the sweep may already have removed them - remove is idempotent)
       // before the block key can ride into the next account's fetch
@@ -1921,7 +1989,9 @@ class CampusManager extends KITLoginManager {
     final wrapped = "$personalBegin\r\n$block$personalEnd\r\n";
     final at = base.lastIndexOf("END:VCALENDAR");
     if (at < 0) return "$base$wrapped";
-    return base.replaceRange(at, at, wrapped);
+    // line-start rule: see injectSignMeUpSynth
+    final sep = at == 0 || base[at - 1] == "\n" ? "" : "\r\n";
+    return base.replaceRange(at, at, "$sep$wrapped");
   }
 
   /// Reads the persisted block once per process (settings screen can open
@@ -1936,8 +2006,17 @@ class CampusManager extends KITLoginManager {
 
   /// Accepts a full ICS file body; keeps only the VEVENT blocks (calendar
   /// headers would be invalid inside the subscription's VCALENDAR).
-  /// Returns null on success, "bad"/"fetch" for user-facing errors.
-  Future<String?> setPersonalIcsFromRaw(String ics) async {
+  /// Returns null on success, "bad"/"fetch"/"stale" for user-facing errors.
+  ///
+  /// [userInitiated] marks the explicit import paths (settings raw paste,
+  /// settings URL import - the user proved the calendar by handing it over
+  /// personally). The quiet 30-min URL refresh passes false: a valid-but-
+  /// fewer-events body from the faculty endpoint is an UNPROVEN shrink
+  /// (partial export or a wrong date window - R31 F-2/T3 poisoned the
+  /// whole imported block this way), so non-user writes may only restamp
+  /// or grow the imported set; shrinking stays reserved to the user.
+  Future<String?> setPersonalIcsFromRaw(String ics,
+      {bool userInitiated = true}) async {
     // smuggled sentinel lines would splice-desync every later cache
     // rewrite (see sanitizeSentinels) — strip them before anything else
     final blocks = RegExp("BEGIN:VEVENT.*?END:VEVENT", dotAll: true)
@@ -1949,6 +2028,15 @@ class CampusManager extends KITLoginManager {
     if (WebcalFeed.parse("BEGIN:VCALENDAR\r\n$block END:VCALENDAR\r\n") ==
         null) {
       return "bad";
+    }
+    if (!userInitiated) {
+      // F-2/T3 shrink veto: only the user (settings paste, settings URL
+      // import) proves a SMALLER calendar; a quiet refresh that dropped
+      // events - partial export, wrong date window - keeps the old copy
+      // in force (it may still restamp or grow the set). The live device
+      // lost every faculty lecture to one such shrunk body.
+      await ensurePersonalIcsLoaded();
+      if (!_blockSupersedes(personalIcs, block)) return "stale";
     }
     _personalIcsLoaded = true;
     personalIcs = block;
@@ -2025,7 +2113,8 @@ class CampusManager extends KITLoginManager {
       var block = blocks.join("\r\n");
       if (!block.endsWith("\r\n")) block = "$block\r\n";
       if (block.isEmpty || block == personalIcs) return;
-      final err = await setPersonalIcsFromRaw(response.body);
+      final err =
+          await setPersonalIcsFromRaw(response.body, userInitiated: false);
       if (err != null && kDebugMode) {
         print("Personal ICS refresh rejected: $err");
       }
@@ -2059,6 +2148,9 @@ class CampusManager extends KITLoginManager {
         cached.isEmpty ? "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n" : cached;
     final merged = injectPersonalIcs(base, personalIcs);
     await prefs.setString(_webcalIcsCacheKey, merged);
+    // F-2/T5: content-changing RMW moves the stamp (see reapplySignMeUpSynth)
+    await prefs.setString(
+        WebcalKeys.fetchedAt, DateTime.now().toIso8601String());
     final feed = WebcalFeed.parse(merged);
     if (feed != null) {
       timetable = gridTemplate(feed);
@@ -2073,7 +2165,6 @@ class CampusManager extends KITLoginManager {
   /// Called after a SignMeUp refresh: rebuilds the cached feed and the
   /// in-memory weekly template so the grid shows assigned groups at once.
   Future<void> reapplySignMeUpSynth(String block) async {
-    if (block == signMeUpSynth) return;
     // same teardown fence as reapplyExamSynth: the SignMeUp chain can
     // outlive a logout (cold-retry sleeps 20 s), and an old account's
     // tutorial block must not be written back into the NEW account's
@@ -2094,15 +2185,21 @@ class CampusManager extends KITLoginManager {
     // against the embedded feed ALONE - all three injected blocks stripped
     final filtered = dropSignMeUpSynthCoveredByFeed(
         stripPersonalIcs(stripSignMeUpSynth(stripExamSynth(cached))), block);
-    // byte-identity no-op on the FILTERED result: with the emitter made
-    // deterministic (content-keyed UIDs/DTSTAMP, signmeup_manager.dart)
-    // every routine pull lands here and leaves - the old DTSTAMP churn
-    // made this compare false each time, rewriting the cache and re-arming
-    // every lecture reminder + digest alarm on every refresh
-    if (filtered == signMeUpSynth) return;
+    // honest no-op compares against the PERSISTED document, not the
+    // in-memory copy (exam doctrine): a memory compare used to swallow
+    // the proven-EMPTY rebuild after a cold start - last run's tutorials
+    // stayed embedded although this scrape had proven them gone. With
+    // the deterministic emitter (content-keyed UIDs/DTSTAMP,
+    // signmeup_manager.dart) every routine pull lands on the equal case
+    // below and leaves - no rewrite, no alarm re-arm storm.
     final synth = injectSignMeUpSynth(cached, filtered);
     signMeUpSynth = filtered;
+    if (synth == cached) return;
     await prefs.setString(_webcalIcsCacheKey, synth);
+    // F-2/T5: content moved => the stamp tells the truth (one rule for
+    // every content-changing RMW, banner + F-1 probe included)
+    await prefs.setString(
+        WebcalKeys.fetchedAt, DateTime.now().toIso8601String());
     final feed = WebcalFeed.parse(synth);
     if (feed != null) {
       timetable = gridTemplate(feed);
@@ -2149,6 +2246,9 @@ class CampusManager extends KITLoginManager {
     examSynth = block;
     if (merged == cached) return;
     await prefs.setString(_webcalIcsCacheKey, merged);
+    // F-2/T5: content-changing RMW moves the stamp (see reapplySignMeUpSynth)
+    await prefs.setString(
+        WebcalKeys.fetchedAt, DateTime.now().toIso8601String());
     final feed = WebcalFeed.parse(merged);
     if (feed != null) {
       timetable = gridTemplate(feed);
@@ -2233,6 +2333,23 @@ class CampusManager extends KITLoginManager {
         extractExamSynth(prefs.getString(_webcalIcsCacheKey) ?? ""),
         DateTime.now());
     if (carried.isNotEmpty) examSynth = carried;
+  }
+
+  /// Cold-start carry-over for the SignMeUp layer - the same doctrine as
+  /// [carryExamSynthFromCache]: while this process has not proven the
+  /// tutorial list itself, its empty in-memory block has no veto over the
+  /// persisted one. Without it the first foreground write of every cold
+  /// boot projected "" into the cache and dropped the tutorials (F-2/T1,
+  /// flap variant boot_15 - they only returned after a manual SignMeUp
+  /// scrape); a proven scrape shrinks via reapplySignMeUpSynth instead,
+  /// which scrubs memory AND cache together.
+  @visibleForTesting
+  Future<void> carrySignMeUpSynthFromCache() async {
+    if (signMeUpSynth.isNotEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final carried =
+        extractSignMeUpSynth(prefs.getString(_webcalIcsCacheKey) ?? "");
+    if (carried.isNotEmpty) signMeUpSynth = carried;
   }
 
   // Loud-failure flags: parser returned nothing on a page that fetched fine
@@ -2610,6 +2727,7 @@ class CampusManager extends KITLoginManager {
       await ensurePersonalIcsLoaded();
       await ensureDueSynthLoaded();
       await carryExamSynthFromCache();
+      await carrySignMeUpSynthFromCache();
       await _webcalDiag("synth ok");
       var url =
           testWebcalUrl.isNotEmpty ? testWebcalUrl : await _ensureWebcalUrl();
@@ -2744,22 +2862,42 @@ class CampusManager extends KITLoginManager {
         }
       }
       await prefs.setString(_webcalFingerprintKey, fingerprint);
+      // F-2 FENCE, one rule for every carried layer: union(own canonical
+      // block, extractLayer(live cache)). This write is a PROJECTION, so
+      // it may grow a layer but never shrink one - shrinking belongs to
+      // the layer's owner (reapplySignMeUpSynth / a proven exam list /
+      // the user's import / a proven deadline board). Before this, the
+      // cold-start projection (signMeUpSynth=="" and friends) dropped
+      // whatever the cache held: that is the observed layer flap.
+      final carriedExam = examsLoaded
+          ? examSynth // proven list owns the block: no union, no veto lost
+          : unionEventBlocks(examSynth, extractExamSynth(cachedLive));
+      final carriedSynth =
+          unionEventBlocks(signMeUpSynth, extractSignMeUpSynth(cachedLive));
+      final carriedPersonal =
+          unionEventBlocks(personalIcs, extractPersonalIcs(cachedLive));
+      final carriedDue =
+          unionEventBlocks(dueSynth, extractDueSynth(cachedLive));
+      if (!examsLoaded) examSynth = carriedExam;
+      signMeUpSynth = carriedSynth;
+      personalIcs = carriedPersonal;
+      dueSynth = carriedDue;
       // dedupe the carried-over tutorial block against the FRESH feed
-      // before embedding (live capture b47: agenda double rows) and keep
-      // the in-memory copy in step with what was actually embedded, so
-      // reapplySignMeUpSynth's byte-identity no-op stays honest
-      final synthBlock =
-          dropSignMeUpSynthCoveredByFeed(feed.raw, signMeUpSynth);
-      signMeUpSynth = synthBlock;
+      // before embedding (live capture b47: agenda double rows) - a
+      // MERGE-TIME filter of the DOCUMENT only. Its trimmed result used
+      // to be assigned back to signMeUpSynth, so one feed-coverage blip
+      // erased a tutorial from memory until the next SignMeUp scrape;
+      // the canonical block stays whole now.
+      final synthBlock = dropSignMeUpSynthCoveredByFeed(feed.raw, carriedSynth);
       // ONE merged document for both the write and the parse (they used to
       // duplicate the inject ladder and could drift); R24 wave B adds the
       // ILIAS deadline block to the ladder
       final mergedCache = injectDueSynth(
           injectPersonalIcs(
               injectSignMeUpSynth(
-                  injectExamSynth(feed.raw, examSynth), synthBlock),
-              personalIcs),
-          dueSynth);
+                  injectExamSynth(feed.raw, carriedExam), synthBlock),
+              carriedPersonal),
+          carriedDue);
       await prefs.setString(_webcalIcsCacheKey, mergedCache);
       // age stamp for the agenda stale-data footer (also written by the
       // background poll after it rewrites the cache); hoisted so the memory

@@ -275,9 +275,14 @@ class ExamsPage extends StatelessWidget {
   /// agenda's next-exam card and this list can never disagree.
   Widget _countdownCard(
       BuildContext context, List<ExamEntry> exams, DateTime now) {
+    // R31 D1: registered rows first (rendered exactly as before), then
+    // the "If you register" tier filling the SAME limit of 6 — it never
+    // displaces a registered countdown, only shares the card.
     final list = examCountdowns(exams, now, limit: 6);
-    if (list.isEmpty) return const SizedBox.shrink();
-    final scheme = Theme.of(context).colorScheme;
+    final cond = list.length < 6
+        ? conditionalCountdowns(exams, now, limit: 6 - list.length)
+        : const <ExamCountdown>[];
+    if (list.isEmpty && cond.isEmpty) return const SizedBox.shrink();
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: Padding(
@@ -288,40 +293,77 @@ class ExamsPage extends StatelessWidget {
             Text(L10n.t("exams.countdownTitle"),
                 style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
-            for (final c in list)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 96,
-                      child: Text(
-                        // room, when ambiguous, is deliberately absent:
-                        // two pool sittings share the start and showing
-                        // one room would misattribute the sibling's
-                        L10n.dayOffset(c.at, now),
-                        style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            color: scheme.tertiary),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(c.exam.title,
+            for (final c in [...list, ...cond]) _countdownRow(context, c, now),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// One countdown row, both tiers. Registered: tertiary day counter,
+  /// plain title. Conditional (R31 D1): same skeleton, MUTED day counter
+  /// (this is an offer, not a commitment) plus the sub-line
+  /// ``If you register · Register by <windowEnd>`` — error-colored once
+  /// the window closes within 3 days (cockpit runway doctrine: warn while
+  /// there is still runway, in the one color the eye already distrusts).
+  Widget _countdownRow(
+      BuildContext context, ExamCountdown c, DateTime now) {
+    final scheme = Theme.of(context).colorScheme;
+    final end = c.windowEnd;
+    final subColor = c.conditional && end != null && L10n.daysFromNow(end, now) <= 3
+        ? scheme.error
+        : scheme.outline;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment:
+            c.conditional ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(
+              // room, when ambiguous, is deliberately absent:
+              // two pool sittings share the start and showing
+              // one room would misattribute the sibling's
+              L10n.dayOffset(c.at, now),
+              style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: c.conditional ? scheme.onSurfaceVariant : scheme.tertiary),
+            ),
+          ),
+          Expanded(
+            child: c.conditional
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(c.exam.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               fontSize: 12.5,
                               color: scheme.onSurfaceVariant)),
-                    ),
-                    Text(L10n.stamp(c.at),
-                        style:
-                            TextStyle(fontSize: 11, color: scheme.outline)),
-                  ],
-                ),
-              ),
-          ],
-        ),
+                      Text(
+                        end == null
+                            ? L10n.t("exams.countdownIfRegister")
+                            : "${L10n.t("exams.countdownIfRegister")} · "
+                                "${L10n.t("exams.countdownRegisterBy")} "
+                                "${L10n.stamp(end)}",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 10.5, color: subColor),
+                      ),
+                    ],
+                  )
+                : Text(c.exam.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 12.5, color: scheme.onSurfaceVariant)),
+          ),
+          Text(L10n.stamp(c.at),
+              style: TextStyle(fontSize: 11, color: scheme.outline)),
+        ],
       ),
     );
   }
