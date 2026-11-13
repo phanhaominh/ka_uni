@@ -164,6 +164,15 @@ the Pixel; `audit/drive.py fire shot|dump|tapxy|swipe|launch` drives it
 (artifacts in `audit/fire/`). `ensure_foreground()` aborts (exit 3) unless
 KA.Uni is the resumed activity — taps never land in someone else's app.
 
+- **This device's true geometry is `wm size` = 800x1280, and screencap PNGs
+  are the SAME 800x1280 space.** `input tap/swipe` coordinates that exceed
+  1280 height are clamped — a "vertical swipe from y=1500" is a silently
+  dead gesture, indistinguishable from a stuck scroll view. R35 hunt lost
+  ~30 min to exactly this: three pages "lost scrolling", an A/B against the
+  previous APK "proved" no regression, until `wm size` + a uiautomator
+  bounds string (`[0,0][800,1216]`) exposed the phantom coordinate space.
+  Read bounds from uiautomator dumps, not from eyeballing; re-check
+  `wm size` when a fresh session starts driving.
 - **Never poke `settings put system user_rotation` remotely.** On this
   Lineage 14.1 build the Flutter view keeps a stale display transform
   after a remote rotation flip: appbar and nav pill keep working, but ALL
