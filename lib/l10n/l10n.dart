@@ -223,6 +223,10 @@ class L10n {
     "home.modulesEmpty": "Noch keine Module geladen",
     "home.modulesEmptyBtn": "Jetzt aktualisieren",
     "home.lastUpdated": "Zuletzt aktualisiert: {0}",
+    // R35.5 gap planner
+    "home.gapplanTitle": "Freie Stunden",
+    "home.gapplanMensa": "Mensa offen",
+    "home.gapplanSeats": "Bibliothek: {0} Plätze frei",
     "home.profileLoading": "Profil wird geladen…",
     // bottom dock
     "nav.settings": "Einstellungen",
@@ -385,6 +389,10 @@ class L10n {
     "home.modulesEmpty": "No modules loaded yet",
     "home.modulesEmptyBtn": "Refresh now",
     "home.lastUpdated": "Last updated: {0}",
+    // R35.5 gap planner
+    "home.gapplanTitle": "Free hours",
+    "home.gapplanMensa": "Mensa open",
+    "home.gapplanSeats": "Library: {0} seats free",
     "home.profileLoading": "Loading profile…",
     "nav.settings": "Settings",
     "nav.dashboard": "Dashboard",

@@ -5,10 +5,19 @@ import 'package:kit_mobile/settings/types/multiple_choice_setting.dart';
 import '../types/bool_setting.dart';
 import '../types/setting.dart';
 
-const showingAvgMarkKey = "PREF_showingAvgMark";
-const showingProfileKey = "PREF_showingProfile";
+// R35.3: PREF_showingProfile and PREF_showingAvgMark were deleted WITH
+// their reads and writes (profile block demoted to the grades page).
+// The orphan keys in existing prefs are inert residue: like the deleted
+// liquidAssEverywhere (R16e) they are never read again - no purge shim.
 const showingMensaKey = "PREF_showingMensa";
 const showingLibraryKey = "PREF_showingLibrary";
+
+/// R35.3 one-release revert switch (roadmap R35.1 "one-release revert
+/// switch", parent integration contract #3): true restores the previous
+/// HOME composition (profile block + full module tree). Read in exactly
+/// ONE place - `_KITHomePageState.build`. Flip back on, ship the flip
+/// for one release, then cut the switch and the legacy branches.
+const legacyHomeKey = "PREF_legacyHome";
 const defaultIliasPageKey = "PREF_defaultIliasPage";
 // the language pref is read by L10n.reload() directly: one constant only,
 // a private duplicate could silently drift from the key that has the effect
@@ -28,16 +37,6 @@ class SettingsProvider extends ChangeNotifier {
     prepare();
   }
 
-  BoolSetting showingAvgMark = BoolSetting(
-      valueKey: showingAvgMarkKey,
-      defaultValue: true,
-      notifyCallback: () => _instance?.notifyListeners());
-
-  BoolSetting showingProfile = BoolSetting(
-      valueKey: showingProfileKey,
-      defaultValue: true,
-      notifyCallback: () => _instance?.notifyListeners());
-
   BoolSetting showMensa = BoolSetting(
       valueKey: showingMensaKey,
       defaultValue: true,
@@ -46,6 +45,13 @@ class SettingsProvider extends ChangeNotifier {
   BoolSetting showLibrary = BoolSetting(
       valueKey: showingLibraryKey,
       defaultValue: true,
+      notifyCallback: () => _instance?.notifyListeners());
+
+  /// R35.3 revert switch; default FALSE = the new HOME=TODAY
+  /// composition (no profile block, no module tree) ships.
+  BoolSetting legacyHome = BoolSetting(
+      valueKey: legacyHomeKey,
+      defaultValue: false,
       notifyCallback: () => _instance?.notifyListeners());
 
   MultipleChoiceSetting<String> defaultIliasPage = MultipleChoiceSetting(
@@ -75,8 +81,7 @@ class SettingsProvider extends ChangeNotifier {
   );
 
   List<Setting> get settings => [
-        showingAvgMark,
-        showingProfile,
+        legacyHome,
         showMensa,
         showLibrary,
         defaultIliasPage,

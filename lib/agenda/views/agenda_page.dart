@@ -1206,6 +1206,12 @@ class _AgendaPageState extends State<AgendaPage> {
           CockpitKind.examSitting => L10n.t("agenda.cockpitExamSitting"),
           CockpitKind.smuOpen => L10n.t("agenda.cockpitSmuOpen"),
           CockpitKind.smuOpens => L10n.t("agenda.cockpitSmuOpens"),
+          // R35.1: the ONE action list ports the home cards' pending
+          // states in as first-class rows - a collapse may hide items,
+          // never hide that something is still unknown
+          CockpitKind.examNext => L10n.t("agenda.nextExam"),
+          CockpitKind.unknownExams => L10n.t("agenda.examsLoading"),
+          CockpitKind.unknownSmu => L10n.t("agenda.signMeUpNotCurrent"),
         };
     IconData icon(CockpitKind k) => switch (k) {
           CockpitKind.due => Icons.assignment,
@@ -1216,6 +1222,9 @@ class _AgendaPageState extends State<AgendaPage> {
           CockpitKind.examDereg => Icons.person_off,
           CockpitKind.examSitting => Icons.event,
           CockpitKind.smuOpen || CockpitKind.smuOpens => Icons.school,
+          CockpitKind.examNext => Icons.event_available,
+          CockpitKind.unknownExams || CockpitKind.unknownSmu =>
+            Icons.help_outline,
         };
     // R33.5: the SOP early-warning row rides this card. The handbook is
     // the memoized asset future (same build-time idiom as the grades

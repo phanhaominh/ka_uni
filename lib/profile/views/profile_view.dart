@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../constants/view_constants.dart';
 import '../../grades/views/grades_page.dart';
 import 'package:flutter_svg/svg.dart';
-import 'package:kit_mobile/settings/providers/settings_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../../common_ui/block_container.dart';
@@ -10,6 +9,17 @@ import '../../l10n/l10n.dart';
 import '../../state_management/kit_provider.dart';
 import '../../toasts/models/toasts_provider.dart';
 
+/// R35.3B: REMOVED from the default home composition. This card is now
+/// reachable ONLY behind the one-release revert switch (PREF_legacyHome,
+/// read once in `_KITHomePageState.build`); its always-visible content
+/// (degree, semester, name, matriculation) was relocated to
+/// [GradesPage._identityCard], average/CP already live in that page's
+/// summary card, and its grades-entry became the home [ProfileDoorCard].
+/// The PREF_showingAvgMark toggle is gone (avg+CP pair renders - the
+/// old default); F-11's fake "0,0" is fixed here for the revert window:
+/// an unavailable average prints "—" exactly like the grades page
+/// ("0,0" is never a real German mark: 1,0..5,0 / "nicht bestanden").
+/// CUT this file together with the revert switch next wave.
 class ProfileView extends StatelessWidget {
   const ProfileView({super.key});
 
@@ -17,7 +27,6 @@ class ProfileView extends StatelessWidget {
   Widget build(BuildContext context) {
     final vm = Provider.of<KITProvider>(context);
     final toastsProvider = Provider.of<ToastsProvider>(context);
-    final settingsVM = Provider.of<SettingsProvider>(context);
 
     final theme = Theme.of(context);
 
@@ -126,54 +135,41 @@ class ProfileView extends StatelessWidget {
             ),
           ),
 
-          !settingsVM.showingAvgMark.value
-              ? BlockContainer(
-                  padding: EdgeInsets.only(top: 7),
+          // R35.3B: the PREF_showingAvgMark toggle is deleted; the
+          // avg+CP pair renders the way the pref's default did. F-11:
+          // Student.empty prints avgMark "0,0" - never a real German
+          // mark - and used to paint that fake zero where the grades
+          // page shows "—"; it now prints "—" too. Same for the empty
+          // string a parse can leave behind.
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              BlockContainer(
+                padding: EdgeInsets.only(top: 7),
+                child: SizedBox(
+                  width: MediaQuery.of(context).size.width * 0.36,
+                  // fixed 0.36*screen budget: the German label overflows it
+                  // at large font scales without Flexible + ellipsis
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // the exact inflexible-Text-in-spaceBetween-Row bug the
-                      // sibling rows guard against: with the avg-mark toggle
-                      // off, the German "Leistungspunkte" label pushed the
-                      // ECTS value past the card edge at large font scales
                       Flexible(
-                        child: Text(L10n.t("settings.creditPoints"),
+                        child: Text(L10n.t("settings.avgGrade"),
                             style: theme.textTheme.titleMedium,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis),
                       ),
-
+                      const SizedBox(width: 6),
                       Text(
-                        vm.student.ectsAcquired,
-                        style: theme.textTheme.titleMedium,
-                      ),
+                          vm.student.avgMark.trim().isEmpty ||
+                                  vm.student.avgMark == "0,0"
+                              ? L10n.t("grades.valueNone")
+                              : vm.student.avgMark,
+                          style: theme.textTheme.titleMedium),
                     ],
-                  ))
-              : Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    BlockContainer(
-                      padding: EdgeInsets.only(top: 7),
-                      child: SizedBox(
-                        width: MediaQuery.of(context).size.width * 0.36,
-                        // fixed 0.36*screen budget: the German label overflows it
-                        // at large font scales without Flexible + ellipsis
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Flexible(
-                              child: Text(L10n.t("settings.avgGrade"),
-                                  style: theme.textTheme.titleMedium,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(vm.student.avgMark.toString(),
-                                style: theme.textTheme.titleMedium),
-                          ],
-                        ),
-                      ),
-                    ),
+                  ),
+                ),
+              ),
                     BlockContainer(
                         padding: EdgeInsets.only(top: 7),
                         child: SizedBox(
@@ -193,8 +189,8 @@ class ProfileView extends StatelessWidget {
                             ],
                           ),
                         )),
-                  ],
-                ),
+            ],
+          ),
 
           // the Studienverlauf tree aggregated into a pass/fail/pending
           // ledger with the 30 CP orientation milestone; the data is already

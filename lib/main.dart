@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/credentials/models/auth_result.dart';
@@ -92,6 +93,29 @@ void main() async {
         await MeiNotifications.takeLaunchNotificationPayload();
     if (launchPayload != null) {
       NotificationDeepLinkRouter.instance.handleTap(launchPayload);
+    }
+    // R35.7: kauni://<token> links (DeepLinkActivity, Android) enter the
+    // SAME queue as notification taps. Cold start: the payload rides the
+    // launch intent and is pulled once here; warm: MainActivity pushes it
+    // in on onNewIntent. Unknown tokens were already dropped natively and
+    // map to null here too: the app launched, nothing routes.
+    try {
+      const kauniChannel =
+          MethodChannel("com.dandemidov.kit_mobile/deeplink");
+      kauniChannel.setMethodCallHandler((call) async {
+        if (call.method == "onDeepLink") {
+          NotificationDeepLinkRouter.instance
+              .handleTap(call.arguments as String?);
+        }
+      });
+      final kauniPayload = await kauniChannel
+          .invokeMethod<String>("takeLaunchPayload");
+      if (kauniPayload != null) {
+        NotificationDeepLinkRouter.instance.handleTap(kauniPayload);
+      }
+    } on Object catch (e) {
+      // no such channel off Android (tests, desktop, web): not a deep link
+      if (kDebugMode) print("kauni deep link bootstrap failed: $e");
     }
     await registerBackgroundPolling();
     await registerTestPollOnce();

@@ -4,8 +4,10 @@ const Map<String, String> de_settings = {
   // settings page
   "settings.title": "Einstellungen",
   "settings.sectionHomepage": "Homepage",
-  "settings.showProfile": "Profil anzeigen",
-  "settings.showAvgGrade": "Durchschnittsnote anzeigen",
+  // R35.3: showProfile/showAvgGrade deleted with their prefs; the
+  // one-release revert switch took their seat (temporary key - remove
+  // it together with PREF_legacyHome next wave).
+  "settings.legacyHome": "Alte Startseite anzeigen",
   "settings.iliasStartPage": "Startseite",
   "settings.iliasPageDashboard": "Dashboard",
   "settings.iliasPageCourses": "Meine Kurse & Gruppen",
@@ -127,7 +129,6 @@ const Map<String, String> de_settings = {
   "settings.login": "Einloggen",
   // profile view
   "settings.degreeProgram": "Studiengang",
-  "settings.creditPoints": "Leistungspunkte",
   "settings.avgGrade": "Note (⌀)",
   "settings.creditsShort": "LP",
   // home page
@@ -156,8 +157,8 @@ const Map<String, String> en_settings = {
   // settings page
   "settings.title": "Settings",
   "settings.sectionHomepage": "Home",
-  "settings.showProfile": "Show profile",
-  "settings.showAvgGrade": "Show average grade",
+  // R35.3 mirror of the de block (temporary one-release switch key)
+  "settings.legacyHome": "Show previous home layout",
   "settings.iliasStartPage": "Start page",
   "settings.iliasPageDashboard": "Dashboard",
   "settings.iliasPageCourses": "My Courses & Groups",
@@ -274,7 +275,6 @@ const Map<String, String> en_settings = {
   "settings.login": "Log in",
   // profile view
   "settings.degreeProgram": "Degree program",
-  "settings.creditPoints": "Credits",
   "settings.avgGrade": "Grade (avg)",
   "settings.creditsShort": "CP",
   // home page

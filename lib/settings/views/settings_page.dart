@@ -87,22 +87,20 @@ class _SettingsPageState extends State<SettingsPage> {
                 BlockContainer(
                   child: Column(
                     children: [
+                      // R35.3: the "Show profile" + "Show average grade"
+                      // rows died with their PREF_showingProfile /
+                      // PREF_showingAvgMark keys (reads AND writes, same
+                      // commit). In their seat: the one-release revert
+                      // switch for the HOME=TODAY split.
                       SettingRow(
-                          title: L10n.t("settings.showProfile"),
+                          title: L10n.t("settings.legacyHome"),
                           // tapping the card toggles the switch, as on the
                           // platform's own settings rows
-                          onTap: () => settingsVM.showingProfile
-                              .set(!settingsVM.showingProfile.value),
+                          onTap: () => settingsVM.legacyHome
+                              .set(!settingsVM.legacyHome.value),
                           trailing: CupertinoSwitch(
-                              value: settingsVM.showingProfile.value,
-                              onChanged: settingsVM.showingProfile.set)),
-                      SettingRow(
-                          title: L10n.t("settings.showAvgGrade"),
-                          onTap: () => settingsVM.showingAvgMark
-                              .set(!settingsVM.showingAvgMark.value),
-                          trailing: CupertinoSwitch(
-                              value: settingsVM.showingAvgMark.value,
-                              onChanged: settingsVM.showingAvgMark.set)),
+                              value: settingsVM.legacyHome.value,
+                              onChanged: settingsVM.legacyHome.set)),
                       SettingRow(
                           title: L10n.t("mensa.toggle"),
                           onTap: () => settingsVM.showMensa

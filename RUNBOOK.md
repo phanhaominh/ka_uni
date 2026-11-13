@@ -716,5 +716,52 @@ CockpitKind.frb switch arms a mid-wave compile-blocker forced).
 - R35.8 DOCK DEAD-ENTRY: RESOLVED-STALE — the "fake empty PHPSESSID index-2 trap" the critic
   named was already replaced in R31/R32 (one-page rule, per-tap getPHPSESSID()); verified no
   dead path remains in kit_nav_container.dart.
-- Remaining R35 items (action list, DataTrust, home split, kauni://, gap-planner) + R36 wait
-  in the roadmap brief.
+- R35.1 ONE ACTION LIST (logic half, cockpit.dart additive): cockpitPlan gained
+  PER-KIND FLOORS (round-robin by kind in tier order signup>own-deadlines>
+  dereg/next-exam>opens>sittings — every present kind keeps one seat before
+  any kind gets a second; a Klaus phase can never evict the open Anmeldungen
+  again), first-class UNKNOWN rows (`unknownExams` from the `examsPending`
+  param = the old agenda examsLoading condition, `unknownSmu` from
+  !smuProven&&procedures — OUTSIDE the maxItems cap, when=now, never urgent),
+  the `_nextExamCard` port (`examNext`: earliest nextRegisteredTerm, ≤45 whole
+  calendar days incl. today, room label only when the start resolves to one
+  non-placeholder room, REPLACES the matching "Klausur: <title>" sitting row)
+  and `cockpitAction(kind)` → examsPage/signMeUpPortal/none carrying the
+  deleted cards' deep-link targets. agenda_page (parent): switch arms landed;
+  the four card builders collapse behind the parent's own revert.
+- R35.3 HOME=TODAY split: default home lost the ProfileView block, the
+  app-bar chevron and the "Meine Module" tree section (widget moved to
+  grades/views/module_tree_view.dart; the tree is now the GRADES PAGE
+  footer, unique degree/semester/name/matric relocated to its identity card,
+  avg/CP already on its summary card; home keeps a named ProfileDoorCard at
+  the block's old seat). PREF_showingProfile + PREF_showingAvgMark deleted
+  with ALL reads and writes (rows, toggle, title split); F-11 fixed with the
+  block (ProfileView avg "0,0" → "—"). One-release revert switch:
+  `PREF_legacyHome` (SettingsProvider.legacyHome, single read site
+  `_KITHomePageState.build`, settings row in the homepage section) restores
+  the old composition verbatim; cut switch + legacy branches + ProfileView
+  next wave. TEST FINDING (latent since R16a): a Row lays out non-flex
+  children unbounded — PaddedTitle's Flexible title asserted in debug /
+  collapsed in release inside the current-modules header; now Expanded.
+- R35.2 ONE FRESHNESS VOICE (`lib/common/data_trust.dart` + reference adoption):
+  DataTrust{fresh,aging,untrusted} with per-source thresholds passed IN (mensa 6h/24h,
+  seats 15min) — one verdict function, per-source wording stays (subline rule). Future
+  stamp = untrusted (a forged DATA_* blob never reads as "fresh"); weekend-vs-dead-cache
+  preserved EXACTLY: an uncovered date over an aging cache is the honest closed-day
+  silence; only UNTRUSTED forces the stale footer. 4 boundary tests.
+- R35.5 GAP PLANNER (`lib/gapplan/gap_plan.dart` pure + home GapPlanCard): today's
+  remaining >=45-min gaps (interval-MERGE first — a nested B inside a running A must not
+  open a fake gap) x mensa serving windows parsed from the SW's own "11-14 Uhr" line
+  stamps x library free seats (15-min TTL — present-tense wording dies fast). Stale
+  source = clause omitted entirely, never hedged; zero free seats = news, not a plan;
+  no gap or no fresh clause = no card. Strict overlap (a gap starting at kitchen-closing
+  has ZERO mensa minutes).
+- R35.7 kauni:// (DeepLinkActivity.kt + manifest + MainActivity channel + main.dart pull):
+  exported logic-free dispatcher, fixed TOKENS map over host+first path segment ONLY
+  (query/fragment/user-info never read — URL params cannot steer routing), payloads feed
+  the EXISTING notification deep-link queue (cold = takeLaunchPayload pull, warm =
+  onNewIntent push), unknown host = launch + route nothing. Tokens: agenda, today,
+  changes, exams, grades, library/checkin.
+Process note: the R34 enum lesson paid for itself immediately — the lane reported its
+CockpitKind widening BEFORE writing consumers could rot, parent landed the switch arms
+in 2 minutes.

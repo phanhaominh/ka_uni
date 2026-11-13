@@ -8,12 +8,16 @@ import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:kit_mobile/l10n/l10n.dart';
-import 'package:kit_mobile/home/views/hierarchic_table.dart';
+import 'package:kit_mobile/home/views/gap_plan_card.dart';
 import 'package:kit_mobile/home/views/ka_uni_app_bar_title.dart';
 import 'package:kit_mobile/home/views/padded_title.dart';
 import 'package:kit_mobile/common_ui/mei_failure_banner.dart';
 import 'package:kit_mobile/exams/views/exams_page.dart';
 import 'package:kit_mobile/agenda/views/agenda_page.dart';
+import 'package:kit_mobile/grades/views/grades_page.dart';
+// legacy-revert branch only (R35.3A moved the widget to grades/views;
+// drop this import together with the revert switch)
+import 'package:kit_mobile/grades/views/module_tree_view.dart';
 import 'package:kit_mobile/navigation/logic/push_page.dart';
 import 'package:kit_mobile/agenda/logic/day_decision.dart';
 import 'package:kit_mobile/agenda/logic/next_up.dart';
@@ -54,6 +58,12 @@ class _KITHomePageState extends State<KITHomePage> {
     final toastsProvider =
         Provider.of<ToastsProvider>(context, listen: false);
     final settingsVM = Provider.of<SettingsProvider>(context);
+    // R35.3 REVERT SWITCH - the ONE read site of PREF_legacyHome: with
+    // the pref flipped back to true, the previous home composition
+    // (profile block + full module tree) renders unchanged for one
+    // release, per the roadmap brief. Cut this switch, both legacy
+    // branches, and the profile_view/module_tree_view imports next wave.
+    final legacyHome = settingsVM.legacyHome.value;
 
     return Scaffold(
         appBar: AppBar(
@@ -142,23 +152,13 @@ class _KITHomePageState extends State<KITHomePage> {
                 ),
               ),
             ),
-            CupertinoButton(
-              onPressed: () {
-                setState(() {
-                  settingsVM.showingProfile.toggle();
-                });
-              },
-              child: Semantics(
-                button: true,
-                label: L10n.t("settings.showProfile"),
-                child: AnimatedRotation(
-                  curve: defaultChevronRotationAnimationCurve,
-                  turns: settingsVM.showingProfile.value ? 0 : -0.25,
-                  duration: defaultChevronRotationAnimationDuration,
-                  child: Icon(CupertinoIcons.chevron_down),
-                ),
-              ),
-            )
+            // R35.3B: the unlabeled chevron ("Show profile", tapped 16x
+            // per tablet dumps yet per F-12 "nobody finds the chevron")
+            // is gone with its PREF_showingProfile pref. The demotion:
+            // the card block's old seat below the hero now holds ONE
+            // NAMED door card ("Leistungen & Noten") whose page carries
+            // every value the card showed (relocated identity, avg, CP,
+            // ledger, tree) - see [_ProfileDoorCard].
           ],
         ),
         body: Stack(
@@ -182,35 +182,38 @@ class _KITHomePageState extends State<KITHomePage> {
                     children: <Widget>[
                       MeiFailureBanner(vm: vm),
                       const NextUpHomeCard(),
-                      AnimatedSwitcher(
-                        duration: Duration(milliseconds: 200),
-                        child: settingsVM.showingProfile.value
-                            // fake-zero guard: before profileReady the card
-                            // would render Student.empty, i.e. literally
-                            // "Note (⌀): 0,0" / "Leistungspunkte: 0,0",
-                            // indistinguishable from real German-formatted
-                            // values on a slow cold start
-                            ? (!vm.profileReady
-                                ? BlockContainer(
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: spaceMd),
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          KITProgressIndicator(
-                                              semanticsLabel: L10n.t(
-                                                  "home.profileLoading")),
-                                          const SizedBox(width: spaceSm),
-                                          Text(L10n.t("home.profileLoading")),
-                                        ],
-                                      ),
-                                    ),
-                                  )
-                                : const ProfileView())
-                            : const SizedBox(),
-                      ),
+                      if (legacyHome) ...[
+                        // legacy seat: the always-expanded profile block
+                        // (its collapse toggle died with
+                        // PREF_showingProfile) behind the same
+                        // fake-zero guard - before profileReady the card
+                        // would render Student.empty, i.e. literally
+                        // "Note (⌀): 0,0" / "Leistungspunkte: 0,0",
+                        // indistinguishable from real German-formatted
+                        // values on a slow cold start
+                        if (!vm.profileReady)
+                          BlockContainer(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: spaceMd),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  KITProgressIndicator(
+                                      semanticsLabel:
+                                          L10n.t("home.profileLoading")),
+                                  const SizedBox(width: spaceSm),
+                                  Text(L10n.t("home.profileLoading")),
+                                ],
+                              ),
+                            ),
+                          )
+                        else
+                          const ProfileView(),
+                      ] else
+                        // R35.3B demotion in the old block's seat: one
+                        // NAMED door instead of the card + chevron
+                        const ProfileDoorCard(),
                       TimetableWeeklyView(),
                       const SizedBox(height: spaceMd),
                       CupertinoButton(
@@ -247,11 +250,28 @@ class _KITHomePageState extends State<KITHomePage> {
                         ),
                         const SizedBox(height: spaceLg),
                       ],
+                      // R35.5 gap planner: self-silencing (no gap >= 45
+                      // min or no fresh clause = no card), so it needs
+                      // no settings gate of its own
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: spaceMd),
+                        child: GapPlanCard(),
+                      ),
                       Row(
                         children: [
-                          PaddedTitle(
-                              title: L10n.t("settings.currentModulesIn",
-                                  [KITProvider.currentSemesterString])),
+                          // R35.3 (test-finding, latent since R16a): a
+                          // Row lays out its NON-flex children with
+                          // unbounded main-axis width, and PaddedTitle's
+                          // own Flexible title cannot shrink-wrap in
+                          // unbounded space - debug asserted, release
+                          // collapsed the title. In the flex slot the
+                          // header gets bounded width and the ellipsis
+                          // the R16a fix promised.
+                          Expanded(
+                            child: PaddedTitle(
+                                title: L10n.t("settings.currentModulesIn",
+                                    [KITProvider.currentSemesterString])),
+                          ),
                           (vm.campusManager.isFetchingSchedule ||
                                   vm.campusManager.isFetchingModules)
                               ? KITProgressIndicator()
@@ -296,13 +316,20 @@ class _KITHomePageState extends State<KITHomePage> {
                                 page: (_) => FilesCachePage())),
                       ),
                       PinnedFilesListView(),
-                      const SizedBox(height: spaceXl),
-                      PaddedTitle(title: L10n.t("settings.myModules")),
-                      HierarchicTableView(
-                        rows: vm.campusManager.moduleRows,
-                      ),
+                      // R35.3A: the "Meine Module" full-tree section left
+                      // the home page for good in the DEFAULT composition
+                      // (it duplicated the grades ledger; the raw tree
+                      // now footers the grades page). It survives ONLY
+                      // behind the revert switch, exactly as it was.
+                      if (legacyHome) ...[
+                        const SizedBox(height: spaceXl),
+                        PaddedTitle(title: L10n.t("settings.myModules")),
+                        HierarchicTableView(
+                          rows: vm.campusManager.moduleRows,
+                        ),
+                      ],
                       // the floating dock overlays the page: without this the
-                      // last module rows sit permanently under the pill
+                      // last rows sit permanently under the pill
                       const SizedBox(height: kDockClearance),
                     ],
                   )
@@ -316,6 +343,56 @@ class _KITHomePageState extends State<KITHomePage> {
   // Future<void> _refreshHomeView(KITProvider vm) async {
   //   await vm.forceRefetchEverything();
   // }
+}
+
+/// R35.3B: the profile door - the single replacement for the whole
+/// ProfileView block + app-bar chevron. The 16-tap content was never
+/// unused, so it is DEMOTED not dropped: every value the card showed
+/// (name, matriculation, degree, semester - the latter two rendered
+/// nowhere else - plus average and CP) now lives on [GradesPage], which
+/// the card's own entry row already opened; this card is that entry row
+/// promoted to the block's old seat, NAMED instead of an unlabeled
+/// chevron (F-12). Zero data on home: HOME=TODAY, the door is a link.
+class ProfileDoorCard extends StatelessWidget {
+  const ProfileDoorCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      // parity with the deleted ProfileView's outer padding, so the
+      // door sits exactly where the block sat
+      padding: const EdgeInsets.all(15),
+      child: BlockContainer(
+        // zero inner padding so the InkWell spans the WHOLE card (the
+        // ProfileView entry-row lesson: padding taps must not be dead)
+        innerPadding: EdgeInsets.zero,
+        child: InkWell(
+          borderRadius: const BorderRadius.all(appBorderRadius),
+          onTap: () => pushPageOnce(Navigator.of(context),
+              routeName: GradesPage.routeName,
+              page: (_) => const GradesPage()),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
+            child: Row(
+              children: [
+                Icon(CupertinoIcons.person_crop_circle,
+                    size: 22, color: theme.colorScheme.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(L10n.t("grades.entry"),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium),
+                ),
+                Icon(Icons.chevron_right, color: theme.colorScheme.outline),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// The agenda hero on home (R12): the SAME [NextUp.compute] and card the

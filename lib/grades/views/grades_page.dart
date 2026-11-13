@@ -12,10 +12,14 @@ import '../../state_management/kit_provider.dart';
 import '../../toasts/models/toasts_provider.dart';
 import '../logic/grade_sim.dart';
 import '../models/grade_book.dart';
+import 'module_tree_view.dart';
 import 'what_if_sheet.dart';
 
-/// Grades overview: SOP (30 CP) progress + the whole Studienverlauf tree
-/// grouped into failed / passed / not-yet-graded modules.
+/// Grades overview: the relocated profile identity (R35.3: this page has
+/// been the profile's own grades destination all along), SOP (30 CP)
+/// progress, and the whole Studienverlauf tree grouped into failed /
+/// passed / not-yet-graded modules, with the raw full module tree as
+/// footer (relocated off the home page by R35.3A).
 class GradesPage extends StatelessWidget {
   const GradesPage({super.key});
 
@@ -65,6 +69,15 @@ class GradesPage extends StatelessWidget {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(12, 12, 12, kDockClearance),
           children: [
+            // R35.3B relocation: the deleted home ProfileView was the
+            // UNIQUE renderer of the degree and semester lines (and of
+            // the name/matriculation header). They live here now, above
+            // the ledger whose entry row used to be the card's only
+            // action; nothing renders while the profile is not ready.
+            if (vm.profileReady && vm.student.name.repr.trim().isNotEmpty) ...[
+              _identityCard(context, vm),
+              const SizedBox(height: 8),
+            ],
             if (book.modules.isEmpty)
               // not logged in / tree not scraped yet: say so instead of an
               // unexplained wall of empty cards
@@ -89,9 +102,97 @@ class GradesPage extends StatelessWidget {
               if (book.pending.isNotEmpty)
                 _section(context, L10n.t("grades.sectionPending"), book.pending,
                     pending: true, sim: sim),
+              // R35.3A relocation: the raw full Studienverlauf tree left
+              // the home page (HOME=TODAY) and lands here as the ledger's
+              // footer - the one other surface that groups and classifies
+              // the same rows, so the tree never repeats inside a page.
+              if (cm.moduleRows.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 20, 4, 2),
+                  child: Text(L10n.t("settings.myModules"),
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                ),
+                HierarchicTableView(rows: cm.moduleRows),
+              ],
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// R35.3B: the profile identity relocated from the deleted home
+  /// ProfileView - the unique renderers of degree and semester, plus the
+  /// name/matriculation header. Same overflow guards as the old card
+  /// (Flexible labels + FittedBox values: inflexible Text in a
+  /// spaceBetween Row striped at large font scales). NO average/CP here:
+  /// the summary card below already carries both, honestly null-guarded.
+  Widget _identityCard(BuildContext context, KITProvider vm) {
+    final theme = Theme.of(context);
+    Widget row(String label, String value, {bool shrinkValue = false}) =>
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(label,
+                    style: theme.textTheme.titleMedium,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              ),
+              const SizedBox(width: 10),
+              if (shrinkValue)
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(value, style: theme.textTheme.titleMedium),
+                  ),
+                )
+              else
+                Expanded(
+                  child: Text(value,
+                      style: theme.textTheme.titleMedium,
+                      maxLines: 2,
+                      textAlign: TextAlign.end),
+                ),
+            ],
+          ),
+        );
+
+    return BlockContainer(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // name + matriculation on one line, as the deleted
+              // ProfileView header had them
+              Expanded(
+                child: Text(vm.student.name.repr,
+                    style: theme.textTheme.titleLarge,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis),
+              ),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(vm.student.matriculationNumber,
+                    style: theme.textTheme.bodyMedium),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          row(L10n.t("settings.degreeProgram"), vm.student.degreeProgram),
+          row(L10n.t("settings.semester"),
+              KITProvider.currentSemesterString,
+              shrinkValue: true),
+        ],
       ),
     );
   }

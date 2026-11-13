@@ -4,6 +4,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../common/data_trust.dart';
+
 import 'package:kit_mobile/common_ui/block_container.dart';
 import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
 import 'package:kit_mobile/constants/view_constants.dart';
@@ -199,7 +201,15 @@ class _MensaTodayCardState extends State<MensaTodayCard> {
   /// that is serving lunch right now)
   Widget _closedCard(ThemeData theme, MensaManager mensa) {
     final Duration? age = mensa.age;
-    final bool stale = age == null || age > const Duration(hours: 24);
+    // R35.2 named the existing rule: only UNTRUSTED (never fetched, or
+    // older than the day) may not claim "closed"; an aging cache over an
+    // uncovered date is the honest weekend/break silence (6h/24h = the
+    // SW publish rhythm / one day - thresholds unchanged, now declared)
+    final trust = dataTrust(
+        fetchedAt: mensa.fetchedAt,
+        now: DateTime.now(),
+        ttl: const Duration(hours: 6),
+        trustHorizon: const Duration(hours: 24));
     return BlockContainer(
       child: Padding(
         padding: const EdgeInsets.all(spaceMd),
@@ -213,7 +223,10 @@ class _MensaTodayCardState extends State<MensaTodayCard> {
               style: theme.textTheme.bodyMedium
                   ?.copyWith(color: theme.colorScheme.outline),
             ),
-            if (stale) ...[
+            // behavior kept EXACTLY: footer only when untrusted
+            // (>24 h or never) - a 6-24 h cache over an uncovered date
+            // is the weekend truth and stays silent
+            if (trust == DataTrust.untrusted) ...[
               const SizedBox(height: spaceSm),
               _footer(theme, mensa, forcedStale: age == null),
             ],
@@ -310,9 +323,15 @@ class _MensaTodayCardState extends State<MensaTodayCard> {
   /// the persisted diag one-liner (release builds have no other channel)
   Widget _footer(ThemeData theme, MensaManager mensa,
       {bool forcedStale = false}) {
-    final Duration? age = mensa.age;
-    final bool stale =
-        forcedStale || (age != null && age > const Duration(hours: 6));
+    // R35.2: the warning threshold is the shared verdict (ttl 6 h = SW
+    // publish rhythm); the wording stays mensa's own (subline rule)
+    final trust = dataTrust(
+        fetchedAt: mensa.fetchedAt,
+        now: DateTime.now(),
+        ttl: const Duration(hours: 6),
+        trustHorizon: const Duration(hours: 24));
+    final bool stale = forcedStale ||
+        (mensa.fetchedAt != null && trust != DataTrust.fresh);
     final DateTime f = mensa.fetchedAt ?? DateTime.now();
     return Text(
       L10n.t("mensa.updatedAt", [
