@@ -6,100 +6,110 @@ import 'package:kit_mobile/handbook/handbook_data.dart';
 import 'package:kit_mobile/handbook/prereq_alarm.dart';
 
 /// R32.5: pure grow-diff of the Schein-Ampel's KNOWN-block map - the
-/// decisions the DATA_prereqAlarm snapshot round-trip leans on.
+/// decisions the DATA_prereqAlarm snapshot round-trip leans on. Snapshot
+/// keys are module CODES and blocker entries part CODES (R32 audit: a
+/// handbook title reword must never masquerade as a new block); seeded-
+/// ness is the "v2:" tag, so a tagged EMPTY map is live "no blocks" and
+/// the first real block IS news.
 void main() {
-  HandbookModule mod(String title) => HandbookModule(
-      code: "01-X",
-      title: title,
-      ects: 6,
-      terms: const ["WS"],
-      examType: "Klausur",
-      parts: const [],
-      gates: const []);
-  AmpelModule blocked(String title, List<String> by) =>
-      AmpelModule(mod(title), AmpelState.planned, blockedBy: by);
-  AmpelModule free(String title) =>
-      AmpelModule(mod(title), AmpelState.planned);
+  HandbookModule mod(String code, String title, {List<HandbookPart> parts = const []}) =>
+      HandbookModule(
+          code: code,
+          title: title,
+          ects: 6,
+          terms: const ["WS"],
+          examType: "Klausur",
+          parts: parts,
+          gates: const []);
+  HandbookPart part(String code, String title) => HandbookPart(
+      code: code, title: title, ects: 0, type: "Prüfungsvorleistung", attendsTo: "01-C");
 
-  test("snapshot keeps only blocked modules, blockers sorted", () {
-    final plan =
-        AmpelPlan([blocked("Modul A", ["Prüfung C", "Prüfung A"]), free("Modul B")]);
+  AmpelPlan planWith(List<AmpelModule> items) => AmpelPlan(items);
+  AmpelModule blocked(HandbookModule m, List<String> by) =>
+      AmpelModule(m, AmpelState.planned, blockedBy: by);
+  AmpelModule free(HandbookModule m) => AmpelModule(m, AmpelState.planned);
+
+  final partA = part("01-C-P1", "Übungsschein C");
+  final partB = part("01-C-P2", "Prüfungsschein C");
+
+  String snap(Map<String, List<String>> m) =>
+      prereqSnapshotTag + jsonEncode(m);
+
+  test("snapshot keys by code and maps blocker titles to part codes", () {
+    final plan = planWith([
+      blocked(mod("01-A", "Modul A"), ["Übungsschein C", "Unbekanntes Teil"]),
+      free(mod("01-B", "Modul B")),
+      free(mod("01-C", "Modul C", parts: [partA, partB])),
+    ]);
+    // resolved part -> its code; unmatched blocker title survives verbatim
     expect(prereqSnapshot(plan), {
-      "Modul A": ["Prüfung A", "Prüfung C"],
+      "01-A": ["01-C-P1", "Unbekanntes Teil"],
     });
+  });
+
+  test("titles resolve codes from the fresh plan (modules AND parts)", () {
+    final plan = planWith([free(mod("01-C", "Modul C", parts: [partA, partB]))]);
+    final t = prereqTitles(plan);
+    expect(t["01-C"], "Modul C");
+    expect(t["01-C-P1"], "Übungsschein C");
+    expect(t["01-C-P2"], "Prüfungsschein C");
   });
 
   test("grow: a newly blocked module fires one event with its blockers", () {
     final grew = prereqAlarmDiff(
-        blockedNow: {"Modul A": ["Prüfung A"]},
-        snapshotRaw: jsonEncode({"Modul Z": ["Prüfung Z"]}));
-    expect(grew.single.module, "Modul A");
-    expect(grew.single.newBlockers, ["Prüfung A"]);
+        blockedNow: {"01-A": ["01-C-P1"]}, snapshotRaw: snap({"01-Z": ["01-Y-P9"]}));
+    expect(grew.single.moduleCode, "01-A");
+    expect(grew.single.newBlockerCodes, ["01-C-P1"]);
   });
 
-  test("grow: an already-blocked module counts again only for a NEW "
-      "blocker", () {
-    final prev = jsonEncode({
-      "Modul A": ["Prüfung A"]
-    });
-    // same blockers -> quiet
-    expect(
-        prereqAlarmDiff(
-            blockedNow: {
-              "Modul A": ["Prüfung A"]
-            },
-            snapshotRaw: prev),
-        isEmpty);
-    // one more prerequisite failed -> event naming ONLY the new blocker
+  test("grow from the LIVE-EMPTY snapshot announces the first real block "
+      "(the audit MAJOR: '{}' is news, not seed)", () {
     final grew = prereqAlarmDiff(
-        blockedNow: {
-          "Modul A": ["Prüfung A", "Prüfung B"]
-        },
-        snapshotRaw: prev);
-    expect(grew.single.module, "Modul A");
-    expect(grew.single.newBlockers, ["Prüfung B"],
-        reason: "re-listing the known blocker would re-claim the old news");
+        blockedNow: {"01-A": ["01-C-P1"]}, snapshotRaw: snap({}));
+    expect(grew.single.moduleCode, "01-A");
+    expect(grew.single.newBlockerCodes, ["01-C-P1"]);
+  });
+
+  test("an already-blocked module counts again only for a NEW blocker", () {
+    final grew = prereqAlarmDiff(
+        blockedNow: {"01-A": ["01-C-P1", "01-C-P2"]},
+        snapshotRaw: snap({"01-A": ["01-C-P1"]}));
+    expect(grew.single.moduleCode, "01-A");
+    expect(grew.single.newBlockerCodes, ["01-C-P2"]);
+  });
+
+  test("same code, reworded titles: silent (handbook bump is not a block)", () {
+    // snapshot stored codes; the fresh plan re-resolves the SAME codes
+    // (titles in the handbook asset changed) - no event may fire.
+    final grew = prereqAlarmDiff(
+        blockedNow: {"01-A": ["01-C-P1"]}, snapshotRaw: snap({"01-A": ["01-C-P1"]}));
+    expect(grew, isEmpty);
   });
 
   test("shrink is silent: relief is not news", () {
     final grew = prereqAlarmDiff(
-        blockedNow: {
-          "Modul A": ["Prüfung A"]
-        },
-        snapshotRaw: jsonEncode({
-          "Modul A": ["Prüfung A", "Prüfung B"]
-        }));
+        blockedNow: {}, snapshotRaw: snap({"01-A": ["01-C-P1"]}));
     expect(grew, isEmpty);
-    // vanishing entirely from the map is silent too
-    expect(
-        prereqAlarmDiff(blockedNow: {}, snapshotRaw: jsonEncode({"Modul A": ["Prüfung A"]})),
-        isEmpty);
   });
 
   test("no-change is silent", () {
-    final snap = jsonEncode({
-      "Modul A": ["Prüfung A"],
-      "Modul B": ["Prüfung B"],
-    });
-    final now = {
-      "Modul A": ["Prüfung A"],
-      "Modul B": ["Prüfung B"],
-    };
-    expect(prereqAlarmDiff(blockedNow: now, snapshotRaw: snap), isEmpty);
+    final grew = prereqAlarmDiff(
+        blockedNow: {"01-A": ["01-C-P1"]}, snapshotRaw: snap({"01-A": ["01-C-P1"]}));
+    expect(grew, isEmpty);
   });
 
-  test("first seed (missing/empty/poisoned snapshot) announces NOTHING", () {
-    final now = {
-      "Modul A": ["Prüfung A"],
-      "Modul B": ["Prüfung B"],
-    };
-    // first-ever ledger: every block looks new - announcing them would
-    // replay the "30 grades as 30 news" storm mistake
-    expect(prereqAlarmDiff(blockedNow: now, snapshotRaw: null), isEmpty);
-    expect(prereqAlarmDiff(blockedNow: now, snapshotRaw: ""), isEmpty);
-    expect(prereqAlarmDiff(blockedNow: now, snapshotRaw: "n}{ot json"),
-        isEmpty);
-    // valid JSON, foreign shape: still the seed path, never a re-announce
-    expect(prereqAlarmDiff(blockedNow: now, snapshotRaw: '{"a": 1}'), isEmpty);
+  test("unseeded (null, empty, or pre-v2 untagged JSON) announces NOTHING", () {
+    for (final raw in [null, "", jsonEncode({"Modul A": ["irgendwas"]})]) {
+      final grew = prereqAlarmDiff(
+          blockedNow: {"01-A": ["01-C-P1"]}, snapshotRaw: raw);
+      expect(grew, isEmpty, reason: "raw=${raw == null ? "null" : "untagged"}");
+    }
+  });
+
+  test("poisoned v2 payload is a seed run, not spam", () {
+    final grew = prereqAlarmDiff(
+        blockedNow: {"01-A": ["01-C-P1"]},
+        snapshotRaw: prereqSnapshotTag + "{not json");
+    expect(grew, isEmpty);
   });
 }

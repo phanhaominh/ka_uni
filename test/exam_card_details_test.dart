@@ -1,24 +1,18 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kit_mobile/exams/models/exam_list.dart';
 import 'package:kit_mobile/exams/views/exams_page.dart';
 import 'package:kit_mobile/geo/logic/maps_url.dart';
 import 'package:kit_mobile/geo/models/kit_place.dart';
-import 'package:kit_mobile/signmeup/signmeup_manager.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// R32 exam-card detail lines: the room→Maps Route handoff (R32.8), the
-/// SignMeUp seats-filled sub-line on registration rows (R32.4) and the
+/// R32 exam-card detail lines: the room→Maps Route handoff (R32.8) and the
 /// deregistration-deadline chip (R32.3 UI). Cards are pumped through the
 /// real ExamsPage with seeded provider state (agenda_page_test's harness
-/// idiom); the seams `routeHandoff`/`seatsLine` pin the URL and wording
-/// contracts without a launcher.
+/// idiom); the seam `routeHandoff` pins the URL contract without a launcher.
 
 KITPlace geb3095() => KITPlace(
       id: "30.95",
@@ -32,13 +26,23 @@ KITPlace geb3095() => KITPlace(
 /// confidently wrong destination coordinate
 KITPlace pinless() => KITPlace(id: "35.10", title: "Institut 35.10");
 
+/// a seating hall whose five pool rooms all resolve to THIS one building
+KITPlace hoersaal2021() => KITPlace(
+      id: "20.21",
+      title: "Gebäude 20.21",
+      positionList: const [
+        ["49.0944", "8.4310"]
+      ],
+    );
+
 ExamEntry entry(
     {String title = "Testklausur",
     bool registered = false,
     ExamWindowStatus status = ExamWindowStatus.unknown,
     List<(String day, String time, String room)> terms = const [],
     DateTime? windowStart,
-    DateTime? windowEnd}) {
+    DateTime? windowEnd,
+    DateTime? deregEnd}) {
   final e = ExamEntry(
       examNumber: "20.01",
       title: title,
@@ -47,58 +51,17 @@ ExamEntry entry(
       registered: registered,
       windowStatus: status,
       windowStart: windowStart,
-      windowEnd: windowEnd);
+      windowEnd: windowEnd,
+      deregEnd: deregEnd);
   for (final (day, time, room) in terms) {
     e.terms.add(ExamTerm(day, time, room));
   }
   return e;
 }
 
-/// ExamEntry carrying a deregistration deadline. NO @override annotation:
-/// it must compile both before LANE N lands `DateTime? deregEnd` on
-/// ExamEntry (then it merely declares a member) and after (then it
-/// overrides the real field's getter).
-class DeregExam extends ExamEntry {
-  DeregExam(DateTime? dereg)
-      : _dereg = dereg,
-        super(
-            examNumber: "20.01",
-            title: "Abmeldeklausur",
-            examiners: "Prof. X",
-            examType: "Schriftliche Prüfung",
-            registered: true,
-            windowStatus: ExamWindowStatus.unknown);
-  final DateTime? _dereg;
-  DateTime? get deregEnd => _dereg;
-}
-
-/// Whether ExamEntry itself already answers `deregEnd` (LANE N landed) —
-/// probed dynamically because LANE E's bridge extension is library-private
-/// and shadows the [DeregExam] override from the card's static view until
-/// the real field exists.
-bool deregEndLanded() {
-  final probe = entry(registered: true);
-  try {
-    (probe as dynamic).deregEnd;
-    return true;
-  } on NoSuchMethodError {
-    return false;
-  }
-}
-
-List<SignMeUpProcedure> fixtureProcedures() {
-  final decoded =
-      jsonDecode(File('test/fixtures/smuprocedures.json').readAsStringSync())
-          as Map<String, dynamic>;
-  return (decoded["procedures"] as List)
-      .map((e) => SignMeUpProcedure.fromJson(e as Map<String, dynamic>))
-      .toList();
-}
-
 Future<void> pumpExams(WidgetTester tester,
     {required List<ExamEntry> exams,
-    List<KITPlace> places = const [],
-    List<SignMeUpProcedure> procedures = const []}) async {
+    List<KITPlace> places = const []}) async {
   tester.view.physicalSize = const Size(900, 1600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -108,7 +71,6 @@ Future<void> pumpExams(WidgetTester tester,
   vm.campusManager.examsFetchedAt = DateTime.now();
   vm.campusManager.exams = exams;
   vm.topographyManager.places = places;
-  vm.signMeUpManager.procedures = procedures;
   await tester.pumpWidget(ChangeNotifierProvider<KITProvider>(
     create: (_) => vm,
     child: const MaterialApp(home: ExamsPage()),
@@ -151,13 +113,41 @@ void main() {
         ]),
       ]);
       expect(find.text("Geb. 30.95, HS 1 · Route"), findsOneWidget,
-          reason: "two sittings in one room must yield ONE handoff line");
+          reason: "two sittings under one seating key must yield ONE "
+              "handoff line - and no (+N), it is still a single key");
       expect(find.text("Geb. 35.10 · Route"), findsOneWidget);
-      expect(
-          find.ancestor(
-              of: find.text("Geb. 30.95, HS 1 · Route"),
-              matching: find.byType(InkWell)),
-          findsOneWidget);
+      final row = find.ancestor(
+          of: find.text("Geb. 30.95, HS 1 · Route"),
+          matching: find.byType(InkWell));
+      expect(row, findsOneWidget);
+      expect(tester.getSize(row).height, greaterThanOrEqualTo(44),
+          reason: "touch target: Material's 44 dp floor, the ~25 dp row "
+              "was too small to hit reliably");
+    });
+
+    testWidgets(
+        'five pool seating keys resolving to one building render ONE row',
+        (tester) async {
+      // the real 20.21 case: Pool A..E are five cascampus seating keys for
+      // one building - five identical Rows told the student nothing new
+      // five times
+      await pumpExams(tester, places: [hoersaal2021(), geb3095()], exams: [
+        entry(registered: true, terms: const [
+          ("Di, 23.03.2027", "09:00 - 11:00", "20.21 Pool A"),
+          ("Di, 23.03.2027", "09:00 - 11:00", "20.21 Pool B"),
+          ("Di, 23.03.2027", "09:00 - 11:00", "20.21 Pool C"),
+          ("Di, 23.03.2027", "09:00 - 11:00", "20.21 Pool D"),
+          ("Di, 23.03.2027", "09:00 - 11:00", "20.21 Pool E"),
+          ("Fr, 26.06.2027", "09:00 - 11:00", "Geb. 30.95, HS 1"),
+        ]),
+      ]);
+      expect(find.text("20.21 Pool A (+4) · Route"), findsOneWidget,
+          reason: "URL-keyed dedupe: first key labels, 4 further keys "
+              "collapse into the (+4) suffix");
+      // no second row for the pooled building, and the distinct building
+      // still renders its own row
+      expect(find.textContaining(" · Route"), findsNWidgets(2));
+      expect(find.textContaining("Pool B (+"), findsNothing);
     });
 
     testWidgets('unresolvable room and online exams render no line, ever',
@@ -197,68 +187,7 @@ void main() {
     });
   });
 
-  group("seats sub-line (R32.4)", () {
-    test('live procedure fixture: fill line, allocation joined word-split',
-        () {
-      final procs = fixtureProcedures();
-      expect(
-          ExamsPage.seatsLine(
-              procs, "Detectors for Particle and Astroparticle Physics"),
-          "17/30 belegt · First Come First Served");
-      expect(ExamsPage.seatsLine(procs, "Lernmotivation verstehen und fördern"),
-          "1/20 belegt · Manual");
-    });
-
-    test('placesNumber 0 or absent means unknown, never a fill line', () {
-      final procs = fixtureProcedures();
-      // 148 registrations, but no announced places: honesty over noise
-      expect(ExamsPage.seatsLine(procs, "Tutorium HMI Physik"), isNull);
-      expect(ExamsPage.seatsLine(procs, "Particle Physics I"), isNull);
-    });
-
-    test('matching is case/whitespace tolerant but never fuzzy', () {
-      final procs = fixtureProcedures();
-      expect(
-          ExamsPage.seatsLine(
-              procs, "  detectors for particle and ASTROPARTICLE physics "),
-          isNotNull);
-      // the I/II trap: a different procedure must never lend its seats
-      expect(ExamsPage.seatsLine(procs, "Particle Physics II"), isNull);
-      expect(ExamsPage.seatsLine([], "CAE-Workshop"), isNull);
-      expect(ExamsPage.seatsLine(fixtureProcedures(), ""), isNull);
-    });
-
-    testWidgets('matching exam card renders the fill sub-line',
-        (tester) async {
-      await pumpExams(tester, procedures: fixtureProcedures(), exams: [
-        entry(
-            title: "Detectors for Particle and Astroparticle Physics",
-            status: ExamWindowStatus.open,
-            windowStart: DateTime.now().subtract(const Duration(days: 1)),
-            windowEnd: DateTime.now().add(const Duration(days: 7))),
-        entry(title: "Tutorium HMI Physik"),
-      ]);
-      expect(find.text("17/30 belegt · First Come First Served"),
-          findsOneWidget);
-      expect(find.textContaining("148"), findsNothing);
-      expect(find.textContaining(RegExp(r"\d+/\d+ belegt")), findsOneWidget);
-    });
-
-    testWidgets('exam without a matching procedure shows no fill line',
-        (tester) async {
-      await pumpExams(tester, procedures: fixtureProcedures(), exams: [
-        entry(title: "ganz normale Prüfung"),
-      ]);
-      expect(find.textContaining(RegExp(r"\d+/\d+ belegt")), findsNothing);
-    });
-  });
-
   group("deregistration chip (R32.3)", () {
-    // the two positive chip assertions stay skipped until LANE N lands the
-    // real ExamEntry.deregEnd field (see deregEndLanded) — they then run
-    // automatically, no test edit needed
-    final landed = deregEndLanded();
-
     testWidgets('registered exam without a deadline shows no chip',
         (tester) async {
       await pumpExams(tester, exams: [entry(registered: true)]);
@@ -268,14 +197,22 @@ void main() {
     testWidgets('an expired deregistration deadline never renders live',
         (tester) async {
       await pumpExams(tester,
-          exams: [DeregExam(DateTime.now().subtract(const Duration(days: 2)))]);
+          exams: [
+            entry(
+                registered: true,
+                deregEnd: DateTime.now().subtract(const Duration(days: 2)))
+          ]);
       expect(find.textContaining("abmelden bis"), findsNothing);
     });
 
     testWidgets('a live deregistration deadline renders the muted chip',
         (tester) async {
       await pumpExams(tester,
-          exams: [DeregExam(DateTime.now().add(const Duration(days: 5)))]);
+          exams: [
+            entry(
+                registered: true,
+                deregEnd: DateTime.now().add(const Duration(days: 5)))
+          ]);
       final chipText = find.textContaining("abmelden bis");
       expect(chipText, findsOneWidget);
       expect(find.ancestor(of: chipText, matching: find.byType(Chip)),
@@ -286,17 +223,21 @@ void main() {
       expect(tester.widget<Text>(chipText).style?.color, scheme.outline);
       expect(find.text("angemeldet"), findsOneWidget,
           reason: "the status chip stays; the deadline joins its row");
-    }, skip: !landed);
+    });
 
     testWidgets('runway under three days turns the chip error-colored',
         (tester) async {
       await pumpExams(tester,
-          exams: [DeregExam(DateTime.now().add(const Duration(hours: 30)))]);
+          exams: [
+            entry(
+                registered: true,
+                deregEnd: DateTime.now().add(const Duration(hours: 30)))
+          ]);
       final chipText = find.textContaining("abmelden bis");
       expect(chipText, findsOneWidget);
       final scheme =
           Theme.of(tester.element(find.byType(ExamsPage))).colorScheme;
       expect(tester.widget<Text>(chipText).style?.color, scheme.error);
-    }, skip: !landed);
+    });
   });
 }

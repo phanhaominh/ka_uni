@@ -188,13 +188,33 @@ class KITProvider extends ChangeNotifier {
     // R22: netGet THROWS on an unreachable network - bare fire-and-forget
     // delivered two uncaught zone errors on every offline cold start
     // (every other kick here follows the containment discipline)
-    unawaited(campusManager.fetchJSession().catchError((_) => false));
+    // no-test-harness discipline as mensa below: the IdP GETs would spray
+    // live requests (and "Failed to fetch JSESSIONID!" spam) across every
+    // suite that constructs a KITProvider
+    if (!Platform.environment.containsKey('FLUTTER_TEST')) {
+      unawaited(campusManager.fetchJSession().catchError((_) => false));
+    }
 
     iliasManager = IliasManager();
-    unawaited(iliasManager.fetchJSession().catchError((_) => false));
+    if (!Platform.environment.containsKey('FLUTTER_TEST')) {
+      unawaited(iliasManager.fetchJSession().catchError((_) => false));
+    }
     // fetchSchedule();
 
     topographyManager = KITTopographyManager();
+    // cold starts seed the in-memory directory from the offline snapshot:
+    // walk hints and exam route rows read topographyManager.places and
+    // otherwise stay blind all session whenever this one GET loses (R32
+    // audit device pass: both handoffs silently absent all session after
+    // one failed fetch while a full directory sat cached in prefs). The
+    // seed never overwrites fetched places - live wins whenever it lands.
+    unawaited(KITTopographyManager.loadSnapshot().then((seeded) {
+      if (seeded != null && seeded.isNotEmpty &&
+          topographyManager.places.isEmpty) {
+        topographyManager.places = seeded;
+        notifyListeners();
+      }
+    }));
     unawaited(topographyManager
         .fetchPlaces() // self-contained errors
         .then((_) =>

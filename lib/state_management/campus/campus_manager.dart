@@ -768,11 +768,19 @@ class CampusManager extends KITLoginManager {
     // snapshot above: a logout during Handbook.load must not re-seed the
     // swept DATA_prereqAlarm key with the old account's blocks)
     if (epoch != _teardownEpoch) return; // logout mid-flight
-    await prefs.setString(_prereqAlarmKey, jsonEncode(blocked));
+    await prefs.setString(
+        _prereqAlarmKey, prereqSnapshotTag + jsonEncode(blocked));
     if (grew.isEmpty) return;
+    // re-check after the write's await gap: the push must not post after
+    // a logout's cancelAll already wiped the shade (same discipline the
+    // dereg arm loop applies right before every show)
+    if (epoch != _teardownEpoch) return;
+    final titles = prereqTitles(plan);
+    String name(String code) => titles[code] ?? code;
     final body = [
       for (final g in grew)
-        L10n.t("notifs.prereqLine", [g.module, g.newBlockers.join(", ")]),
+        L10n.t("notifs.prereqLine",
+            [name(g.moduleCode), [for (final b in g.newBlockerCodes) name(b)].join(", ")]),
       // the honesty line: the app only ever sees FAILED prerequisite
       // parts, so the push names known blocks and says so out loud
       L10n.t("notifs.prereqNote"),

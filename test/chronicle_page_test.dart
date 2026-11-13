@@ -41,14 +41,16 @@ void main() {
     ];
     await tester.pumpWidget(chronicle(changes));
 
-    // coverage admission + cap disclosure with the oldest stored stamp
+    // coverage admission + cap disclosure with the oldest stored stamp —
+    // year-bearing (L10n.deadline), the year-less stamp misreads once the
+    // count-based 50-cap stretches back into a past term
     expect(find.text(L10n.t("timetable.chronicleTitle")), findsOneWidget);
     expect(find.text(L10n.t("timetable.chronicleCoverage")), findsOneWidget);
     expect(
         find.text(L10n.t("timetable.chronicleCap", [
           changes.length,
           ChroniclePage.storedCap,
-          L10n.stamp(dTue)
+          L10n.deadline(dTue)
         ])),
         findsOneWidget);
 
@@ -93,9 +95,29 @@ void main() {
         find.text(L10n.t("timetable.chronicleCap", [
           ChroniclePage.storedCap,
           ChroniclePage.storedCap,
-          L10n.stamp(base)
+          L10n.deadline(base)
         ])),
         findsOneWidget);
+  });
+
+  testWidgets("the oldest-entry stamp carries the year across terms",
+      (tester) async {
+    final changes = [
+      IcsChange(
+          kind: IcsChangeKind.added,
+          title: "Neu alt",
+          when: DateTime(2025, 11, 17, 10),
+          room: "HS 1"),
+      IcsChange(
+          kind: IcsChangeKind.changed,
+          title: "Aktuell",
+          when: DateTime(2026, 11, 19, 8),
+          room: "HS 2",
+          oldRoom: "HS 1"),
+    ];
+    await tester.pumpWidget(chronicle(changes));
+    // "17.11." without the year would silently read as this year's entry
+    expect(find.textContaining("17.11.2025 10:00"), findsOneWidget);
   });
 
   testWidgets("an empty store says none yet instead of hiding the header",

@@ -57,11 +57,11 @@ const Map<String, String> de_timetable = {
   // identifiers and the arrow is punctuation)
   "timetable.chronicleTitle": "Letzte Änderungen",
   "timetable.chronicleCoverage":
-      "Änderungen, die die App seit dem letzten Poll sah",
+      "Änderungen, die die App beim Abfragen selbst sah",
   "timetable.chronicleCap":
       "{0} / max. {1} gespeichert · ältester Eintrag: {2}",
   "timetable.chronicleEmpty": "Noch keine Änderungen gespeichert.",
-  "timetable.olderChanges": "ältere Änderungen",
+  "timetable.olderChanges": "Ältere Änderungen",
   // appointment detail sheet; home.profileLoading rides the flat l10n
   // map from here because slice rules confine new strings to this file
   "timetable.idLabel": "ID:",
@@ -138,10 +138,10 @@ const Map<String, String> en_timetable = {
   // R32.7 CHRONICLE + agenda band entry (see de_timetable)
   "timetable.chronicleTitle": "Recent changes",
   "timetable.chronicleCoverage":
-      "Changes the app saw since the last poll",
+      "Changes the app itself saw while polling",
   "timetable.chronicleCap": "{0} / max {1} stored · oldest entry: {2}",
   "timetable.chronicleEmpty": "No changes stored yet.",
-  "timetable.olderChanges": "older changes",
+  "timetable.olderChanges": "Older changes",
   "timetable.timeLabel": "Time:",
   "timetable.aliasesLabel": "Also known as:",
   "timetable.openCampusMap": "Open in campus map",

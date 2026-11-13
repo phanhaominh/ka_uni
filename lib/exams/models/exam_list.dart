@@ -204,8 +204,13 @@ class ExamListParser {
       r'\bRegister\s+(until|from)\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})\s*([AP])M\b',
       caseSensitive: false);
 
-  // R32.3: the DEREGISTRATION deadline ("Abmelden bis 19.02.2027 23:59" /
-  // EN "Unregister until 2/19/2027 11:59 PM", both verbatim live cells).
+  // R32.3: the DEREGISTRATION deadline. Evidence, honestly split: the EN
+  // arm is LIVE-PROBED ("Unregister until 2/19/2027 11:59 PM" — verbatim
+  // cell from R30's possibleexams_en.html); the DE cell text ("Abmelden
+  // bis 19.02.2027 23:59") is an extrapolated MIRROR of the live layout —
+  // possibleexams.html itself contains no real "Abmelden bis" sample.
+  // The DE arm did render live on-device 2026-11-13: the "abmelden bis"
+  // chip appeared and its parse was seen in a real session.
   // Deliberate non-use of \b in the EN arm: the word-boundary trick of
   // _enDateTime keeps "Unregister until" OUT of the window parse; here the
   // literal "Unregister" IS the pattern, so no boundary games are needed

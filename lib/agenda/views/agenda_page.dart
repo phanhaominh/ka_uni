@@ -685,6 +685,11 @@ class _AgendaPageState extends State<AgendaPage> {
 
   Widget _changedBand(BuildContext context, List<IcsChange> fresh) {
     final scheme = Theme.of(context).colorScheme;
+    // the chronicle link only exists where it promises MORE than the band
+    // already shows: freshChanges partitions the store on `when >= today`,
+    // so store-minus-fresh is exactly "entries older than the band's set";
+    // an all-fresh store has nothing older to open -> no link, no dead end
+    final hasStoredOlder = _load.changes.length > fresh.length;
     return Card(
       color: scheme.tertiaryContainer,
       child: Padding(
@@ -726,6 +731,8 @@ class _AgendaPageState extends State<AgendaPage> {
             // R32.7: the band only shows deltas with `when >= today` (see
             // freshChanges — that filter stays); the chronicle shows the
             // WHOLE store, cap and all, and admits its own coverage there.
+            // The link itself only renders when the store actually holds
+            // entries older than the band's set (hasStoredOlder).
             // Wrap (not Row+Spacer): at Pixel-3-minus widths both German
             // labels share one line only when they fit — the 240 dp band
             // regression test stacks them instead of overflowing
@@ -733,12 +740,13 @@ class _AgendaPageState extends State<AgendaPage> {
               alignment: WrapAlignment.end,
               spacing: 4,
               children: [
-                TextButton(
-                  onPressed: () => pushPageOnce<void>(Navigator.of(context),
-                      routeName: ChroniclePage.routeName,
-                      page: (_) => ChroniclePage(changes: _load.changes)),
-                  child: Text(L10n.t("timetable.olderChanges")),
-                ),
+                if (hasStoredOlder)
+                  TextButton(
+                    onPressed: () => pushPageOnce<void>(Navigator.of(context),
+                        routeName: ChroniclePage.routeName,
+                        page: (_) => ChroniclePage(changes: _load.changes)),
+                    child: Text(L10n.t("timetable.olderChanges")),
+                  ),
                 Semantics(
                   button: true,
                   child: TextButton(

@@ -625,6 +625,11 @@ class MeiNotifications {
   /// start moved" needs no new hook: every fetch already re-arms this
   /// family (fetch tails + the 30-min poll call this method), and the
   /// 900-999 cancel-then-rearm makes the recompute replace the old slot.
+  /// Late-lecture edge (accepted, R32 audit): if the feed only learns of
+  /// the first lecture AFTER the day's 07:30 digest already fired, the
+  /// next poll re-arms a slot later that morning and the day gets a
+  /// SECOND digest. That is corrective, not spam: the fired one said the
+  /// morning was free - wrong - and the new body is the corrected truth.
   static Future<void> scheduleMorningDigest(WebcalFeed feed) async {
     if (!MeiNotifications.supported) return;
     // C61: contained fire-and-forget scheduler (see the lecture family).

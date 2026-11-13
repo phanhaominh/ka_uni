@@ -122,9 +122,12 @@ class SignMeUpMineCard extends StatelessWidget {
         // R32.4: seats-filled sub-line. Gate on placesNumber > 0: the
         // model's `?? 0` conflation of absent-with-zero means a non-positive
         // value is "seats unknown", and unknown never renders as "0/0".
-        // (registration rows carry no allocationType on the wire model, so
-        // the allocation join only exists where the procedure data is
-        // in hand - the exam cards, see ExamsPage.seatsLine.)
+        // Allocation type stays absent here: the myregs wire DOES carry it
+        // (myregs.json: "allocationType"), but SignMeUpRegistration.fromJson
+        // drops it - parsing it is the documented follow-up. The exam-card
+        // twin join was removed in the R32 audit - /procedures is the
+        // lecture-allocation catalog, not KIT's exam registration - so the
+        // seats count is all this row renders.
         if (r.placesNumber > 0)
           Padding(
             padding: const EdgeInsets.only(top: 1),

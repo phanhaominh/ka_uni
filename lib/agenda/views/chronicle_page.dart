@@ -6,7 +6,7 @@ import '../../timetable/models/webcal.dart';
 
 /// R32.7 CHRONICLE: every timetable delta still sitting in
 /// [WebcalKeys.changes] (DATA_webcalChanges), pushed from the agenda's
-/// CHANGED band footer ("ältere Änderungen"). Where the band filters to
+/// CHANGED band footer ("Ältere Änderungen"). Where the band filters to
 /// `when >= today` and shows at most 6 rows, this page shows the WHOLE
 /// stored history of the current store — and says so: the header admits
 /// the coverage (only what the app itself saw while polling), the visible
@@ -72,8 +72,15 @@ class ChroniclePage extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                            L10n.t("timetable.chronicleCap",
-                                [changes.length, storedCap, L10n.stamp(oldest)]),
+                            // year-bearing on purpose: the 50-entry cap is
+                            // count-based, so the store can stretch back
+                            // into a past term — a year-less stamp would
+                            // then silently read as this year's date
+                            L10n.t("timetable.chronicleCap", [
+                              changes.length,
+                              storedCap,
+                              L10n.deadline(oldest)
+                            ]),
                             style: TextStyle(
                                 fontSize: 12, color: scheme.outline)),
                       ),

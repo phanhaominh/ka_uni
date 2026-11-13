@@ -15,7 +15,9 @@ import 'package:kit_mobile/settings/types/multiple_choice_setting.dart';
 import 'package:kit_mobile/state_management/kit_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../agenda/views/chronicle_page.dart';
 import '../../credentials/data/credentials_provider.dart';
 import '../../diagnostics/support_state.dart';
 import '../../info/views/info_page.dart';
@@ -25,6 +27,7 @@ import 'module_tree_debug_page.dart';
 import '../../tutorials/data/tutorial_manager.dart';
 import '../../toasts/models/toasts_provider.dart';
 import '../../timetable/logic/ics_export_action.dart';
+import '../../timetable/models/webcal.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -157,6 +160,42 @@ class _SettingsPageState extends State<SettingsPage> {
 
                 BlockContainer(
                   child: const _OwnIcsSection(),
+                ),
+
+                BlockContainer(
+                  // R32 audit: the agenda band (and with it its "older
+                  // changes" footer) is invisible on any day the feed saw
+                  // no deltas - the stored history needs its own door.
+                  child: Semantics(
+                    button: true,
+                    label: L10n.t("timetable.chronicleTitle"),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () async {
+                        final stored = await SharedPreferencesAsync()
+                            .getString(WebcalKeys.changes);
+                        if (!context.mounted) return;
+                        await Navigator.of(context).push(MaterialPageRoute(
+                            builder: (BuildContext context) => ChroniclePage(
+                                changes: IcsChange.decode(stored ?? ""))));
+                      },
+                      child: ConstrainedBox(
+                        // >= 48 dp tap target (same card idiom as file cache)
+                        constraints: const BoxConstraints(minHeight: 48),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                                child: Text(
+                                    L10n.t("timetable.chronicleTitle"))),
+                            Icon(CupertinoIcons.chevron_forward,
+                                size: 14,
+                                color: Theme.of(context).colorScheme.primary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
 
                 SettingsSectionTitle(

@@ -557,3 +557,55 @@ t+6s, countdown tier shows ITDS, single 24.02.2027 row, bundle "0.8.9+65".
 Known behavior seen during verification: exam-registration page "Try again" does NOT renew
 an expired session - a cold restart re-runs the boot-chain login. drive.py guards kept
 their promise twice (back-press exited to Lawnchair/chooser; taps refused, exit 3).
+
+## Wave R32: "already paid for" — roadmap wave 1 (0.9.0+66)
+Brief: `audit/brief_Roadmap.md` (R32 items; 43-idea 6-lens ideation x 4-lens judging round).
+- R32.1/2 digest: lecture lines carry the room (placeholder -> "Raum folgt / Room TBA"); morning
+  digest slot = max(07:30, first lecture - 75min), free days keep 07:30; re-arm rides every poll —
+  a lecture appearing AFTER the digest fired yields a SECOND, corrective digest (accepted, doc'd).
+- R32.3 deregEnd: ExamEntry parses "Abmelden bis"/literal "Unregister until" (EN \b can't match
+  inside "Unregister"; DE mirror cell is extrapolated, EN verbatim live — DE arm since rendered
+  live 13.11: "abmelden bis Fr, 19.02. 23:59" chip); chip on registered cards (error tier <=3d,
+  expired never renders), cockpit "Abmeldefrist" row, T-24h ping on FRESH band 1300-1319 (never
+  reuse 500-600: that family cancels+re-arms its whole range).
+- R32.5 prereq-gate alarm: blockedBy-set growth after each ledger diff -> one heads-up ("known
+  block" wording, completeness note always). Snapshot DATA_prereqAlarm is CODE-keyed behind a
+  "v2:" tag (audit: title-keys made handbook rewording fire fake growth; untagged = seed; a
+  tagged EMPTY map is LIVE "no blocks" — the first real block MUST announce, the audit MAJOR),
+  double epoch fence (write AND push) so logout never leaves A's blocks in B's shade.
+- R32.6 hero room-change: IcsLocation delta (kind==changed, oldRoom!=room, same titleKey+start as
+  the hero occurrence, feed <30h) renders struck old -> new room under NextUp on agenda+home
+  (room_change_line.dart; ties last-stored-wins = R22 rule; hero latch invariant untouched).
+- R32.7 CHRONICLE page: whole DATA_webcalChanges store grouped by affected lecture day, /50 cap +
+  oldest stamp disclosed, coverage header admits poll-boundedness. Entry: agenda band footer ONLY
+  when older-than-today entries exist + settings row (audit: band empty => footer-less => the
+  stored history had no door).
+- R32.8 exam route handoff: cards list "room · Route/Directions" via walk_hint resolver +
+  maps_url (contained launch); dedupe by resolved URL — Mechanical Design A's 7 seating keys
+  (6 rooms of building 10.50 + ILIAS) render ONE row "10.50 Bauingenieure, Kleiner Hörsaal (+6)"
+  (live-verified). ILIAS/unresolvable rooms render no line, ever. NOTE for future device passes:
+  uiautomator dumps never contain these route rows (InkWell rows are absent from the a11y tree
+  here) — verify with screenshots, not dump greps.
+- R32.4 seats: sub-line stays on the SignMeUp MINE card only. The exam-card join shipped in the
+  first cut then was REMOVED (audit + live /procedures probe): SignMeUp procedures are lecture
+  allocations (KIT exam registration lives on cascampus with placesNumber=0), so a title
+  collision like "Advanced Mathematics I" would print LOTTERY seats on an exam card. Live fact:
+  exam-registration procedures carry places=0 with live registration counts.
+- R32.9 gate: Studienverlauf cells[3]/[5] still unexamined — no creds file, no campus tab in
+  the relay; cells[5] date column stays PARKED (roadmap R36.3) until a dump lands.
+- Test hermeticity (audit find, pre-existing): KITProvider ctor now fences BOTH fetchJSession
+  kicks behind FLUTTER_TEST like mensa/anny — suites stopped firing live GETs to idp.scc.kit.edu
+  (agenda post-paint refetch noise remains, follow-up).
+- Cold-start geo seed (found by the +66 device pass, pre-existing): in-memory places existed only
+  after the live data_de.js GET won, so ONE failed fetch blinded walk hints AND the new exam
+  route rows for the whole session while a full ~500 KB directory sat cached in prefs. The ctor
+  now seeds places from loadSnapshot() (empty-only, live wins, notify on land).
+- Bands map now: ...1300-1319 dereg T-24h, 1320-1339 prereq heads-up (changeSlot, deadlines ch.).
+Process: 3 implement lanes (file-disjoint) + continuation, 4-lens audit pool (honesty/privacy/
+fragility/UX) + on-device evidence round; 1 MAJOR (prereq seed "{}") + 6 minors + nits ALL fixed
+and retested; 703 tests, analyze at pre-existing set.
+Device pass (Fire, release 0.9.0+66): conditional-countdown tier "If you register" + dereg chip
++ "As of HH:MM" footer render; route rows live on every card with a certifiable room incl. the
+(+1)/(+6) merges (screenshots audit/fire/r32fix_fire_*); route-row absence in a11y dumps = dump
+limitation, not a bug. Settings chronicle row present; opening it shows the grouped store.
+

@@ -9,7 +9,6 @@ import '../../constants/view_constants.dart';
 import '../../geo/logic/maps_url.dart';
 import '../../geo/models/kit_place.dart';
 import '../../l10n/l10n.dart';
-import '../../signmeup/signmeup_manager.dart';
 import '../../state_management/campus/campus_manager.dart';
 import '../../toasts/models/toasts_provider.dart';
 import '../../state_management/kit_provider.dart';
@@ -233,21 +232,32 @@ class ExamsPage extends StatelessWidget {
       e.examType,
     ];
 
-    // R32.8: door handoff for every distinct non-cancelled sitting room the
-    // directory can certify; R32.4: seats-filled sub-line when this exam's
-    // matching SignMeUp procedure is already in memory
+    // R32.8: door handoff per DESTINATION the directory can certify for
+    // the non-cancelled sittings, keyed on the resolved Maps URL: several
+    // seating keys name one building ("20.21 Pool A"…"Pool E" are rooms of
+    // one Hörsaal-Trakt) and would otherwise stack identical rows
     final routes = <({String room, String url})>[];
     {
       final places = vm.topographyManager.places;
-      final seen = <String>{};
+      final firstRoom = <String, String>{}; // url -> first room seen
+      final roomKeys = <String, Set<String>>{}; // url -> seating keys
       for (final t in e.terms) {
         if (t.isCancelled) continue;
         final r = routeHandoff(places, t.room);
-        if (r != null && seen.add(r.room)) routes.add(r);
+        if (r == null) continue;
+        firstRoom.putIfAbsent(r.url, () => r.room);
+        (roomKeys[r.url] ??= <String>{}).add(r.room);
+      }
+      // map iteration = order of first sight per URL; seating keys beyond
+      // the first are disclosed as the label's "(+N)" suffix, not dropped
+      for (final dest in firstRoom.entries) {
+        final extra = roomKeys[dest.key]!.length - 1;
+        routes.add((
+          room: extra == 0 ? dest.value : "${dest.value} (+$extra)",
+          url: dest.key,
+        ));
       }
     }
-    final seats =
-        seatsLine(vm.signMeUpManager.procedures, e.title);
     // R32.3: a deregistration deadline renders only while it is still
     // actionable — a passed "Abmelden bis" is history, never a live chip
     final deregRaw = e.registered ? e.deregEnd : null;
@@ -272,15 +282,6 @@ class ExamsPage extends StatelessWidget {
             Text(details.join("\n"),
                 style:
                     TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
-            // R32.4: muted seat fill right under the details — a lecture
-            // that is already 159/300 full is a different decision than an
-            // empty one, and the numbers were on the wire all along
-            if (seats != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(seats,
-                    style: TextStyle(fontSize: 11.5, color: scheme.outline)),
-              ),
             const SizedBox(height: 6),
             Wrap(
               spacing: 6,
@@ -311,30 +312,39 @@ class ExamsPage extends StatelessWidget {
                       style: TextStyle(fontSize: 11, color: scheme.outline)),
               ],
             ),
-            // R32.8: one tappable handoff row per distinct resolved room —
-            // tap opens Maps walking directions from wherever the student
-            // stands. Unresolved or online rooms never render a row, so a
-            // miss can never send the student to the wrong door.
+            // R32.8: one tappable handoff row per distinct RESOLVED
+            // DESTINATION (Maps URL, not room string) — tap opens Maps
+            // walking directions from wherever the student stands; the
+            // first seating key seen labels the row and "(+N)" discloses
+            // that N further keys share this door. Unresolved or online
+            // rooms never render a row, so a miss can never send the
+            // student to the wrong door.
             for (final r in routes)
               InkWell(
                 borderRadius: BorderRadius.circular(8),
                 onTap: () => _launchExternal(r.url),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      Icon(Icons.directions_walk,
-                          size: 15, color: scheme.primary),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                            "${r.room} · ${L10n.t("timetable.directions")}",
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 12.5, color: scheme.primary)),
-                      ),
-                    ],
+                // minHeight 44: Material's touch-target floor — the
+                // padded icon+label row measured ~25 dp, too small to
+                // hit reliably one-handed (settings rows, same idiom)
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 44),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Icon(Icons.directions_walk,
+                            size: 15, color: scheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                              "${r.room} · ${L10n.t("timetable.directions")}",
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 12.5, color: scheme.primary)),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -380,41 +390,6 @@ class ExamsPage extends StatelessWidget {
 
   static final Map<String, KITPlace?> _roomCache = {};
   static int _roomCacheEpoch = -1;
-
-  /// R32.4 seam: the seats-filled sub-line for an exam — rendered only when
-  /// the matching SignMeUp procedure is already in memory (normalized title
-  /// equality, never a fetch). The models' `?? 0` defaults conflate
-  /// absent-with-zero seats; both mean "unknown" and the `placesNumber > 0`
-  /// gate excludes them, since the wire only ever carried a positive count.
-  @visibleForTesting
-  static String? seatsLine(
-      List<SignMeUpProcedure> procedures, String examTitle) {
-    if (procedures.isEmpty) return null;
-    final key = _normTitle(examTitle);
-    if (key.isEmpty) return null;
-    for (final p in procedures) {
-      if (_normTitle(p.name) != key) continue;
-      if (p.placesNumber <= 0) continue; // absent or zero: seats unknown
-      final seats =
-          L10n.t("exams.seatsFilled", [p.registrations, p.placesNumber]);
-      final allocation = _allocationWords(p.allocationType);
-      return allocation.isEmpty ? seats : "$seats · $allocation";
-    }
-    return null;
-  }
-
-  static final _titleWs = RegExp(r"\s+");
-
-  static String _normTitle(String s) =>
-      s.toLowerCase().replaceAll(_titleWs, " ").trim();
-
-  /// allocation type joins the line verbatim-ish: the camelCase wire value is
-  /// only re-split into its own words ("FirstComeFirstServed" → "First Come
-  /// First Served"), never translated or reworded.
-  static final _camelBound = RegExp(r"(?<=[a-z0-9])(?=[A-Z])");
-
-  static String _allocationWords(String type) =>
-      type.trim().replaceAllMapped(_camelBound, (_) => " ");
 
   /// Mirror of agenda_page's private `_launchExternal` (the signmeup card
   /// carries the same-named twin): only a well-formed http(s) URL reaches the

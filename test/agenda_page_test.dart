@@ -359,4 +359,25 @@ void main() {
     expect(find.descendant(of: page, matching: find.text(cNew.describe())),
         findsOneWidget);
   });
+
+  testWidgets("an all-fresh store hides the chronicle link", (tester) async {
+    // R32 audit F7c: the band renders only `when >= today` deltas; with
+    // NOTHING older in the store the "Ältere Änderungen" button opened a
+    // chronicle showing exactly what the band already showed — a dead end
+    // dressed as a link, so it must not render at all
+    final now = DateTime.now();
+    final cNew = IcsChange(
+        kind: IcsChangeKind.changed,
+        title: "Neu Raum",
+        when: DateTime(now.year, now.month, now.day + 1, 10),
+        room: "HS 9",
+        oldRoom: "HS 8");
+    await pumpAgenda(tester,
+        changes: [cNew], marker: L10n.t("agenda.timetableChangedN", [1]));
+    expect(find.text(cNew.describe()), findsOneWidget,
+        reason: "the band itself stays up - only the chronicle link goes");
+    expect(find.text(L10n.t("timetable.olderChanges")), findsNothing);
+    expect(find.text(L10n.t("agenda.dismiss")), findsOneWidget,
+        reason: "dismiss remains: the fresh band still needs an exit");
+  });
 }
