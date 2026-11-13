@@ -10,6 +10,12 @@ const double spaceXs = 4, spaceSm = 8, spaceMd = 12, spaceLg = 16, spaceXl = 24;
 // Page gutter: section titles, date band and trailing buttons share it.
 const double pageGutter = 16;
 
+// Bottom padding for every full-screen scrollable: the nav dock is a
+// bottomSheet overlay, so without this the last rows sit permanently
+// under the pill and taps there die silently (R31 F-6; 140 is the
+// home-page precedent that actually clears pill+margin+safe-area).
+const double kDockClearance = 140;
+
 // Outer margin of every inline card (BlockContainer default, Card margin).
 const double cardGutter = 4;
 

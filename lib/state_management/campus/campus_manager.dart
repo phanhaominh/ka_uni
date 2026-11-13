@@ -2563,6 +2563,17 @@ class CampusManager extends KITLoginManager {
     return WebcalFeed.parse(sanitizeSentinels(r.body));
   }
 
+  /// R31 F-1 memory-first handoff for the home hero: the card is the ONLY
+  /// SharedPreferencesAsync reader of the stamp/cache pair while all writers
+  /// are legacy getInstance (the async/legacy mismatch is documented on the
+  /// account fence below) - an async ghost-null read used to latch its
+  /// banner "stale" over a freshly-rendered grid. A successful foreground
+  /// fetch publishes the EXACT stamp string and merged feed here; the hero
+  /// adopts them in-process, and the async probe stays as the cross-process
+  /// (poll isolate) fence only.
+  String? webcalWrittenAt;
+  WebcalFeed? webcalMergedFeed;
+
   Future<bool>? _webcalInFlight;
 
   /// single-flight: boot chain + agenda pull + exams relay all used to run
@@ -2751,11 +2762,17 @@ class CampusManager extends KITLoginManager {
           dueSynth);
       await prefs.setString(_webcalIcsCacheKey, mergedCache);
       // age stamp for the agenda stale-data footer (also written by the
-      // background poll after it rewrites the cache)
-      await prefs.setString(
-          WebcalKeys.fetchedAt, DateTime.now().toIso8601String());
+      // background poll after it rewrites the cache); hoisted so the memory
+      // handoff below carries the EXACT string written, not a re-read the
+      // card could never match against the lagging async view
+      final writtenAt = DateTime.now().toIso8601String();
+      await prefs.setString(WebcalKeys.fetchedAt, writtenAt);
 
       final merged = WebcalFeed.parse(mergedCache);
+      // R31 F-1: publish BEFORE notificationCallback - the hero re-enters
+      // didChangeDependencies on that notify and adopts these synchronously
+      webcalWrittenAt = writtenAt;
+      webcalMergedFeed = merged;
       timetable = gridTemplate(merged ?? feed);
       rememberEnrolledTitles(merged ?? feed);
 

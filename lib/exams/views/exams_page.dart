@@ -4,6 +4,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
 import '../../common_ui/max_width_body.dart';
+import '../../constants/view_constants.dart';
 import '../../l10n/l10n.dart';
 import '../../state_management/campus/campus_manager.dart';
 import '../../toasts/models/toasts_provider.dart';
@@ -116,7 +117,8 @@ class ExamsPage extends StatelessWidget {
                     ))
               : ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 130),
+                  padding:
+                      const EdgeInsets.fromLTRB(12, 12, 12, kDockClearance),
                   children: [
                     if (exams.isEmpty)
                       Padding(

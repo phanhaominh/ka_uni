@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../common_ui/block_container.dart';
+import '../../constants/view_constants.dart';
 import '../../handbook/ampel.dart';
 import '../../handbook/handbook_data.dart';
 import '../../l10n/l10n.dart';
@@ -62,7 +63,7 @@ class GradesPage extends StatelessWidget {
         },
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 130),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, kDockClearance),
           children: [
             if (book.modules.isEmpty)
               // not logged in / tree not scraped yet: say so instead of an

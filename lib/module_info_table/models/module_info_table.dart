@@ -109,6 +109,13 @@ class ModuleInfoTable {
       table.colTitles.add(text);
     });
 
+    // CampusKIT emits byte-identical rows for the same exam attempt (audit
+    // F-10: five "Wed, 24.02.2027 11:00 - 13:00" lines on one module page).
+    // Drop repeats at the parse choke point so EVERY consumer (rendering,
+    // exam dates, favorites) sees one row. Rows that only LOOK alike but
+    // differ in link or favorite-event value are distinct events and stay.
+    final seenRowKeys = <String>{};
+
     tableNode
         .getElementsByClassName("tablecontent")
         .firstOrNull
@@ -125,6 +132,10 @@ class ModuleInfoTable {
       }
 
       if (row.cells.length != table.colTitles.length) {
+        return;
+      }
+
+      if (!seenRowKeys.add(_rowKey(row))) {
         return;
       }
 
@@ -266,6 +277,22 @@ class ModuleInfoTable {
 
   static String _timeKey(String timeStr) =>
       timeStr.replaceAll(RegExp(r"\s+"), " ").trim().toLowerCase();
+
+  /// Identity of one parsed cell: everything the user can see (body, date,
+  /// time, link text/href) plus the favorite button's event value. Whitespace
+  /// is collapsed because the five duplicated blocks in the wild only
+  /// differed in indentation - case stays significant, these must be the
+  /// SAME row, not a merely similar one.
+  static String _cellKey(ModuleInfoTableCell cell) => [
+        cell.body,
+        cell.dateStr,
+        cell.timeStr,
+        cell.link,
+        cell.objectValue,
+      ].map((s) => s.replaceAll(RegExp(r"\s+"), " ").trim()).join("\u0000");
+
+  static String _rowKey(ModuleInfoTableRow row) =>
+      row.cells.map(_cellKey).join("\u0001");
 
   // called after the row is parsed and has finished all its internal processing
   // before adding it to the rows list of the table

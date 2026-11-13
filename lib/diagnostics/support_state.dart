@@ -1,13 +1,16 @@
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../notifications/mei_notifications.dart';
 import '../timetable/models/webcal.dart';
 import 'support_bundle.dart';
 
-/// App-visible version, mirroring pubspec.yaml `version:`. Deliberately a
-/// constant instead of a package_info plugin: the bundle only needs a
-/// version a support thread can match to a commit, and a build-time const
-/// cannot fail at runtime. MUST be bumped together with the pubspec.
+/// Fallback app version, mirroring pubspec.yaml `version:`. The bundle
+/// resolves the real installed version from PackageInfo at build time (F9:
+/// a +64 install printed this const's 0.8.9+63); kAppVersion only covers
+/// unit tests and platforms where the plugin cannot answer - a stale-but-
+/// shaped version still beats an empty field in a support thread. MUST be
+/// bumped together with the pubspec.
 const kAppVersion = "0.8.9+63";
 
 /// The one CrashTail every error hook records into, plus its prefs mirror.
@@ -56,8 +59,18 @@ class SupportState {
       for (final key in const [WebcalKeys.diag, "MENSA_diag"])
         if ((prefs.getString(key) ?? "").isNotEmpty) key: prefs.getString(key)!,
     };
+    // Runtime version first; PackageInfo caches its answer process-wide, so
+    // this stays one channel call per session. Missing plugin (tests, odd
+    // platforms) or empty fields fall back to the const, never a blank.
+    var appVersion = kAppVersion;
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (info.version.isNotEmpty && info.buildNumber.isNotEmpty) {
+        appVersion = "${info.version}+${info.buildNumber}";
+      }
+    } on Object catch (_) {}
     return buildSupportBundle(
-      appVersion: kAppVersion,
+      appVersion: appVersion,
       diagnostics: diags,
       crashTail: tail.lines,
       notificationsPermission: MeiNotifications.canScheduleExact,

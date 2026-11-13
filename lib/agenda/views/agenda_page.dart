@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:kit_mobile/common_ui/max_width_body.dart';
+import 'package:kit_mobile/constants/view_constants.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -588,7 +589,7 @@ class _AgendaPageState extends State<AgendaPage> {
         child: RefreshIndicator(
           onRefresh: _refresh,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 130),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, kDockClearance),
             children: [
               if (bandChanges.isNotEmpty)
                 HighlightPulse(

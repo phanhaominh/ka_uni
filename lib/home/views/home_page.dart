@@ -302,7 +302,7 @@ class _KITHomePageState extends State<KITHomePage> {
                       ),
                       // the floating dock overlays the page: without this the
                       // last module rows sit permanently under the pill
-                      const SizedBox(height: 140),
+                      const SizedBox(height: kDockClearance),
                     ],
                   )
                 ]),
@@ -389,15 +389,31 @@ class _NextUpHomeCardState extends State<NextUpHomeCard>
 
   /// cheap post-refresh re-read (mirrors the agenda, which reloads its
   /// cache off the same stamp key): the provider notification re-enters
-  /// didChangeDependencies, this compares the fetch stamp against what the
-  /// hero actually rendered, and a mismatch re-reads the ICS. Deliberately
-  /// async + setState-if-changed: build must never block on prefs IO.
+  /// didChangeDependencies, this adopts the fetch's memory handoff when the
+  /// stamp moved, falling back to an async prefs probe for cross-process
+  /// (poll isolate) writes. Deliberately non-blocking: build must never
+  /// wait on prefs IO.
   Future<void> _resyncIfStale() async {
+    // R31 F-1 memory-first: a successful foreground fetch publishes the
+    // exact stamp/feed it wrote on CampusManager; adopting in-process is
+    // synchronous with the refresh notify and immune to the async/legacy
+    // prefs mismatch (this card is the only async reader of these keys,
+    // all writers are legacy) that once latched the banner "stale" over a
+    // fresh grid.
+    final cm = context.read<KITProvider>().campusManager;
+    final memStamp = cm.webcalWrittenAt;
+    final memFeed = cm.webcalMergedFeed;
+    if (memStamp != null && memFeed != null && memStamp != _seenFetchedAt) {
+      _seenFetchedAt = memStamp;
+      setState(() => _feed = memFeed);
+      return;
+    }
+    // cross-process fallback only: the WorkManager poll isolate writes the
+    // cache from ANOTHER isolate while the app sits closed - no memory to
+    // hand off, so there the SharedPreferencesAsync view is the live fence.
     if (_probeInFlight) return;
     _probeInFlight = true;
     try {
-      // SharedPreferencesAsync is the live cross-isolate fence; the legacy
-      // getInstance() snapshot would keep serving pre-refresh bytes
       final stamp =
           await SharedPreferencesAsync().getString(WebcalKeys.fetchedAt);
       if (mounted && stamp != _seenFetchedAt) await _readCache();
@@ -415,8 +431,13 @@ class _NextUpHomeCardState extends State<NextUpHomeCard>
     // leaves the older stamp recorded, so the next probe re-fires (over-
     // invalidation) instead of marking fresh-looking stale bytes as seen
     final stamp = await prefs.getString(WebcalKeys.fetchedAt);
-    final feed =
-        WebcalFeed.parse(await prefs.getString(WebcalKeys.icsCache) ?? "");
+    final rawCache = await prefs.getString(WebcalKeys.icsCache);
+    // R31 F-1: a ghost-null pair (the async view lagging the legacy writes
+    // behind a banner) must NEVER latch the card. Null stamp OR null cache
+    // = keep the last good state and leave _seenFetchedAt alone, so every
+    // later probe/notify re-fires until the pair materializes.
+    if (!mounted || stamp == null || rawCache == null) return;
+    final feed = WebcalFeed.parse(rawCache);
     // R24: pending deltas name the cancellations on the day banner
     final changes =
         IcsChange.decode(await prefs.getString(WebcalKeys.changes) ?? "");

@@ -113,6 +113,7 @@ class _ModuleViewState extends State<ModuleView> {
             body: Padding(
               padding: EdgeInsets.symmetric(horizontal: 15),
               child: ListView(
+                padding: const EdgeInsets.only(bottom: kDockClearance),
                 // crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Padding(
