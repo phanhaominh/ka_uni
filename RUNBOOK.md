@@ -986,3 +986,17 @@ run via ./gradlew :app:testDebugUnitTest. Rule: any new NotificationPayload
 constant needs the TOKENS mirror in the same commit or the Gradle test fails.
 Gradle/Kotlin string escapes: write \u0022 inside regex strings, never nested
 heredoc backslash-quote soup.
+SOAK (2026-11-13, real IdP logout->login on the Fire): logout wiped to the
+gate cleanly, login restored the session in one shot, zero crashes in logcat,
+workmanager torn down + rebuilt. It also CAUGHT THE BAND LOCK DEAD, twice
+before the real cause: rearmFromFeed threw PathNotFoundException opening the
+lock file; the first "fix" (support directory) changed the ERROR PATH but not
+the CAUSE - file.openSync() defaults to FileMode.READ, which cannot create
+the file. Final form: openSync(mode: FileMode.append) under
+getApplicationSupportDirectory() (path_provider creates that dir). RULES:
+(1) openSync for create-or-write ALWAYS names the FileMode - READ is the
+default and it throws on missing files; (2) when an error path changes after
+a "fix" but the error class does not, the root cause was not found - re-diagnose,
+don't stack patches; (3) a lock whose open throws fails LOUD in a device
+soak but SILENTLY in unit tests (no real Android FS) - any new file-anchored
+synchronization needs one device smoke before it ships.

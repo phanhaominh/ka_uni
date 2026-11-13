@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Directory, File, Platform, RandomAccessFile;
+import 'dart:io' show File, FileMode, Platform, RandomAccessFile;
 import 'dart:ui' show PlatformDispatcher;
+
+import 'package:path_provider/path_provider.dart';
 
 import '../agenda/logic/window_fsm.dart';
 
@@ -361,9 +363,16 @@ class MeiNotifications {
       _rearmDepth++; // same-isolate re-entry (rearmFromFeed -> schedule*)
       return true;
     }
-    final file = File("${Directory.systemTemp.path}/kauni-alarm-band.lock");
+    // Fire OS sets TMPDIR to .../code_cache, which does not exist -
+    // systemTemp threw PathNotFoundException on device (soak 2026-11-13).
+    // dataDirectory always exists; the lock needs no special home.
+    final file = File("${(await getApplicationSupportDirectory()).path}/kauni-alarm-band.lock");
     for (var attempt = 0; attempt <= waitSeconds * 5; attempt++) {
-      final raf = file.openSync();
+      // FileMode.append: openSync()'s DEFAULT is FileMode.READ, which
+      // throws PathNotFoundException on a never-created lock file - the
+      // device's two "broken path" reports were really this (soak
+      // 2026-11-13); append creates-on-open and never truncates.
+      final raf = file.openSync(mode: FileMode.append);
       try {
         // Dart's lock() is NON-blocking by default (FileLock.block is the
         // opt-in): on contention the future completes with an error, so a
