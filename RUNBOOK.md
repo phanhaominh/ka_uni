@@ -609,3 +609,51 @@ Device pass (Fire, release 0.9.0+66): conditional-countdown tier "If you registe
 (+1)/(+6) merges (screenshots audit/fire/r32fix_fire_*); route-row absence in a11y dumps = dump
 limitation, not a bug. Settings chronicle row present; opening it shows the grouped store.
 
+## Wave R33: "the pocket era" (0.10.0+67)
+Brief: `audit/brief_Roadmap.md` R33 (all five items S-sized, zero new scraping).
+- R33.1 window-opens ping: SignMeUp family grows a T-0 arm (ids 750-799, closes arm VETOED as
+  cockpit duplicate - closing deadlines surface in the morning digest instead). Pure
+  `smuOpenFire`/`smuOpenClamp`: work-hour clamp 08:00-21:00 (KIT opens windows at 00:05; a ping
+  at 00:07 is a vandalism), future windows = one alarm at clamped T-0, already-open windows =
+  backfill at now+2min guarded by DATA_smuOpensFired (procedureId->start ISO, at-most-once per
+  window, dies with logout). Rides mei_deadlines; provenance gate unchanged (family only runs
+  behind proven registration state).
+- R33.2 action button: inline "Jetzt anmelden" on both smu arms -> deep-links to the agenda's
+  SignMeUp card and marks NOTHING (dispatch via onActionPayload; the press claims zero about
+  registration state, feed truth untouched). _zoned gained the actions parameter.
+- R33.3 grade-publish poll: own 6h WorkManager task "mei-grades-poll"/"grades-diff" (its own
+  executeTask branch - a throw there can never touch or cancel the 30-min webcal task;
+  initialDelay 5min, boot chain already covers t=0). Reuses the foreground pipeline VERBATIM:
+  fresh CampusManager + stored creds -> fetchSchedule -> the existing ledger diff + 1200-band
+  pings (seed run posts nothing - existing rule). Two new seams in CampusManager for the
+  isolate: `ledgerDiffDone` (fire-and-forget tail must finish before the isolate dies) and
+  `loggedOutProbe` (platform-prefs fence at the write: the instance epoch is born 0 in this
+  isolate and can never see the main one's teardown - C81 class). Logout kills the task
+  (sweep + C68 self-cancel when unprovisioned).
+- R33.4 last-lecture soft-alarm: `lastUpcomingLecture` = latest FUTURE lecture, Due/Abgabe rows,
+  kauni-synth events and the own-import block excluded; family 1360-1379 id-keyed by day
+  (re-arm overwrites = once), fires at the plain 07:30 digest slot on T-3d, never late; the
+  morning digest of the lecture's last day grows a "letzte Vorlesung laut Plan" line. "laut
+  Plan/schedule says" wording is load-bearing (the feed certifies the plan, not the future) -
+  pinned in test/r33_soft_pings_test.
+- R33.5 SOP early-warning row: pure sop_alarm.dart `sopEarlyWarning(modules, ledger, rows,
+  takingKeys, now)` -> (cpFloor, exposedModules, attemptsKnown). CP floor sums only
+  handbook-priced ledger-PASSED modules ("mindestens/at least" is load-bearing); exposure =
+  TWO raw Studienverlauf fail rows (retakes live only in the raw tree - dedup collapses them)
+  AND the deduped verdict still FAILED AND handbook-priced AND reachable now (current term or
+  enrolled lectures); attempts unknown -> CP line alone, never a "nobody" claim. Row rides the
+  cockpit card via FutureBuilder(Handbook.load()) (grades-page _ampelCard idiom). fail-cell
+  test mirrors GradeBook._classify's FAIL branches ("nicht" before "bestanden", decimal >4,0 -
+  4,0 is NOT a fail, pinned by test). Wording locked de+en (sopWarnTitle/Cp/Exposed).
+Process: notifications cluster inline + SOP lane (file-disjoint), tests + analyze pre-existing.
+- Foreground re-arm hole (found by the +67 device pass): resyncOnStartup and the WorkManager
+  poll tail are BOTH fenced on a personal webcal url - a cookie-SSO-only device (Fire: no ICS
+  feed) never runs either, so anything wired only there arms zero alarms. The last-lecture
+  family now rides the four foreground fetch tails in campus_manager (alongside the morning/
+  evening digests, the same unawaited idiom) - armed live: id 1367 @ T-3d 07:30 (dumpsys).
+  Device pass also proved: grade poll = 2nd pending WorkManager job; 50 opens-alarms clamped
+  to next-morning 08:00 + DATA_smuOpensFired written to the async DataStore (shared_prefs
+  XML greps MISS all SharedPreferencesAsync keys - they live in files/datastore/
+  FlutterSharedPreferences.preferences_pb). SOP row silent on a first-semester ledger (zero
+  state = silence, by design; row logic pinned by test/sop_alarm_test).
+

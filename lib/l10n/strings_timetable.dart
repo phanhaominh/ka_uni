@@ -82,6 +82,15 @@ const Map<String, String> de_timetable = {
   "timetable.lectureFree": "Vorlesungsfreie Zeit",
   "timetable.roomVaries": "Raum wchs.",
   "timetable.openCoursePage": "Kursseite öffnen",
+  // R33.5 SOP early-warning cockpit row. The wording is load-bearing:
+  // "mindestens" stays because imported/catalogue-unknown CP can exceed
+  // the ledger×handbook product, and the exposure clause is hedged
+  // ("laut Prüfungsledger") because the app only ever counts RECORDED
+  // fails - the PO claim is conditional on the next sitting.
+  "agenda.sopWarnTitle": "SOP: dritter Versuch = endgültig nicht bestanden",
+  "agenda.sopWarnCp": "Mindestens {0} LP errungen",
+  "agenda.sopWarnExposed":
+      "Nach PO endgültig nicht bestanden im dritten Versuch — laut Prüfungsledger: {0}",
 };
 
 const Map<String, String> en_timetable = {
@@ -159,4 +168,11 @@ const Map<String, String> en_timetable = {
   "timetable.lectureFree": "No lectures this week",
   "timetable.roomVaries": "Room varies",
   "timetable.openCoursePage": "Open course page",
+  // R33.5 SOP early-warning cockpit row; mirrors the de hedge wording
+  // ("at least", "per the grades ledger") - see de_timetable for why both
+  // are mandatory.
+  "agenda.sopWarnTitle": "SOP: a third fail ends the module for good",
+  "agenda.sopWarnCp": "At least {0} CP earned",
+  "agenda.sopWarnExposed":
+      "Under the exam regulations a third fail is final — per the grades ledger: {0}",
 };

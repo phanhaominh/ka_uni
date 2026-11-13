@@ -14,6 +14,9 @@ import '../../agenda/logic/walk_hint.dart';
 import '../../agenda/logic/cockpit.dart';
 import '../../agenda/logic/next_up.dart';
 import '../../agenda/logic/prep_bundle.dart';
+import '../../agenda/logic/sop_alarm.dart';
+import '../../grades/models/grade_book.dart';
+import '../../handbook/handbook_data.dart';
 import '../../timetable/logic/now_clock.dart';
 import '../../common_ui/highlight_pulse.dart';
 import '../../ilias/ilias_scraper.dart';
@@ -1170,12 +1173,10 @@ class _AgendaPageState extends State<AgendaPage> {
         registeredProcedureIds: vm.signMeUpManager.registeredProcedureIds,
         smuProven: vm.signMeUpManager.loadedMine,
         now: now);
-    if (items.isEmpty) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
     String label(CockpitKind k) => switch (k) {
           CockpitKind.due => L10n.t("agenda.cockpitDue"),
-          CockpitKind.examSignupOpen =>
-            L10n.t("agenda.cockpitExamSignupOpen"),
+          CockpitKind.examSignupOpen => L10n.t("agenda.cockpitExamSignupOpen"),
           CockpitKind.examSignupOpens =>
             L10n.t("agenda.cockpitExamSignupOpens"),
           CockpitKind.examDereg => L10n.t("agenda.cockpitDereg"),
@@ -1185,64 +1186,133 @@ class _AgendaPageState extends State<AgendaPage> {
         };
     IconData icon(CockpitKind k) => switch (k) {
           CockpitKind.due => Icons.assignment,
-          CockpitKind.examSignupOpen || CockpitKind.examSignupOpens =>
+          CockpitKind.examSignupOpen ||
+          CockpitKind.examSignupOpens =>
             Icons.how_to_reg,
           CockpitKind.examDereg => Icons.person_off,
           CockpitKind.examSitting => Icons.event,
           CockpitKind.smuOpen || CockpitKind.smuOpens => Icons.school,
         };
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Icon(Icons.timeline, color: scheme.primary),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(L10n.t("agenda.cockpitTitle"),
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold, color: scheme.primary)),
-              ),
-            ]),
-            for (final it in items)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  children: [
-                    Icon(icon(it.kind),
-                        size: 16,
-                        color: it.urgent(now)
-                            ? scheme.error
-                            : scheme.onSurfaceVariant),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(it.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 13, fontWeight: FontWeight.w600)),
-                          Text(
-                            "${label(it.kind)} · ${L10n.dayOffset(it.when, now)} · ${L10n.stamp(it.when)}",
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: it.urgent(now)
-                                    ? scheme.error
-                                    : scheme.outline),
+    // R33.5: the SOP early-warning row rides this card. The handbook is
+    // the memoized asset future (same build-time idiom as the grades
+    // page's Ampel card); while it has not resolved the card simply shows
+    // its date rows, and a missing/corrupt asset keeps the row silent -
+    // the catalogue is an enhancement, never a claim.
+    return FutureBuilder<Handbook?>(
+      future: Handbook.load(),
+      builder: (context, snap) {
+        final handbook = snap.data;
+        final cm = vm.campusManager;
+        final alarm = handbook == null
+            ? null
+            : sopEarlyWarning(
+                modules: handbook.modules,
+                ledger: GradeBook.fromRows(cm.moduleRows,
+                        ectsAcquiredTotal: cm.student.ectsAcquired,
+                        avgMark: cm.student.avgMark)
+                    .modules,
+                rows: cm.moduleRows,
+                takingKeys: cm.enrolledLectureTitles,
+                now: now);
+        // clean zero state renders nothing: attempts known and nobody
+        // exposed is silence, not a "all fine" line (doctrine of the
+        // card's empty timeline); attempts UNKNOWN with a computable CP
+        // floor is the one honest single-line warning
+        final showAlarm = alarm != null &&
+            (alarm.exposedModules.isNotEmpty ||
+                (!alarm.attemptsKnown && alarm.cpFloor > 0));
+        if (items.isEmpty && !showAlarm) return const SizedBox.shrink();
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(Icons.timeline, color: scheme.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(L10n.t("agenda.cockpitTitle"),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: scheme.primary)),
+                  ),
+                ]),
+                if (showAlarm)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        Icon(Icons.warning_amber_rounded,
+                            size: 16, color: scheme.error),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(L10n.t("agenda.sopWarnTitle"),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600)),
+                              Text(
+                                [
+                                  if (alarm.cpFloor > 0)
+                                    L10n.t("agenda.sopWarnCp", [alarm.cpFloor]),
+                                  if (alarm.exposedModules.isNotEmpty)
+                                    L10n.t("agenda.sopWarnExposed",
+                                        [alarm.exposedModules.join(", ")]),
+                                ].join(" · "),
+                                style: TextStyle(
+                                    fontSize: 12, color: scheme.error),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
+                  ),
+                for (final it in items)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        Icon(icon(it.kind),
+                            size: 16,
+                            color: it.urgent(now)
+                                ? scheme.error
+                                : scheme.onSurfaceVariant),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(it.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600)),
+                              Text(
+                                "${label(it.kind)} · ${L10n.dayOffset(it.when, now)} · ${L10n.stamp(it.when)}",
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: it.urgent(now)
+                                        ? scheme.error
+                                        : scheme.outline),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

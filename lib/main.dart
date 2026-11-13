@@ -24,6 +24,7 @@ import 'constants/view_constants.dart';
 import 'credentials/views/login_view.dart';
 import 'diagnostics/support_state.dart';
 import 'navigation/notification_deep_links.dart';
+import 'notifications/notification_payload.dart';
 import 'navigation/views/kit_nav_container.dart';
 
 const isAlpha = true;
@@ -62,6 +63,14 @@ void main() async {
     // `late` campusManager access is fenced for exactly that case.
     MeiNotifications.onActionPayload =
         (String actionId, String? payload, int id) async {
+      // R33.2: "Jetzt anmelden" = pure navigation to the agenda's SignMeUp
+      // card. It marks NOTHING: registration state stays feed truth, the
+      // button never claims anything happened.
+      if (actionId == MeiNotifications.actionOpen) {
+        NotificationDeepLinkRouter.instance
+            .handleTap(NotificationPayload.agenda);
+        return;
+      }
       if (actionId != MeiNotifications.actionSeen) return;
       await MeiNotifications.acknowledgeChanges(id);
       try {

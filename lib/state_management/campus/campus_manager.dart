@@ -656,7 +656,7 @@ class CampusManager extends KITLoginManager {
     // R29 (D2): grade-publish detection rides the very page this fetch
     // just parsed - no second request. Fire-and-forget: a slow prefs or a
     // notification failure must never delay `ready` or the login flow.
-    unawaited(_diffLedgerAndNotify());
+    ledgerDiffDone = _diffLedgerAndNotify();
 
     if (kDebugMode) {
       print("Got profile data!");
@@ -668,6 +668,20 @@ class CampusManager extends KITLoginManager {
       // scheduleFetchingTimer ??= Timer(const Duration(minutes: 1), forceRefetchEverything);
     }
   }
+
+  /// R33.3 seam (grade poll): set to an async logout probe by callers whose
+  /// teardownEpoch CANNOT see the main isolate's logout (the WorkManager
+  /// grade poll). Checked before the ledger snapshot write and before any
+  /// push — the DATA_* sweep must never be undone by a poll that finished
+  /// post-teardown (C81 class).
+  Future<bool> Function()? loggedOutProbe;
+
+  static Future<bool> _neverLoggedOut() async => false;
+
+  /// Resolves once the LAST fire-and-forget ledger diff has finished;
+  /// the grade poll isolate awaits it before exiting (its process dies
+  /// with the callback's return — an unawaited diff would die mid-push).
+  Future<void> ledgerDiffDone = Future.value();
 
   /// R29 (D2): grade-publish detector for one freshly parsed Studienverlauf.
   /// Diffs the deduplicated tree against the last fetch's compact snapshot
@@ -706,7 +720,11 @@ class CampusManager extends KITLoginManager {
       // first await otherwise, and storing the snapshot after the
       // teardown would re-seed the swept DATA_ledger* keys with the old
       // account's grades (the exact C81 hazard the poll tail documents)
-      if (epoch != _teardownEpoch) return; // logout mid-flight
+      if (epoch != _teardownEpoch) return;
+      // R33.3 cross-isolate fence: the grade poll's instance epoch is
+      // born at 0 and never sees the MAIN isolate's teardown, so the
+      // probe (platform prefs read) gates the same hazard there
+      if (await (loggedOutProbe?.call() ?? _neverLoggedOut())) return; // logout mid-flight
       // snapshot advances BEFORE the pushes: at-most-once announcements,
       // the same trade the CHANGED heads-up made (a push lost to a plugin
       // throw must never re-fire on the next refresh as "news")
@@ -2219,6 +2237,7 @@ class CampusManager extends KITLoginManager {
       unawaited(MeiNotifications.scheduleLectureReminders(feed));
       unawaited(MeiNotifications.scheduleMorningDigest(feed));
       unawaited(MeiNotifications.scheduleEveningDigest(feed)); // R29
+      unawaited(MeiNotifications.scheduleLastLectureAlarm(feed)); // R33.4
     }
     notificationCallback();
   }
@@ -2270,6 +2289,7 @@ class CampusManager extends KITLoginManager {
       // "Today: N classes · First at ..." body kept the pre-SignMeUp set
       unawaited(MeiNotifications.scheduleMorningDigest(feed));
       unawaited(MeiNotifications.scheduleEveningDigest(feed)); // R29
+      unawaited(MeiNotifications.scheduleLastLectureAlarm(feed)); // R33.4
       notificationCallback();
     }
   }
@@ -2317,6 +2337,7 @@ class CampusManager extends KITLoginManager {
       unawaited(MeiNotifications.scheduleLectureReminders(feed));
       unawaited(MeiNotifications.scheduleMorningDigest(feed));
       unawaited(MeiNotifications.scheduleEveningDigest(feed)); // R29
+      unawaited(MeiNotifications.scheduleLastLectureAlarm(feed)); // R33.4
       notificationCallback();
     }
   }
@@ -2999,6 +3020,7 @@ class CampusManager extends KITLoginManager {
       unawaited(MeiNotifications.scheduleLectureReminders(merged ?? feed));
       unawaited(MeiNotifications.scheduleMorningDigest(merged ?? feed));
       unawaited(MeiNotifications.scheduleEveningDigest(merged ?? feed)); // R29
+      unawaited(MeiNotifications.scheduleLastLectureAlarm(merged ?? feed)); // R33.4
 
       // the subscription is fresh; give the personal calendar its quiet
       // top-up (throttled internally, keeps the old copy on any failure)

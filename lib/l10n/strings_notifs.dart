@@ -28,6 +28,19 @@ const Map<String, String> de_notifs = {
   // R32.1: placeholder/empty rooms in the morning digest lecture line —
   // the feed says "there is a room we do not know", never "no room".
   "notifs.digestRoomTba": "Raum folgt",
+  // R33.1: T-0 "window opens" ping. No "closes tonight" twin by design —
+  // closing deadlines live in the morning digest, one ping per opening.
+  "notifs.smuOpensTitle": "Anmeldung jetzt offen",
+  "notifs.smuOpensBody": "{0} — das Anmeldefenster hat geöffnet.",
+  // R33.2: inline action; pure navigation, marks nothing, claims nothing.
+  "notifs.actionOpenSignMeUp": "Jetzt anmelden",
+  // R33.4: last-lecture soft-alarm. "laut Plan" is load-bearing: the
+  // schedule can still change; the app certifies the feed, not the future.
+  "notifs.lastLectureTitle": "Letzte Vorlesung — laut Plan",
+  "notifs.lastLectureBody":
+      "Laut Plan ist {0} am {1} um {2} deine letzte Vorlesung des "
+      "Semesters.",
+  "notifs.digestLastLecture": "Letzte Vorlesung laut Plan: {0} um {1}",
   "notifs.bannerBotProtection":
       "KIT hat ihren Bot-Schutz geändert — Datenabruf bis auf Weiteres gestört. Update nötig.",
   "notifs.bannerBoth":
@@ -69,6 +82,14 @@ const Map<String, String> en_notifs = {
   "agenda.cockpitDereg": "Deregistration deadline",
   "notifs.changesDetails": "Details in the agenda.",
   "notifs.digestRoomTba": "Room TBA",
+  "notifs.smuOpensTitle": "Registration open now",
+  "notifs.smuOpensBody": "{0} — the registration window has opened.",
+  "notifs.actionOpenSignMeUp": "Sign up now",
+  "notifs.lastLectureTitle": "Last lecture — schedule says",
+  "notifs.lastLectureBody":
+      "The schedule says {0} on {1} at {2} is your last lecture of the "
+      "semester.",
+  "notifs.digestLastLecture": "Last lecture (schedule says): {0} at {1}",
   "notifs.bannerBotProtection":
       "KIT changed its bot protection — data retrieval is disrupted until further notice. An update is needed.",
   "notifs.bannerBoth": "Could not read exams & timetable (KIT site changed?).",

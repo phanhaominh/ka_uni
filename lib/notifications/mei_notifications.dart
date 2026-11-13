@@ -77,10 +77,18 @@ class MeiNotifications {
 
   /// R29 (P3): the one action button we post - "seen" on CHANGED heads-ups.
   static const actionSeen = "seen";
+  /// R33.2: inline "Jetzt anmelden" on SignMeUp pings - opens the agenda's
+  /// SignMeUp card, it CLAIMS NOTHING about registration state (a press
+  /// never marks anything, it only navigates; state stays feed truth).
+  static const actionOpen = "smu_open";
 
   /// C66: inputs of the last [scheduleExamReminders] rebuild; replayed by
   /// [resyncOnStartup] so the deadline family tracks last-known state.
   static const _examSnapshotKey = "DATA_examReminderSnapshot";
+  /// R33.1: procedureId -> registrationStart ISO of every "opens now"
+  /// backfill already announced (DATA_*: dies with logout, a NEW account
+  /// re-hears its own windows).
+  static const _smuOpensFiredKey = "DATA_smuOpensFired";
   // R23: once-per-install marker for the exact-alarm settings prompt
   // (plain PREF_, survives logout: it records a system-UI fact, not
   // account data)
@@ -277,7 +285,9 @@ class MeiNotifications {
 
   static Future<void> _zoned(
       int id, String channel, String title, String body, DateTime whenLocal,
-      {required bool deadlines, required String payload}) async {
+      {required bool deadlines,
+      required String payload,
+      List<AndroidNotificationAction> actions = const []}) async {
     if (!whenLocal.isAfter(DateTime.now())) {
       return;
     }
@@ -301,7 +311,8 @@ class MeiNotifications {
                           : deadlines
                               ? L10n.t("notifs.channelDeadlines")
                               : L10n.t("notifs.channelTimetable"),
-                  importance: Importance.high)),
+                  importance: Importance.high,
+                  actions: actions)),
           // Android 14 denies SCHEDULE_EXACT_ALARM by default; a throw here
           // used to abandon the whole family AFTER its cancelRange - zero
           // reminders left standing. Fall back to inexact instead, and keep
@@ -567,9 +578,50 @@ class MeiNotifications {
 
   /// 24 h before a SignMeUp registration window closes while the student
   /// still has not signed up (missed Übungsgruppen slot = semester stall).
+  /// R33.1 pure decision for the T-0 "opens now" ping of one procedure
+  /// window, given the fired-snapshot (procedureId -> registrationStart
+  /// ISO). Returns the fire instant (already work-hour clamped, see
+  /// [smuOpenFire]) or null when nothing may ping: no window, window
+  /// closed, window already fired in the snapshot, or start in the
+  /// FUTURE (future windows arm their alarm directly, no snapshot entry -
+  /// the alarm itself is the once-per-window guarantee).
+  @visibleForTesting
+  static DateTime? smuOpenFire(SignMeUpProcedure p, DateTime now,
+      Map<String, String> fired) {
+    final start = p.registrationStart;
+    final end = p.registrationEnd;
+    if (start == null || end == null || !end.isAfter(now)) return null;
+    if (!start.isAfter(now)) {
+      // window is open RIGHT NOW: at most once per window via snapshot
+      if (fired["${p.id}"] == start.toIso8601String()) return null;
+      // backfill: the alarm must still land in the FUTURE (a zonedSchedule
+      // in the past is silently dropped) - two minutes out, work-hour
+      // clamp applied to NOW, floor keeps it after this run
+      final soon = now.add(const Duration(minutes: 2));
+      return smuOpenClamp(now, soon);
+    }
+    // future window: alarm at (clamped) T-0, never early
+    return smuOpenClamp(start, start);
+  }
+
+  /// Work-hour clamp of a T-0 fire: KIT windows open at arbitrary hours
+  /// (midnight incl.); a ping is only welcome 08:00-21:00. [floor] guards
+  /// the "just opened, we're awake" case: never before [floor].
+  @visibleForTesting
+  static DateTime smuOpenClamp(DateTime at, DateTime? floor) {
+    var t = at;
+    if (t.hour < 8) {
+      t = DateTime(t.year, t.month, t.day, 8);
+    } else if (t.hour >= 21) {
+      t = DateTime(t.year, t.month, t.day + 1, 8);
+    }
+    if (floor != null && t.isBefore(floor)) t = floor;
+    return t;
+  }
+
   static Future<void> scheduleSignMeUpReminders(
       List<SignMeUpProcedure> procedures,
-      {Set<int> registered = const {}}) async {
+      {Set<int> registered = const {}, DateTime? nowForTest}) async {
     final epoch = teardownEpoch;
     if (!MeiNotifications.supported) return;
     // C61: unawaited call site inside a finally block - contain the throw.
@@ -578,10 +630,28 @@ class MeiNotifications {
       // may run in the WorkManager isolate (poll tail) - prompting there
       // NPEs the plugin and kills the whole re-arm; only main() may ask.
       await _cancelRange(700, 799);
-      final now = DateTime.now();
+      final now = nowForTest ?? DateTime.now();
+      // R33.1 fired-snapshot (at-most-once per open window). LIVE read:
+      // a stale per-isolate copy could re-ping a window this account
+      // already announced.
+      final firedRaw = await SharedPreferencesAsync()
+              .getString(_smuOpensFiredKey) ??
+          "";
+      final fired = <String, String>{};
+      try {
+        if (firedRaw.isNotEmpty) {
+          for (final e in (jsonDecode(firedRaw) as Map).entries) {
+            fired["${e.key}"] = "${e.value}";
+          }
+        }
+      } on Object catch (_) {
+        // poisoned -> empty: worst case one repeat ping per family wipe
+      }
+      var firedDirty = false;
       var id = 700;
+      var openId = 750;
       for (final p in procedures) {
-        if (id > 799) break;
+        if (id > 749) break;
         if (!p.needsAction(now, registered)) continue;
         final remindAt = p.registrationEnd!.subtract(const Duration(hours: 24));
         if (epoch != teardownEpoch) return; // logout mid-flight
@@ -595,7 +665,44 @@ class MeiNotifications {
             // the open procedures the reminder names render ONLY in the
             // agenda's SignMeUp card — /exams shows zero SignMeUp content,
             // so this tap must land on the agenda, not the exams page
-            payload: NotificationPayload.agenda);
+            payload: NotificationPayload.agenda,
+            // R33.2: one-tap route to the registration while it matters
+            actions: [
+              AndroidNotificationAction(
+                  actionOpen, L10n.t("notifs.actionOpenSignMeUp")),
+            ]);
+        // R33.1: T-0 "opens now" (scope-reduced per skeptic: the closes
+        // arm is a cockpit-row duplicate and lives in the morning digest
+        // instead; the opening of a window is the one fact a ping earns)
+        final openFire =
+            smuOpenFire(p, now, fired);
+        if (openFire != null && openId <= 799) {
+          final isBackfill = !p.registrationStart!.isAfter(now);
+          if (!isBackfill ||
+              openFire.isAfter(now.add(const Duration(minutes: 1)))) {
+            await _zoned(
+                openId++,
+                channelIdDeadlines,
+                L10n.t("notifs.smuOpensTitle"),
+                L10n.t("notifs.smuOpensBody", [p.name]),
+                openFire,
+                deadlines: true,
+                payload: NotificationPayload.agenda,
+                actions: [
+                  AndroidNotificationAction(
+                      actionOpen, L10n.t("notifs.actionOpenSignMeUp")),
+                ]);
+          }
+          if (isBackfill) {
+            fired["${p.id}"] = p.registrationStart!.toIso8601String();
+            firedDirty = true;
+          }
+        }
+      }
+      if (firedDirty) {
+        if (epoch != teardownEpoch) return; // logout mid-flight
+        await SharedPreferencesAsync()
+            .setString(_smuOpensFiredKey, jsonEncode(fired));
       }
     } on Object catch (e) {
       if (kDebugMode) print("signmeup reminders failed: $e");
@@ -672,8 +779,13 @@ class MeiNotifications {
             decision.kind == DayDecisionKind.staleFeed) {
           continue; // never assert emptiness off data we do not trust
         }
-        final (title, body) =
+        var (title, body) =
             digestTexts(decision.lectures, decision.cancelledTitles);
+        // R33.4: on the semester's LAST lecture day the morning line says
+        // so - the closing beat of the "schedule says" family
+        final llLine = lastLectureDigestLine(
+            dedupOccurrences(feed.occurrences), day, now);
+        if (llLine != null) body = "$body\n$llLine";
         if (epoch != teardownEpoch) return; // logout mid-flight
         await _zoned(id, channelIdDaily, title, body, at,
             deadlines: false,
@@ -795,6 +907,86 @@ class MeiNotifications {
   /// from the UI wiring. Cancelling the pressed id (plus the OS-side
   /// cancelNotification on the action) clears the shade; the rotation band
   /// reuses ids, so a stale entry could otherwise outlive the dismissal.
+  /// R33.4 pure pick: the LAST lecture still ahead in the deduped feed —
+  /// Due/Abgabe rows and the student's OWN import block excluded (they are
+  /// not lecture schedule; the row only ever speaks "laut Plan" about
+  /// scheduled lectures). Null when nothing lies ahead: the semester is
+  /// over as far as the schedule knows, and a soft-alarm about a past
+  /// "last lecture" would be a lie.
+  @visibleForTesting
+  static IcsOccurrence? lastUpcomingLecture(
+      List<IcsOccurrence> occ, DateTime now) {
+    IcsOccurrence? best;
+    for (final o in occ) {
+      if (!o.start.isAfter(now)) continue;
+      if (o.title.startsWith("Due: ") ||
+          o.title.startsWith("Abgabe: ") ||
+          o.fromPersonalIcs ||
+          o.uid.startsWith("kauni-exam-") ||
+          o.uid.startsWith("kauni-due-")) {
+        // exam sittings and ILIAS dues are not LECTURES (synth uid
+        // prefixes verbatim from exam_synth.dart/due_parse.dart; the
+        // Due:/Abgabe: title arms above stay as belt-and-braces for
+        // caches written before those uids existed)
+        continue;
+      }
+      if (best == null || o.start.isAfter(best.start)) best = o;
+    }
+    return best;
+  }
+
+  /// R33.4: one soft heads-up three days before the schedule's last
+  /// lecture ("is that REALLY the end of the semester?" is a decision
+  /// students want lead time for: sublets, ride home, review window).
+  /// Family 1360-1379, id keyed by the lecture's day-of-month so a re-arm
+  /// overwrites and the ping fires at most once; fires at the plain
+  /// morning-digest 07:30 slot of T-3d, never late (same skip discipline
+  /// as the evening digest), payload lands on the agenda's day.
+  static Future<void> scheduleLastLectureAlarm(WebcalFeed feed) async {
+    if (!MeiNotifications.supported) return;
+    try {
+      if (!_ready) await init(requestPermissions: false);
+      final epoch = teardownEpoch;
+      await _cancelRange(1360, 1379);
+      final now = DateTime.now();
+      final last =
+          lastUpcomingLecture(dedupOccurrences(feed.occurrences), now);
+      if (last == null) return;
+      final day = DateTime(last.start.year, last.start.month, last.start.day)
+          .subtract(const Duration(days: 3));
+      final at = digestSlot(day, null);
+      if (!at.isAfter(now) || !at.isBefore(last.start)) return;
+      if (epoch != teardownEpoch) return; // logout mid-flight
+      await _zoned(
+          1360 + last.start.day % 20,
+          channelIdDaily,
+          L10n.t("notifs.lastLectureTitle"),
+          L10n.t("notifs.lastLectureBody",
+              [last.title, L10n.stamp(last.start), _hm(last.start)]),
+          at,
+          deadlines: false,
+          payload: NotificationPayload.agendaToday);
+    } on Object catch (e) {
+      if (kDebugMode) print("last-lecture alarm failed: $e"); // C61
+    }
+  }
+
+  /// R33.4: the morning digest of the semester's LAST lecture day carries
+  /// a closing line ("this is the last one"). Pure so the exact day-match
+  /// is pinned in test/r33_soft_pings_test.
+  @visibleForTesting
+  static String? lastLectureDigestLine(
+      List<IcsOccurrence> occ, DateTime day, DateTime now) {
+    final last = lastUpcomingLecture(occ, now);
+    if (last == null) return null;
+    if (last.start.year != day.year ||
+        last.start.month != day.month ||
+        last.start.day != day.day) {
+      return null;
+    }
+    return L10n.t("notifs.digestLastLecture", [last.title, _hm(last.start)]);
+  }
+
   static Future<void> acknowledgeChanges(int id) async {
     if (!supported) return;
     if (!_ready) await init(requestPermissions: false);
@@ -874,6 +1066,13 @@ class MeiNotifications {
       if (kDebugMode) print("bg poll cancel failed: $e");
     }
     try {
+      // R33.3: the grade poll dies with logout too (its write fence is
+      // the loggedOutProbe; here the schedule itself goes)
+      await Workmanager().cancelByUniqueName("mei-grades-poll");
+    } on Object catch (e) {
+      if (kDebugMode) print("grade poll cancel failed: $e");
+    }
+    try {
       if (!_ready) await init(requestPermissions: false);
       await _plugin.cancelAll();
     } on Object catch (e) {
@@ -908,6 +1107,8 @@ class MeiNotifications {
       await scheduleMorningDigest(feed);
       // R29 (R2): survives reboot like its morning sibling
       await scheduleEveningDigest(feed);
+      // R33.4: ditto the last-lecture heads-up
+      await scheduleLastLectureAlarm(feed);
     }
     await _replayExamReminders(prefs);
   }
@@ -1066,10 +1267,61 @@ Future<void> _iliasBackgroundDiff() async {
       issuedUrl: issuedUrl);
 }
 
+/// R33.3: grade-publish poll (6 h WorkManager task). Reuses the FOREGROUND
+/// pipeline verbatim - a fresh CampusManager with the stored credentials
+/// runs fetchSchedule(), which parses Studienverlauf and whose normal tail
+/// diffs the ledger against DATA_ledgerSnapshot: seed-only runs post
+/// NOTHING (existing rule), new grades ride the existing 1200-band pings,
+/// the snapshot advances before the pushes (at-most-once). A failure here
+/// is contained by its own task: the 30-min webcal poll is a separate
+/// WorkManager entry and stays untouched either way. Logout kills the
+/// task (logout sweep + C68 self-cancel below).
+Future<void> _gradesBackgroundDiff() async {
+  final issuedUrl =
+      await SharedPreferencesAsync().getString(WebcalKeys.url) ?? "";
+  if (issuedUrl.isEmpty) {
+    // C68: a logged-out device must not carry a 6 h grade poll
+    await Workmanager().cancelByUniqueName("mei-grades-poll");
+    return;
+  }
+  // options MUST mirror CredentialsProvider's (iOS keychain account!)
+  const storage =
+      FlutterSecureStorage(iOptions: IOSOptions(accountName: "kit-student"));
+  final user = await storage.read(key: "username");
+  final pass = await storage.read(key: "password");
+  if ((user ?? "").isEmpty || (pass ?? "").isEmpty) return;
+  final mgr = CampusManager(Student.empty, () {})
+    ..credentials =
+        KITCredentials(username: user!, password: pass!, valid: true)
+    // the poll's own epoch can never see the main isolate's logout;
+    // the probe reads the PLATFORM store (legacy prefs snapshots are
+    // per-isolate and stale - C81) at the write fence
+    ..loggedOutProbe = () async =>
+        (await SharedPreferencesAsync().getString(WebcalKeys.url) ?? "")
+            .isEmpty;
+  await mgr.fetchSchedule(notify: false, startRefreshTimer: false);
+  // fire-and-forget tail: the isolate dies with this callback's return,
+  // so the ledger diff (snapshot write + pushes) must finish HERE
+  await mgr.ledgerDiffDone;
+}
+
 /// WorkManager entry: cookieless ICS poll + fingerprint diff -> push.
 @pragma('vm:entry-point')
 void meiBackgroundCallback() {
   Workmanager().executeTask((taskName, inputData) async {
+    // R33.3: the grade poll is its OWN task - a throw here can never
+    // reach, and never cancels, the fast webcal-diff below
+    if (taskName == "grades-diff") {
+      try {
+        await MeiNotifications.init(requestPermissions: false);
+        L10n.setSystemLanguage(PlatformDispatcher.instance.locale.languageCode);
+        await L10n.reload();
+        await _gradesBackgroundDiff();
+      } on Object catch (e) {
+        if (kDebugMode) print("grade poll failed: $e");
+      }
+      return true;
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       // fresh isolate: mirror main()'s locale bootstrap before t()
@@ -1265,6 +1517,8 @@ void meiBackgroundCallback() {
       // R29 (R2): evening digest rides the same re-arm - the 30-min poll is
       // what guarantees a 20:30 alarm exists before 20:30, app open or not
       await MeiNotifications.scheduleEveningDigest(mergedFeed);
+      // R33.4: last-lecture heads-up rides the same feed re-arm
+      await MeiNotifications.scheduleLastLectureAlarm(mergedFeed);
     } catch (e) {
       if (kDebugMode) {
         print("background poll failed: $e");
@@ -1294,6 +1548,23 @@ Future<void> registerBackgroundPolling() async {
     // until uninstall, update refreshes the schedule each cold start and
     // re-arms an immediate first run.
     initialDelay: Duration.zero,
+    existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
+  );
+  // R33.3: grade-publish poll. 6 h: KIT publishes grades in human hours,
+  // the foreground chain already pings whenever the app is open, this
+  // task only closes the "grades appeared while the phone slept" gap.
+  await Workmanager().registerPeriodicTask(
+    "mei-grades-poll",
+    "grades-diff",
+    frequency: const Duration(hours: 6),
+    constraints: Constraints(
+      networkType: NetworkType.connected,
+      requiresBatteryNotLow: false,
+    ),
+    // deliberately NOT initialDelay-zero: cold-start boot already fetches
+    // grades through the login chain and diffs - a zero-delay poll would
+    // double-fetch and could race the main isolate's own snapshot write
+    initialDelay: const Duration(minutes: 5),
     existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
   );
 }
