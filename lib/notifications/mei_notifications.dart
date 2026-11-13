@@ -363,9 +363,10 @@ class MeiNotifications {
       _rearmDepth++; // same-isolate re-entry (rearmFromFeed -> schedule*)
       return true;
     }
-    // Fire OS sets TMPDIR to .../code_cache, which does not exist -
-    // systemTemp threw PathNotFoundException on device (soak 2026-11-13).
-    // dataDirectory always exists; the lock needs no special home.
+    // systemTemp maps to $dataDir/code_cache on Android, which does not
+    // exist on this device (soak 2026-11-13); support dir is created by
+    // path_provider itself. The DEEPER cause was openSync()'s default
+    // FileMode.READ below - a path change alone did not fix the throw.
     final file = File("${(await getApplicationSupportDirectory()).path}/kauni-alarm-band.lock");
     for (var attempt = 0; attempt <= waitSeconds * 5; attempt++) {
       // FileMode.append: openSync()'s DEFAULT is FileMode.READ, which
