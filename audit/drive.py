@@ -88,5 +88,8 @@ elif cmd == "current":
     out = adb("shell", "dumpsys", "activity", "activities").decode("utf-8", "ignore")
     m = re.search(r"mResumedActivity.*?\s(\S+/\S+)", out)
     print(m.group(1) if m else "?")
+elif cmd == "shell":
+    # read-only passthrough for audit probes (dumpsys, logcat -d)
+    print(adb("shell", *args).decode("utf-8", "ignore")[:20000])
 elif cmd == "logmark":
     adb("shell", "log", "-t", "KAUNI_AUDIT", args[0])
