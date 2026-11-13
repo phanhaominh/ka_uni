@@ -1,4 +1,8 @@
 # Fleet UI/UX Evaluation — R31 (build 0.8.9+64, 2026-11-13)
+> **SUPERSEDED in part by audit/r31fleet/PANEL.md (5-lens adjudication):** F-1 re-mechanised
+> (prefs async/legacy ghost + null latch; PTR-pull and self-heal evidence legs retracted);
+> F-2 re-mechanised (non-atomic layered cache writers; cable + HTML-fallback theories refuted);
+> F-3 REFUTED (no wide artifacts exist; cited shots measure 0px). Fix wave: audit/brief_FixR31.md.
 
 ## Scope & method
 Two live devices, two parallel serial lanes driven exclusively through
