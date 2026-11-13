@@ -151,7 +151,32 @@ class TimetableDailyView extends StatelessWidget {
 
     final day = dayRows(tt, tutorialsByBlock);
 
-    if (!day.any(_isContent)) return _dayFree(context);
+    if (!day.any(_isContent)) {
+      // R37: an all-cancelled day used to render the bare zzz placeholder
+      // while the agenda's DayDecision banner names the cancellations -
+      // the vacated-slot ghosts the content branch insists on rendering
+      // vanished exactly where they matter most. "Free" means nothing
+      // LEFT to attend, not nothing ever was; show what was cancelled.
+      final ghosts = [
+        for (final a in day)
+          if (!_isContent(a)) _ghostFor(a)
+      ].whereType<IcsChange>().toList(growable: false);
+      if (ghosts.isEmpty) return _dayFree(context);
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _dayFree(context),
+            const SizedBox(height: 16),
+            for (final g in ghosts)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+                child: _ghostCard(context, g),
+              ),
+          ],
+        ),
+      );
+    }
 
     final contents =
         day.where(_isContent).toList(growable: false);

@@ -8,6 +8,8 @@ import 'package:http/http.dart' as http;
 import 'package:kit_mobile/library/anny_api.dart';
 import 'package:kit_mobile/library/anny_auth.dart';
 import 'package:kit_mobile/library/anny_manager.dart';
+import 'package:kit_mobile/settings/providers/settings_provider.dart'
+    show showingCampusNowKey;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Hermetic tests for AnnyManager: cache-first paint, the anon/auth split,
@@ -338,6 +340,18 @@ void main() {
       expect(f.m.freeCounts, {_slug: 42});
       expect(f.m.error, AnnyErrorKind.offline);
       expect(f.notifies, greaterThan(before));
+    });
+
+    test("hidden-section opt-out also stops the traffic", () async {
+      // the Anny twin of mensa_test's identically-named test: hiding the
+      // campus-now strip in settings must kill the b.anny.eu traffic too,
+      // not merely unmount the card (force:true proves the gate is the
+      // opt-out itself, not the anon TTL)
+      final f = fx({showingCampusNowKey: false}, routes());
+      await f.m.refreshAnon(force: true);
+      expect(f.stub.requests, isEmpty,
+          reason: "section hidden in settings = zero third-party GETs");
+      expect(f.m.rooms, isEmpty);
     });
   });
 

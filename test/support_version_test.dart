@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kit_mobile/diagnostics/support_state.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -11,6 +13,17 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test("kAppVersion equals the pubspec version (bump together)", () {
+    // F9's other half: the fallback itself must not go stale. The old test
+    // only asserted the bundle CONTAINS the const - true even when the const
+    // drifted (0.8.9+65 while pubspec shipped 0.12.0+70).
+    final pubspec = File("pubspec.yaml").readAsStringSync();
+    final m = RegExp(r"^version:\s*(\S+)\s*$", multiLine: true)
+        .firstMatch(pubspec);
+    expect(m, isNotNull);
+    expect(kAppVersion, m!.group(1));
+  });
 
   test("falls back to kAppVersion when the platform plugin cannot answer",
       () async {

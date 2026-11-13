@@ -297,21 +297,63 @@ class _FilesCachePageState extends State<FilesCachePage> {
                                                     child: Icon(CupertinoIcons
                                                         .eye_fill),
                                                   ),
-                                                  onPressed: () {
-                                                    Navigator.of(context).push(MaterialPageRoute(
-                                                        builder: (BuildContext context) => PDFScreen(
-                                                            iliasFile: PinnedFile(
-                                                                semesterString:
-                                                                    currentSemesterString,
-                                                                urlString: "",
-                                                                moduleTitle: "",
-                                                                addedAt:
-                                                                    DateTime
-                                                                        .now(),
-                                                                customName:
-                                                                    fileDisplayName,
-                                                                fileSystemPath:
-                                                                    semFile))));
+                                                  onPressed: () async {
+                                                    await Navigator.of(context)
+                                                        .push(MaterialPageRoute(
+                                                            builder: (BuildContext
+                                                                    context) =>
+                                                                PDFScreen(
+                                                                    iliasFile: PinnedFile(
+                                                                        semesterString:
+                                                                            currentSemesterString,
+                                                                        urlString:
+                                                                            "",
+                                                                        moduleTitle:
+                                                                            "",
+                                                                        addedAt:
+                                                                            DateTime
+                                                                                .now(),
+                                                                        customName:
+                                                                            fileDisplayName,
+                                                                        fileSystemPath:
+                                                                            semFile))));
+                                                    // H7: the viewer's own
+                                                    // delete button removes
+                                                    // bytes and unpins, but
+                                                    // this page only re-reads
+                                                    // the disk in its OWN
+                                                    // delete handlers - coming
+                                                    // back used to leave the
+                                                    // row listed with a stale
+                                                    // size; re-patch the
+                                                    // expansion list and the
+                                                    // scan exactly the way
+                                                    // the delete handler below
+                                                    // does
+                                                    final newSemFiles = await filesVM
+                                                        .localFileStorageManager
+                                                        .getFilesForSemesterString(
+                                                            currentSemesterString);
+                                                    // the viewer can outlive
+                                                    // the page: after dispose
+                                                    // the state must not be
+                                                    // touched (same class of
+                                                    // bug as the delete
+                                                    // handler)
+                                                    if (!mounted) return;
+                                                    setState(() {
+                                                      if (expandedSemesterString ==
+                                                          currentSemesterString) {
+                                                        expandedSemesterStringFiles =
+                                                            newSemFiles;
+                                                      }
+                                                      // collapsed rows read
+                                                      // their count off the
+                                                      // scan: patch it too
+                                                      _lastScan?[
+                                                              currentSemesterString] =
+                                                          newSemFiles;
+                                                    });
                                                   }),
                                               CupertinoButton(
                                                 onPressed: () async {

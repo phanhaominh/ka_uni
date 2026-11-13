@@ -24,6 +24,11 @@ class KITCredentials {
 
   @override
   String toString() {
-    return "KITCredentials($username, $password)";
+    // NEVER interpolates the password: the zone/FlutterError hooks persist
+    // error.toString() into CrashTail and the SHAREABLE support bundle, and
+    // scrubDiag only redacts >=20-char runs - a typical KIT password is
+    // shorter and would travel verbatim. (AnnySession.toString is log-safe
+    // for the same reason.)
+    return "KITCredentials($username, --)";
   }
 }

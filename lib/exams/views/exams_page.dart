@@ -519,8 +519,12 @@ class ExamsPage extends StatelessWidget {
         .topographyManager
         .places;
     final report = findExamClashes(exams, now, distance: (ra, rb) {
-      final pa = resolveRoomPlace(places, ra);
-      final pb = resolveRoomPlace(places, rb);
+      // _resolveRoom, not raw resolveRoomPlace: the clash callback fires
+      // per card pair per rebuild, and the cache doc above demands fuzzy
+      // resolution run per DISTINCT room - raw calls paid the full
+      // ~800-place fuzzy scan twice per card on every rebuild.
+      final pa = _resolveRoom(places, ra);
+      final pb = _resolveRoom(places, rb);
       return pa == null || pb == null || pa.id == pb.id
           ? null
           : roomDistanceMeters(pa, pb);

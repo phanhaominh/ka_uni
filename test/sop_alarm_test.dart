@@ -159,6 +159,14 @@ void main() {
   });
 
   test("hedge wording is locked in both languages", () async {
+    // registered BEFORE the flip: the reset used to sit after the expects,
+    // so a failing expect left _language='en' for the rest of the isolate
+    // and silently re-language every later L10n assertion; addTearDown
+    // runs the reset on the failure path too
+    addTearDown(() async {
+      SharedPreferences.setMockInitialValues({});
+      await L10n.reload();
+    });
     // de is the default effective language
     expect(L10n.t("agenda.sopWarnCp", [30]), "Mindestens 30 LP errungen");
     expect(L10n.t("agenda.sopWarnExposed", ["Thermodynamik"]),
@@ -170,7 +178,5 @@ void main() {
     expect(L10n.t("agenda.sopWarnCp", [30]), "At least 30 CP earned");
     expect(L10n.t("agenda.sopWarnExposed", ["Thermodynamik"]),
         contains("per the grades ledger"));
-    SharedPreferences.setMockInitialValues({});
-    await L10n.reload();
   });
 }

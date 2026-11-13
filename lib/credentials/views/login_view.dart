@@ -138,7 +138,17 @@ class LoginPageState extends State<LoginPage> {
                                           builder: (context) => InfoPage()))),
                               CupertinoButton(
                                   child: Text(L10n.t("settings.login")),
-                                  onPressed: () => _submitLogin(credsVM, vm))
+                                  // R37: the input FIELDS were gated on
+                                  // loggingIn but the button stayed live -
+                                  // during cold-start auto-login a tap ran
+                                  // a second login() that wiped the jar
+                                  // under the in-flight first chain (both
+                                  // died; correct credentials reported as
+                                  // wrong). submit() now also refuses; the
+                                  // button must LOOK dead when it is.
+                                  onPressed: credsVM.loggingIn
+                                      ? null
+                                      : () => _submitLogin(credsVM, vm))
                             ],
                           )
                         ],

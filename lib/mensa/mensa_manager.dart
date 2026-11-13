@@ -92,6 +92,13 @@ class MensaManager extends ChangeNotifier {
     return a != null && a >= Duration.zero && a < _ttl;
   }
 
+  /// R37: does the CACHED plan's fence claim d's week? Absence of a day
+  /// in a week the cache never HELD is unknown, not a closed day - the
+  /// fence knows the difference and callers must not flatten it
+  /// ("Heute keine Ausgabe" over Monday while Monday's week was already
+  /// published and the Sunday-cached plan simply predates it).
+  bool covers(DateTime d) => _source == "$defaultCanteen|${isoWeek(d)}";
+
   MensaDay? dayFor(DateTime d) {
     for (final MensaDay day in days) {
       if (day.date.year == d.year &&

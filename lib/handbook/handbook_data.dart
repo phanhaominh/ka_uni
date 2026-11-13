@@ -24,7 +24,10 @@ class HandbookModule {
   /// PDF page that proves it.
   final List<HandbookGate> gates;
 
-  const HandbookModule({
+  // Not a const constructor anymore: the memo below is mutable by design
+  // (a const class cannot carry non-final fields); nothing in the repo
+  // const-constructs a module, so the loss is invisible.
+  HandbookModule({
     required this.code,
     required this.title,
     required this.ects,
@@ -57,7 +60,11 @@ class HandbookModule {
   /// from the same Campus catalogue, so exact-key equality is the honest
   /// match; a mismatch reads as "not yet taken" — the Ampel under-reports,
   /// never inflates.
-  String get titleKey => handbookKey(title);
+  /// Memoized: [title] is final, so the key is stable, and the Ampel's
+  /// nested build loops ask every module's key once per rebuild per row -
+  /// two regex passes each time, for a string that can never change.
+  String? _titleKey;
+  String get titleKey => _titleKey ??= handbookKey(title);
 }
 
 class HandbookPart {
@@ -67,7 +74,9 @@ class HandbookPart {
   final String type;
   final String attendsTo;
 
-  const HandbookPart(
+  // const dropped for the same reason as HandbookModule: the memo field
+  // below is mutable by design.
+  HandbookPart(
       {required this.code,
       required this.title,
       required this.ects,
@@ -82,7 +91,10 @@ class HandbookPart {
         attendsTo: j["attendsTo"] as String? ?? "",
       );
 
-  String get titleKey => handbookKey(title);
+  /// Memoized for the same reason as HandbookModule.titleKey: parts are
+  /// walked inside the module loop, key computed once per rebuild each.
+  String? _titleKey;
+  String get titleKey => _titleKey ??= handbookKey(title);
 }
 
 class HandbookGate {
@@ -150,8 +162,16 @@ class Handbook {
 /// fold to ASCII: the handbook PDF renders "Do it! – Service-Learning…"
 /// with an en-dash where CampusKIT's tree uses a hyphen, and an unfixed
 /// mismatch would silently read a PASSED module as "planned".
+// Hoisted: handbookKey runs per titleKey access, and those getters sit inside
+// the Ampel's nested build loops over every module/part row - recompiling
+// both programs per call repeated the same parse hundreds of times per
+// rebuild. RegExp matching never mutates the object, so one shared instance
+// is exactly equivalent.
+final _dashFold = RegExp("[\u2013\u2014\u2212]");
+final _whitespace = RegExp(r"\s+");
+
 String handbookKey(String raw) => raw
-    .replaceAll(RegExp("[\u2013\u2014\u2212]"), "-")
-    .replaceAll(RegExp(r"\s+"), " ")
+    .replaceAll(_dashFold, "-")
+    .replaceAll(_whitespace, " ")
     .trim()
     .toLowerCase();

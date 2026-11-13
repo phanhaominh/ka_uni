@@ -200,13 +200,16 @@ class GradesPage extends StatelessWidget {
   Widget _sopCard(BuildContext context, GradeBook book, ColorScheme scheme) {
     final green =
         CupertinoDynamicColor.resolve(CupertinoColors.systemGreen, context);
-    final overdue =
-        !book.sopReached && !DateTime.now().isBefore(GradeBook.sopDeadline);
+    // R37: the card used to print a red "Frist abgelaufen" for EVERY
+    // student past 31.03.2027 - but that deadline belongs to ONE intake
+    // (WS2026/27 first-semester). A WS2027/28 student with 0 CP in
+    // October 2027 was told they blew a deadline they never had, and the
+    // claim ships simply by the calendar turning. The app cannot see the
+    // cohort, so it now states the intake-qualified rule as a fact and
+    // judges nothing personal off it.
     final (statusLabel, statusColor) = book.sopReached
         ? (L10n.t("grades.sopReached"), green)
-        : overdue
-            ? (L10n.t("grades.sopOverdue"), scheme.error)
-            : (L10n.t("grades.sopOpen"), scheme.onSurfaceVariant);
+        : (L10n.t("grades.sopOpen"), scheme.onSurfaceVariant);
     return BlockContainer(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -237,6 +240,16 @@ class GradesPage extends StatelessWidget {
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: statusColor)),
+          const SizedBox(height: 2),
+          // the intake-qualified rule as a fact (see the R37 note above
+          // why the app may not apply it to WHOEVER is reading)
+          Text(
+              L10n.t("grades.sopDeadlineNote", [
+                "${GradeBook.sopDeadline.day}."
+                "${GradeBook.sopDeadline.month}."
+                "${GradeBook.sopDeadline.year}"
+              ]),
+              style: TextStyle(fontSize: 11, color: scheme.outline)),
         ],
       ),
     );

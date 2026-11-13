@@ -78,15 +78,27 @@ DateTime? _endDate(DateTime start, String time) {
   if (tokens.length < 2) {
     return null;
   }
-  var end = DateTime(start.year, start.month, start.day,
-      int.parse(tokens[1].group(1)!), int.parse(tokens[1].group(2)!));
+  var hour = int.parse(tokens[1].group(1)!);
+  final mer = tokens[1].group(3)?.toUpperCase();
+  if (mer != null) {
+    // R37: the EN portal prints "11:00 AM - 1:00 PM" - AM/PM-blind, the
+    // end hour came out 01:00, i.e. BEFORE the start, and the overnight
+    // rule below fabricated a DTEND one day later: the sitting listed on
+    // both calendar days with a 14 h "läuft" hero and a false endGuessed
+    // =false span into the exported .ics. %12+PM keeps 12 AM/PM honest.
+    hour = hour % 12 + (mer == "PM" ? 12 : 0);
+  }
+  var end =
+      DateTime(start.year, start.month, start.day, hour,
+          int.parse(tokens[1].group(2)!));
   if (!end.isAfter(start)) {
     end = end.add(const Duration(days: 1));
   }
   return end;
 }
 
-final _timeToken = RegExp(r"(\d{1,2}):(\d{2})");
+final _timeToken =
+    RegExp(r"(\d{1,2}):(\d{2})\s*(AM|PM)?", caseSensitive: false);
 
 /// Conservative KIT examination-number shape ("01-A-9001",
 /// "76-T-MACH-000000"); the parser already requires the `NN-[A-Z]` prefix,

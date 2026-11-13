@@ -157,7 +157,7 @@ class GradeBook {
       state: state,
       gradeLabel: state == GradeState.pending
           ? ""
-          : (numeric != null ? grade.replaceAll(RegExp(r"\s+"), "") : grade),
+          : (numeric != null ? grade.replaceAll(_whitespace, "") : grade),
       numericGrade: numeric,
       moduleEcts: _parseGermanDecimal(_cleanCell(row.pointsMax)),
       level: row.level,
@@ -180,9 +180,18 @@ class GradeBook {
   /// the only entity that arrives as text from innerHtml - package:html's
   /// serializer re-escapes just &<>" and U+00A0; other spaces arrive
   /// already decoded and the \s squeeze covers them.
+  // Hoisted regexes (same static-final idiom as _decimal below): _cleanCell
+  // runs 4x per ledger row across hundreds of rows on every grades-page
+  // rebuild, _parseGermanDecimal and the numeric gradeLabel ride the same
+  // \s+ pattern; recompiling the identical three programs per call was pure
+  // hot-path waste. RegExp matching never mutates the object, so one shared
+  // instance is exactly equivalent.
+  static final _nbsp = RegExp(r"&nbsp;", caseSensitive: false);
+  static final _whitespace = RegExp(r"\s+");
+
   static String _cleanCell(String raw) => raw
-      .replaceAll(RegExp(r"&nbsp;", caseSensitive: false), " ")
-      .replaceAll(RegExp(r"\s+"), " ")
+      .replaceAll(_nbsp, " ")
+      .replaceAll(_whitespace, " ")
       .trim();
 
   static final _decimal = RegExp(r"^(\d{1,3}[,.]\d{1,2}|\d{1,3})$");
@@ -190,7 +199,7 @@ class GradeBook {
   static double? _parseGermanDecimal(String raw) {
     // cells arrive as "1 , 3" or "1\u00a0,3" (nbsp became a plain space in
     // cleaning) - decimals match across ALL inner whitespace
-    final s = raw.replaceAll(RegExp(r"\s+"), "");
+    final s = raw.replaceAll(_whitespace, "");
     if (!_decimal.hasMatch(s)) return null;
     return double.tryParse(s.replaceAll(",", "."));
   }

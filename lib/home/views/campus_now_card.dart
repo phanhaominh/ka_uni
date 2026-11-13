@@ -120,8 +120,14 @@ class _CampusNowCardState extends State<CampusNowCard> {
     if (!mensa.hasData) return none;
     final MensaDay? day = mensa.dayFor(now);
     if (day == null || day.isEmpty) {
-      // uncovered date OR covered-without-dishes: the card's own
-      // "Heute keine Ausgabe." for both, footer duties = the marker
+      // R37: TWO kinds of absence - a day the plan's own week covers but
+      // that serves nothing is the card's honest "Heute keine Ausgabe.";
+      // a day OUTSIDE the cached week (cold start Monday 00:xx over
+      // Sunday's plan, network dead) is UNKNOWN and must render the dash,
+      // never a closed-day claim the cache cannot make about week N+1
+      if (day == null && !mensa.covers(now)) return none;
+      // covered-but-empty keeps the card's own claim; footer duties =
+      // the trust marker
       return L10n.t("mensa.closedDay");
     }
     final windows = [

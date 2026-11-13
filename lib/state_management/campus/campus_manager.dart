@@ -40,7 +40,11 @@ class CampusManager extends KITLoginManager {
   /// R29 (D2): titleKeys announced by the LAST ledger diff - rendered as
   /// "neu" chips on the grades page until the next publication cycle
   /// replaces them. Pushed grades and visible chips must answer the same
-  /// event; like every DATA_ key this dies with the logout sweep.
+  /// event. Memory-only BY CONTRACT (R37): a DATA_ledgerAnnounced prefs
+  /// copy existed for a wave but was never read back anywhere - a
+  /// write-only phantom; the honest contract is "chips live until the next
+  /// publish or restart", and the logout wipe below keeps the account half
+  /// clean.
   List<String> ledgerNewKeys = [];
   Map<String, KITModule> rowModules = {}; // INDEXING AS row_id: module
   // C12: a module page fetch is a full scrape; while one runs for a row,
@@ -307,10 +311,14 @@ class CampusManager extends KITLoginManager {
   /// account on a shared device until every refetch happens to succeed.
   void wipeAccountMemory() {
     _teardownEpoch++;
-    unawaited(SharedPreferences.getInstance().then((p) => p.setString(
-        WebcalKeys.diag,
-        "${DateTime.now().toIso8601String().substring(5, 16)} WIPE "
-        "(epoch=$_teardownEpoch)")));
+    // R37: the WIPE marker used to be written HERE asynchronously - its
+    // then() landed after logout's awaited DATA_* sweep, so every logout
+    // reliably resurrected exactly one DATA_* key (and the next login
+    // briefly showed "WIPE (epoch=N)" as the webcal diag line). The
+    // marker now lands AFTER the sweep in credentials_provider's tail.
+    // R37: account-derived like everything else here - B with failing
+    // module fetches used to see A's "Zuletzt aktualisiert" as a fact
+    lastModuleFetchTime = null;
     scheduleFetchingTimer?.cancel();
     scheduleFetchingTimer = null;
     moduleRows = [];
@@ -645,14 +653,31 @@ class CampusManager extends KITLoginManager {
         ectsAcquired: ectsAcquired);
 
     await writeStudentData();
+    if (epoch != _teardownEpoch) {
+      // R37: the write ITSELF is the await gap - a logout whose sweep
+      // completed during it must not leave A's name + matric re-seeded
+      // into the purged store for B to see (agenda-ILIAS write-undo
+      // pattern; the comment below only covered ready=true).
+      await clearStudentData();
+      return;
+    }
 
-    // the prefs write is an await gap too: ready=true over a freshly
-    // cleared login form would leave the app looking logged in as A
+    // ready=true over a freshly cleared login form would leave the app
+    // looking logged in as A
     if (epoch != _teardownEpoch) return;
 
     // fetchTimetable().then((_) {
     //   fetchAllModules();
     // });
+
+    // R37: the doctor's grades row reads the module_cache_<term>_last_fetch
+    // family - whose ONLY writer was in the deprecated-caching block, so a
+    // fresh install read "never loaded" forever while the 6h grade poll
+    // pushed fresh grades, and an upgraded install could read a frozen old
+    // stamp as "dead". _fetchScheduleInner IS the Studienverlauf scrape:
+    // it owns the stamp now.
+    unawaited(SharedPreferencesAsync().setString(_moduleCacheLastFetchKey,
+        DateTime.now().toIso8601String()));
 
     ready = true;
     notificationCallback();
@@ -702,9 +727,16 @@ class CampusManager extends KITLoginManager {
       // logout during getInstance would land on the already-incremented
       // value and the fence below could never fire
       final epoch = _teardownEpoch;
-      final prefs = await SharedPreferences.getInstance();
+      // R37: LIVE store, both directions. The 6h grade-poll isolate writes
+      // DATA_ledgerSnapshot/DATA_prereqAlarm itself; this reader was on the
+      // legacy per-engine snapshot and never saw those writes, so hours
+      // after a poll push the next foreground diff read the boot-stale
+      // snapshot, saw the same grade as NEW again and RE-PUSHED it (and
+      // re-ran the prereq heads-up) - violating the at-most-once rule the
+      // snapshot exists to enforce (IliasWatcher's both-live rule).
+      final prefs = SharedPreferencesAsync();
       Map<String, String> previous = const {};
-      final raw = prefs.getString(_ledgerSnapshotKey);
+      final raw = await prefs.getString(_ledgerSnapshotKey);
       if (raw != null && raw.isNotEmpty) {
         try {
           previous = {
@@ -738,9 +770,12 @@ class CampusManager extends KITLoginManager {
       // ever); cleared to [] on a quiet fetch so the chip never outlives
       // the news cycle it marks
       ledgerNewKeys = [for (final e in events) e.titleKey];
-      await prefs
-          .setString(_ledgerAnnouncedKey, jsonEncode(ledgerNewKeys));
-      for (final e in events.take(3)) {
+      // R37: a NEW-PENDING row is not a published grade - during exam
+      // registration a fresh pending row entered the tree and the diff
+      // pushed "Neue Note · Datenbanken · " with an EMPTY grade label:
+      // a fabricated publication claim. Chips and the snapshot may count
+      // pending rows; the push channel never does.
+      for (final e in events.where((e) => e.gradeLabel.isNotEmpty).take(3)) {
         await MeiNotifications.notifyGradePublished(
             L10n.t(e.changed
                 ? "notifs.gradeChangedTitle"
@@ -757,7 +792,6 @@ class CampusManager extends KITLoginManager {
   }
 
   static const _ledgerSnapshotKey = "DATA_ledgerSnapshot";
-  static const _ledgerAnnouncedKey = "DATA_ledgerAnnounced";
 
   /// R32.5: prereq-gate alarm riding [_diffLedgerAndNotify]. Recomputes
   /// the Schein-Ampel over the just-persisted ledger, diffs its known
@@ -769,7 +803,9 @@ class CampusManager extends KITLoginManager {
   /// ([prereqAlarmDiff]), and a missing handbook asset stays silent: the
   /// catalogue is an enhancement, never a crash path or a claim.
   Future<void> _diffPrereqAlarm(
-      SharedPreferences prefs, int epoch, GradeBook book) async {
+      // R37: LIVE store parameter - the poll isolate writes the same key;
+      // the legacy snapshot read used to resurrect old blocks and re-push.
+      SharedPreferencesAsync prefs, int epoch, GradeBook book) async {
     final handbook = await Handbook.load();
     if (handbook == null) return;
     final now = DateTime.now();
@@ -785,7 +821,8 @@ class CampusManager extends KITLoginManager {
         takingKeys: enrolledLectureTitles);
     final blocked = prereqSnapshot(plan);
     final grew = prereqAlarmDiff(
-        blockedNow: blocked, snapshotRaw: prefs.getString(_prereqAlarmKey));
+        blockedNow: blocked,
+        snapshotRaw: await prefs.getString(_prereqAlarmKey));
     // C81 fence before ANY write (same await-gap discipline as the ledger
     // snapshot above: a logout during Handbook.load must not re-seed the
     // swept DATA_prereqAlarm key with the old account's blocks)
@@ -1004,7 +1041,11 @@ class CampusManager extends KITLoginManager {
     //   }
     // }
 
-    _updateLastModuleFetchTime(module.lastUpdated);
+    // R37: parseModulePage stamps lastUpdated=now for ANY body, the 200
+    // "Sitzung abgelaufen" stub included; advancing the home "Zuletzt
+    // aktualisiert" footer on a FAILED scrape claimed freshness the
+    // scrape never delivered. Stamp only real content.
+    if (!module.isEmpty) _updateLastModuleFetchTime(module.lastUpdated);
 
     final prevModuleData = rowModules[module.hierarchicalTableRowId];
     if (prevModuleData != null && module.isEmpty && !prevModuleData.isEmpty) {
@@ -2169,6 +2210,12 @@ class CampusManager extends KITLoginManager {
     final prefs = await SharedPreferences.getInstance();
     personalIcs = prefs.getString(_personalIcsKey) ?? "";
     personalIcsUrl = prefs.getString(_personalIcsUrlKey) ?? "";
+    // R37: the loaded flag is PUBLIC state read by the settings setup
+    // row ("Eigener Kalender: Aus/An"); this load used to finish silently
+    // and the row kept saying "Aus" for the whole session while the very
+    // card below it showed the imported events. Every field viewer must
+    // re-run.
+    notificationCallback();
   }
 
   /// Accepts a full ICS file body; keeps only the VEVENT blocks (calendar
@@ -2314,10 +2361,17 @@ class CampusManager extends KITLoginManager {
     final base =
         cached.isEmpty ? "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n" : cached;
     final merged = injectPersonalIcs(base, personalIcs);
-    await prefs.setString(_webcalIcsCacheKey, merged);
-    // F-2/T5: content-changing RMW moves the stamp (see reapplySignMeUpSynth)
-    await prefs.setString(
-        WebcalKeys.fetchedAt, DateTime.now().toIso8601String());
+    if (merged != cached) {
+      await prefs.setString(_webcalIcsCacheKey, merged);
+      // F-2/T5: content-changing RMW moves the stamp (see reapplySignMeUpSynth)
+      await prefs.setString(
+          WebcalKeys.fetchedAt, DateTime.now().toIso8601String());
+    }
+    // R37: byte-identical rebuild (the "Entfernen" click when no block was
+    // imported, or a re-import of what is already embedded) must NOT move
+    // the stamp - it fabricated a fresh "As of" out of nothing while no
+    // fetch happened; the derived rebuild below still runs (cold boot
+    // seeds the grid from this exact path).
     final feed = WebcalFeed.parse(merged);
     if (feed != null) {
       timetable = gridTemplate(feed);

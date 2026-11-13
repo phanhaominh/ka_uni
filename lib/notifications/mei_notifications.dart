@@ -66,6 +66,17 @@ class MeiNotifications {
   /// resurrect the old account's reminders.
   static int teardownEpoch = 0;
 
+  /// Logout calls this BEFORE the teardown sweep starts, not only inside
+  /// [cancelAllScheduled] at its end: the ANN_* prefs sweep (and every other
+  /// store wipe) runs before cancelAllScheduled, and a fence that reads
+  /// teardownEpoch during that window would still see the OLD epoch and
+  /// happily write the dying account's keys back after its own purge
+  /// (resurrection). Bumping first means any fence armed before logout
+  /// trips the moment the first wipe begins. cancelAllScheduled keeps its
+  /// own ++: fences only test inequality with their captured value, so a
+  /// double bump per logout is harmless.
+  static void beginTeardown() => teardownEpoch++;
+
   /// Notification tap -> deep-link routing hook. Wired once by main();
   /// stays null in the WorkManager isolate, where there is no UI to
   /// navigate to and a dispatch must be a no-op.
@@ -586,9 +597,10 @@ class MeiNotifications {
   /// window, given the fired-snapshot (procedureId -> registrationStart
   /// ISO). Returns the fire instant (already work-hour clamped, see
   /// [smuOpenFire]) or null when nothing may ping: no window, window
-  /// closed, window already fired in the snapshot, or start in the
-  /// FUTURE (future windows arm their alarm directly, no snapshot entry -
-  /// the alarm itself is the once-per-window guarantee).
+  /// closed, or window already accounted for in the snapshot (FUTURE
+  /// windows get an entry the moment their alarm is ARMED - the armed
+  /// alarm alone was NOT a once-per-window guarantee: post-fire re-runs
+  /// used to take the backfill path and ping twice).
   @visibleForTesting
   static DateTime? smuOpenFire(SignMeUpProcedure p, DateTime now,
       Map<String, String> fired) {
@@ -709,6 +721,15 @@ class MeiNotifications {
                 ]);
           }
           if (isBackfill) {
+            fired["${p.id}"] = p.registrationStart!.toIso8601String();
+            firedDirty = true;
+          } else {
+            // The ALARM alone is NOT the once-per-window guarantee: every
+            // later schedule run (login, pull-refresh - the re-schedule
+            // fires on each) sees the now-OPEN window with no entry and
+            // takes the backfill path, pinging a second time minutes
+            // after the armed alarm fired. The transition store must
+            // account for the ARMED state too.
             fired["${p.id}"] = p.registrationStart!.toIso8601String();
             firedDirty = true;
           }

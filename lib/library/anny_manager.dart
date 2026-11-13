@@ -407,6 +407,23 @@ class AnnyManager extends ChangeNotifier {
         // only the silent refresh is unavailable
         _diag("keychain write failed", AnnyErrorKind.none);
       }
+      // the persist writes ARE an await gap the fence above cannot cover:
+      // a logout landing WHILE they run deletes the ANN_* keys and the
+      // keychain password only to have our still-pending writes put them
+      // back right behind the sweep - the next boot() would then silently
+      // re-mint a JWT for the dead account. Undo exactly what this method
+      // wrote (agenda_page's ILIAS-card write-then-undo precedent) and
+      // claim nothing: sign-in is void for a logged-out user.
+      if (epoch != MeiNotifications.teardownEpoch) {
+        _diag("signed out during sign-in", AnnyErrorKind.none);
+        await p.remove(AnnyKeys.jwt);
+        await p.remove(AnnyKeys.email);
+        try {
+          await passErase();
+        } catch (_) {}
+        _session = null;
+        return false;
+      }
       error = AnnyErrorKind.none;
       diag = null;
       notifyListeners();
@@ -434,6 +451,9 @@ class AnnyManager extends ChangeNotifier {
     _signOutGen++; // drop any bookings reply still in flight (R22)
     _session = null;
     bookings = const [];
+    // the dead account's cancel ledger must not shadow the next user's
+    // booking ids on this shared device
+    _recentlyCancelled.clear();
     // rooms/freeCounts/favSlots stay: anonymous data (MensaKeys precedent)
     error = AnnyErrorKind.none;
     diag = null;
@@ -481,6 +501,11 @@ class AnnyManager extends ChangeNotifier {
       return null;
     }
     _reauthInFlight = true;
+    // captured BEFORE the first await: a logout landing mid-preamble
+    // (between the still-old prefs read and the capture) used to bump the
+    // epoch while the fence still read the NEW value, so the re-mint
+    // sailed through and re-armed the dead account's session in memory
+    final int epoch = MeiNotifications.teardownEpoch;
     try {
       final SharedPreferences p = await SharedPreferences.getInstance();
       final String email = p.getString(AnnyKeys.email) ?? "";
@@ -491,7 +516,6 @@ class AnnyManager extends ChangeNotifier {
         return null;
       }
       try {
-        final int epoch = MeiNotifications.teardownEpoch;
         final AnnySession s = await auth.signIn(kitUser: kitUser, password: pw);
         if (epoch != MeiNotifications.teardownEpoch) {
           // logged out mid re-mint: _session for the dead account must
@@ -506,7 +530,11 @@ class AnnyManager extends ChangeNotifier {
         _failAuth(e.reason, "$e");
         return null;
       } catch (e) {
-        reauthFailed = true;
+        // contract: dead = rotated password / revoked grant, i.e. an AUTH
+        // verdict (the AnnyAuthError clause above). Flipping on the
+        // catch-all made one subway-tunnel socket dropout during a
+        // re-mint render the whole account dead until a manual sign-in.
+        if (!KITLoginManager.isNetworkError(e)) reauthFailed = true;
         _diag(
             "re-auth: $e",
             KITLoginManager.isNetworkError(e)
@@ -566,6 +594,20 @@ class AnnyManager extends ChangeNotifier {
   // next device user was shown the predecessor's check-in banner)
   int _signOutGen = 0;
 
+  // cancel-vs-refresh interleave: a cancel that LANDS while the bookings
+  // GET is in flight used to be resurrected - the server had rendered its
+  // answer before the cancel arrived, so the reply still carried the
+  // booking and the (gen-unchanged) refresh wrote it back: check-in banner
+  // and ping for a seat the user just gave up. Cancelled ids are stamped
+  // with the fetch generation CURRENT at cancel time: a reply whose GET
+  // started at or before the stamp is a pre-cancel snapshot and gets
+  // filtered; a GET that STARTED after the stamp is server truth and the
+  // stamp is pruned before filtering - so no real booking stays dropped
+  // once the server had its turn (never resurrected, never ghosted).
+  final Map<String, int> _recentlyCancelled = {};
+  int _fetchGen = 0;
+  static const int _maxRecentCancels = 20; // FIFO cap: hygiene, not a ledger
+
   /// Pull the upcoming bookings of the signed-in account. Never throws;
   /// keeps the previous list on failure (mensa discipline).
   Future<bool> refreshBookings() {
@@ -574,6 +616,7 @@ class AnnyManager extends ChangeNotifier {
     late final Future<bool> fut;
     fut = () async {
       final int gen = _signOutGen;
+      final int fetchGen = ++_fetchGen; // this GET's start stamp
       if (_session == null) return false;
       isLoadingBookings = true;
       notifyListeners();
@@ -590,7 +633,13 @@ class AnnyManager extends ChangeNotifier {
         isLoadingBookings = false;
       }
       if (list != null && gen == _signOutGen) {
-        bookings = list;
+        // prune BEFORE filtering: this GET started after those cancels,
+        // so its answer already reflects them and the guard did its job
+        _recentlyCancelled.removeWhere((_, int at) => fetchGen > at);
+        bookings = list
+            .where((AnnyBooking x) =>
+                !_recentlyCancelled.containsKey(x.id))
+            .toList();
         error = AnnyErrorKind.none;
         diag = null;
       }
@@ -700,6 +749,15 @@ class AnnyManager extends ChangeNotifier {
   /// The captured cancel route (GET with the booking access code).
   Future<bool> cancel(AnnyBooking b) async {
     if (isBooking) return false;
+    // book() synthesizes its optimistic row WITHOUT the access code (the
+    // server list carries it and lands a moment later); cancelling that
+    // sketch would fire an empty access_token - a guaranteed rejection
+    // rendered as a false "cancel failed" toast. Honest local refusal
+    // instead: the real row with its code arrives with the next refresh.
+    if (b.code.isEmpty) {
+      _diag("cancel: booking lacks access code", AnnyErrorKind.none);
+      return false;
+    }
     isBooking = true;
     notifyListeners();
     try {
@@ -710,6 +768,14 @@ class AnnyManager extends ChangeNotifier {
           }) ==
           true;
       if (ok) {
+        // stamp against the CURRENT fetch generation: a GET already in
+        // flight carries fetchGen <= this stamp and is treated as a
+        // pre-cancel snapshot; the next GET (stamp+1) is server truth
+        _recentlyCancelled.remove(b.id);
+        _recentlyCancelled[b.id] = _fetchGen;
+        while (_recentlyCancelled.length > _maxRecentCancels) {
+          _recentlyCancelled.remove(_recentlyCancelled.keys.first);
+        }
         bookings = bookings.where((AnnyBooking x) => x.id != b.id).toList();
         notifyListeners();
         onCanceled?.call(b);

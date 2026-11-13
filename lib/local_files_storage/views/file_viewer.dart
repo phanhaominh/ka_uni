@@ -76,9 +76,16 @@ class _PDFScreenState extends State<PDFScreen> with WidgetsBindingObserver {
                   // leave an orphan prefs entry pointing at a deleted file
                   // (a dead tile in the pinned list); on failure the file
                   // stays and the screen stays open for a retry
-                  await iliasFileManager.unpinFile(
-                      semesterString: KITProvider.currentSemesterString,
-                      urlString: widget.iliasFile.urlString);
+                  // R22 (call updated): the path-keyed unpinFilesByPaths,
+                  // not unpinFile(semester, urlString) - a file opened
+                  // from the cache page carries the synthesized urlString
+                  // "", and the old call then dropped EVERY empty-url pin
+                  // of the current semester (pins of files that were not
+                  // deleted); a real-url pin saved under a different
+                  // semester matched NOTHING, deleting the bytes and
+                  // leaving a dead tile. unpinFilesByPaths drops exactly
+                  // the entries pointing at this path, in every semester
+                  await iliasFileManager.unpinFilesByPaths({widget.path});
                 } on Object catch (e) {
                   toastsProvider.showTextToast(L10n.t("files.unpinFailed"));
                   if (kDebugMode) print("ILIAS unpin failed: $e");

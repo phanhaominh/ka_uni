@@ -248,6 +248,12 @@ class CredentialsProvider extends ChangeNotifier {
     // accumulated and rethrown at the end: the UI's toast then tells a
     // full sweep apart from a partial one instead of lying either way
     final failures = <String>[];
+    // Fence bump comes FIRST, before any wipe: the ANN_*/DATA_* prefs sweep
+    // runs long before cancelAllScheduled gets its turn, and an in-flight
+    // writer (Anny reauth, library reminders) checking the epoch mid-sweep
+    // would read the still-old value and persist credentials right after
+    // their own purge deleted them.
+    MeiNotifications.beginTeardown();
     try {
       await _clearCredentials();
     } on Object catch (e) {
@@ -373,6 +379,20 @@ class CredentialsProvider extends ChangeNotifier {
       }
     } on Object catch (e) {
       failures.add("legacy prefs sweep: $e");
+    }
+    // R37: the WIPE marker belongs AFTER both sweeps, not inside
+    // wipeAccountMemory (its async then() used to land after the sweep and
+    // resurrect one DATA_* key every logout, contradicting the sweep
+    // contract). Written into the legacy instance so the same-process
+    // readers AND the doctor's merged view see it.
+    try {
+      final legacy = await SharedPreferences.getInstance();
+      await legacy.setString(
+          "DATA_webcalDiag",
+          "${DateTime.now().toIso8601String().substring(5, 16)} WIPE "
+          "(epoch=${vm.campusManager.teardownEpoch})");
+    } on Object catch (e) {
+      failures.add("wipe marker: $e");
     }
     try {
       // R34.6: the keychain is not only the KIT credentials — the document

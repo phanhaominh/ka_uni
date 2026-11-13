@@ -92,7 +92,13 @@ class IliasManager extends KITLoginManager {
     final future = _authorize(
         retryIfFailed: retryIfFailed, refreshSession: refreshSession);
     _authInFlight = future;
-    return future.whenComplete(() => _authInFlight = null);
+    // Identity-bound clear (kit_provider/campus_manager pattern): a logout
+    // may already have DROPPED this memo and a fresh account installed its
+    // own chain - an orphaned earlier chain settling must not null B's memo,
+    // or two authorize() calls race two SSO chains through one cookie jar.
+    return future.whenComplete(() {
+      if (identical(_authInFlight, future)) _authInFlight = null;
+    });
   }
 
   Future<void> _authorize(

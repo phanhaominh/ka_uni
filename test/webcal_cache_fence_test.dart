@@ -29,7 +29,11 @@ import 'package:shared_preferences_platform_interface/types.dart';
 const _wcUrl = "https://webcal.test/wc.ics";
 const _facUrl = "http://127.0.0.1:8080/fac.ics";
 
-final _today = DateTime.now();
+/// Midnight-flake guard: captured per test in setUp (see
+/// fristenbuch_page_test.dart's identically named guard) — a library-load
+/// capture drifts a day when the suite crosses 00:00 mid-run, while the
+/// fence's own stamp/throttle logic reads the real clock.
+late DateTime _today;
 DateTime _at(int days, int hour) {
   final base =
       DateTime(_today.year, _today.month, _today.day).add(Duration(days: days));
@@ -173,6 +177,7 @@ void main() {
   late _SharedStore store;
 
   setUp(() {
+    _today = DateTime.now(); // per-test anchor, see the guard on `_today`
     SharedPreferences.setMockInitialValues({}); // resets the legacy singleton
     store = _SharedStore();
     SharedPreferencesAsyncPlatform.instance = store;

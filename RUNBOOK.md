@@ -834,3 +834,98 @@ in 2 minutes.
   of one kitchen prints the same "11-14 Uhr" stamp and the strip tripled the window (device
   screenshot; regression test pins single print). (c) "Check now" busy state ran ~2 min against
   the dead KIT session and RETURNED (spinner-in-flight doctrine holds; no permanent spinner).
+
+## Wave R37 (full-repo review + fix wave): "the collapse that never collapsed"
+Method: 13-lens pool (8 subsystem slices + 5 cross-cutting lenses), every finding
+evidence-quoted with a user-visible scenario; parent verified each quote against code
+before fixing; 4 file-disjoint fix agents + parent-owned cluster (state_management,
+diagnostics, agenda, home cards). ~45 findings verified; every survivor fixed.
+Durable invariants this wave established:
+- GUARDED REDIRECT FOLLOWER (kit_login_manager.netGet/netPost = ALL account fetches):
+  the vendored http_session 0.2.2 re-POSTs method+body to ANY Location recursively
+  BEFORE a caller can see the 302 - every kitHttps pin in the app was unreachable dead
+  code for library-followed hops (password to attacker.tld on a reshaped page, http
+  downgrade included). netGet/netPost now implement the doctrine directly: follow ONLY
+  kitHttps-pinned hops, POST→GET on 302/303 (KIT CAS shape), off-list Location surfaces
+  as a raw 302 to the caller. The plus/OIDC chain (bare url.resolve, OIDC material +
+  reused IdP cookie) got the same pin. NEVER route login-chain fetches through a
+  library that auto-follows redirects.
+- LOGIN CHAINS ARE FENCED (netEpoch): KITLoginManager gained the teardown fence every
+  sibling had - KITProvider.clearCookiesAndCache invalidates FIRST; multi-hop chains
+  capture netEpoch at entry and die per-hop on mismatch (A's stalled 30 s SSO chain
+  used to land A's JSESSIONID over B's fresh jar entries = B riding A's session).
+  submit() also refuses while loggingIn (cold-start auto-login + tap on the live Login
+  button wiped the jar under the in-flight chain: correct credentials reported wrong).
+- ICS-CACHE RMW BASELINE IS LIVE (_liveIcsCache): publishDueBlock/reapply{FrB,SignMeUp,
+  ExamSynth}/_applyPersonalIcs read the ASYNC view of the cache (legacy base only as
+  ghost-null fallback) - the main-isolate legacy snapshot never sees poll writes, so a
+  Fristenbuch save used to merge into hours-old bytes AND move the stamp: reverted
+  schedule under a fresh "As of" (F-2/T5 inversion; the foreground fetch got cachedLive
+  in R31, these four writers were missed). Same both-direction live rule now covers
+  DATA_ledgerSnapshot/DATA_prereqAlarm (poll pushes were RE-PUSHED by the boot-stale
+  legacy read - at-most-once violated); a stub "Sitzung abgelaufen" page may never
+  advance the module "zuletzt aktualisiert" stamp; a byte-identical personal-ICS
+  rebuild may not restamp; a NEW-PENDING ledger row is never a "Neue Note" push
+  (gradeLabel-empty gate on the push loop; chips/snapshot still count it).
+- WIPE MARKER AFTER THE SWEEP: the WIPE epoch marker is written at the sweep TAIL in
+  credentials_provider (from wipeAccountMemory's unawaited then(), which resurrected
+  exactly one DATA_* key every logout).
+- TEARDOWN EPOCH ORDERING: MeiNotifications.beginTeardown() bumps at logout's FIRST
+  statement - fences guarding the ANN_* sweep must not read a pre-sweep epoch
+  (cancelAllScheduled's bump came too late; anny signIn/_silentReauth check again AFTER
+  their persist writes and undo on mismatch: agenda write-undo idiom).
+- PIN IDENTITY: empty-url pins (cache-page viewer) identify by fileSystemPath, url pins
+  by urlString (_samePin/_pinMatches); viewer delete unpins by PATH (cross-semester).
+  The old url-equality dedupe silently deleted sibling pins and renamed strangers.
+- GRID NEVER COUNTS A FRIST: dueSynth occurrences joined the weekly-grid claim loop
+  inside their own week (url==null suppressed them only OUTSIDE it) - a 16:00 deadline
+  could non-deterministically evict the 16:00 lecture (Dart List.sort is NOT stable on
+  ties; the claim loop's comment assumed otherwise). exam/frb/due are now one family.
+- EXAM SYNTH MERIDIAN: EN-portal "11:00 AM - 1:00 PM" was parsed AM/PM-blind -> 01:00
+  end -> overnight rule fabricated a NEXT-DAY DTEND (sitting on two days, 14 h "läuft"
+  hero, honest-looking endGuessed=false export). Any time parsing must consume the
+  meridian when the locale may print one.
+- SOP OVERDUE IS A LIE YOU CANNOT VERIFY: sopDeadline belongs to ONE intake; the red
+  "Frist abgelaufen" shipped for every student as the calendar turned. The card now
+  states the intake-qualified rule as a fact and judges nothing personal off it. If a
+  claim needs the user's cohort and the app cannot see it, DO NOT MAKE THE CLAIM.
+- HONEST-STATE UI PINNED: cockpit rows carry their cockpitAction targets (examsPage/
+  portal; F12 no-dead-chevron), status unknowns render label-only (no ticking
+  "Heute · 14:03" appointment tail); the exams-loading + sign-me-up pending cards are
+  GONE (the cockpit unknown-rows they duplicate are the UI; examsPending finally passed
+  by production); daily-view free days keep the ghosts of everything cancelled that day.
+- DOCTOR GRADES ROW HAS A WRITER: _fetchScheduleInner stamps module_cache_<term>_
+  _last_fetch (the only writer lived in a commented-out block - "never loaded" forever
+  / "dead" forever on upgraded installs). The ledgerAnnounced prefs copy was deleted
+  (write-only phantom, never read back). DATA_* hygiene: lastModuleFetchTime joins
+  wipeAccountMemory; href-less title anchors skip the row explicitly instead of dying
+  inside the callers' catch and silently dropping it.
+- GAP CARD RODE THE WRONG SIDE OF THE F-1 DOC: async-only reader (never adopted
+  webcalWrittenAt/webcalMergedFeed, permanently blind on ghost devices), parsed the
+  whole feed PER BUILD, had no clock heartbeat or resume re-read (showed the 11:00 plan
+  at 18:00), and accepted future stamps as "fresh". Now: memory handoff first, probe
+  guarded, minute-tick ValueListenableBuilder, resume re-read, non-negative-age TTLs.
+- kAppVersion PINNED to pubspec by test (the old bundle-contains-const test asserted
+  the fallback against itself while the const drifted 0.8.9+65 vs 0.12.0+70).
+- KITCredentials.toString no longer interpolates the password (CrashTail -> support
+  bundle is SHAREABLE; scrubDiag only redacts >=20-char runs). Logout now also clears
+  the webview engine's localStorage+HTTP cache (cookies were only half the store), and
+  FRESH logins clear the engine jar too (the secure-storage-reset path reaches the
+  login gate WITHOUT a logout sweep - A's SSO cookies re-issued A's account into B's
+  webview).
+- TEST HYGIENE: midnight-crossing load-time `DateTime.now()` fixtures eliminated
+  (fristenbuch trio); L10n flips reset via addTearDown before the mutation; the R21
+  stale-fav-reply rule now pinned at its SECOND call site (_refreshAnon's fav tail was
+  the half of the fix missed in R21); the anny opt-out gate has its zero-calls twin
+  test; SupportState.feedStatuses' both-store merge is pinned by test/support_state_feed.
+  SMU test updated to the ARMED-arms-into-DATA_smuOpensFired contract (the future arm
+  wrote no entry while re-schedule runs fire on every agenda fetch -> guaranteed
+  second ping minutes after the alarm; the ALARM is not the once-per-window store).
+POOL LESSON (process): a fix agent ran `git stash` on the shared tree mid-session and
+nearly cost 20 files of parent WIP; agents share the working tree - NEVER mutate git
+state (stash/checkout/reset/clean/commit), warn them in the spawn brief.
+DEVICE PROOF (audit/b71): home cold-boot with live hero at 04:36 ("starts in 3 h"
+→ 08:00 lecture, heartbeat honest); cockpit rows carry chevrons and tapping the
+"Exam registration opens" row lands on Exam Registration (link preservation real,
+not just unit-pinned); legacy "Nächste Klausur" card and both duplicated pending
+banners gone from the agenda. 837 tests green, analyze 0 errors, installed v70 build.

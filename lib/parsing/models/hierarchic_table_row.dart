@@ -77,11 +77,18 @@ class HierarchicTableRow {
       child.remove();
     });
 
+    // R37: an href-less title anchor (icon/anchor-style) handed null to
+    // the non-null String field below; the TypeError died inside the
+    // callers' try/catch and SILENTLY dropped the whole row (this file's
+    // header documents exactly that failure class). Skip explicitly.
+    final href = firstLink.attributes["href"];
+    if (href == null) return null;
+
     final newRow = HierarchicTableRow(
       level: level,
       // cascampus embeds layout whitespace/entities ("Mechanical Design  A")
       title: firstLink.text.replaceAll(RegExp(r"\s+"), " ").trim(),
-      href: firstLink.attributes["href"],
+      href: href,
       type: cells[2].innerHtml,
       statusStr: "",
       grade: cells[4].innerHtml,

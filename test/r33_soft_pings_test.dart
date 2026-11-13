@@ -59,17 +59,37 @@ void main() {
           DateTime(2026, 11, 13, 8));
     });
 
-    test("snapshot suppresses the second backfill of the same window", () {
+    test("once per window: the armed future arm counts as announced", () {
+      // R34.7: scheduleSignMeUpReminders writes fired[id] the moment it
+      // ARMS a future window's T-0 alarm. The armed alarm alone was NOT
+      // the once-per-window guarantee: the first run after T-0 found the
+      // now-open window with no entry, took the backfill path and pinged
+      // again minutes after the armed alarm had fired.
+      final t0 = DateTime(2026, 11, 14, 9);
+      final p = proc(6, t0, DateTime(2026, 11, 20));
+      final fired = <String, String>{};
+      // run 1, window still future: fire instant = T-0 ...
+      expect(MeiNotifications.smuOpenFire(p, DateTime(2026, 11, 13, 10), fired),
+          t0);
+      // ... and the scheduler records the ARM next to the alarm (mirrors
+      // scheduleSignMeUpReminders' fired[id] write on the !isBackfill arm)
+      fired["6"] = t0.toIso8601String();
+      // run 2 after T-0: now-open window, entry found -> pings NOTHING
+      expect(
+          MeiNotifications.smuOpenFire(
+              p, DateTime(2026, 11, 14, 9, 5), fired),
+          isNull);
+      // the backfill path keeps its dedup: matching entry, no ping
       final now = DateTime(2026, 11, 13, 10);
-      final p = proc(6, now.subtract(const Duration(hours: 1)),
+      final p2 = proc(6, now.subtract(const Duration(hours: 1)),
           now.add(const Duration(days: 1)));
-      final fired = {"6": p.registrationStart!.toIso8601String()};
-      expect(MeiNotifications.smuOpenFire(p, now, fired), isNull);
+      final fired3 = {"6": p2.registrationStart!.toIso8601String()};
+      expect(MeiNotifications.smuOpenFire(p2, now, fired3), isNull);
       // a NEWER window (different start) is a fresh announcement
-      final fired2 = {"6": now
+      final fired4 = {"6": now
           .subtract(const Duration(days: 9))
           .toIso8601String()};
-      expect(MeiNotifications.smuOpenFire(p, now, fired2), isNotNull);
+      expect(MeiNotifications.smuOpenFire(p2, now, fired4), isNotNull);
     });
 
     test("closed window and missing data never fire", () {

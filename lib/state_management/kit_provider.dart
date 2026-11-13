@@ -12,6 +12,7 @@ import 'package:kit_mobile/notifications/library_notifications.dart';
 import 'package:kit_mobile/module_info_table/models/module_info_table_cell.dart';
 import 'package:kit_mobile/state_management/ilias/ilias_manager.dart';
 
+import 'kit_login_manager.dart';
 import '../local_files_storage/files_manager.dart';
 import '../module/models/module.dart';
 import '../module_info_table/models/module_info_table.dart';
@@ -512,6 +513,10 @@ class KITProvider extends ChangeNotifier {
 
   // TODO: RENAME
   Future<void> clearCookiesAndCache() async {
+    // R37: invalidate FIRST - multi-hop chains (cascampus boot walk, plus
+    // OIDC) check netEpoch per hop and die instead of landing A's session
+    // cookies into B's freshly cleared jar.
+    KITLoginManager.invalidateNetwork();
     await campusManager.clearCookiesAndCache();
     await iliasManager.clearCookiesAndCache();
   }

@@ -626,26 +626,19 @@ class _AgendaPageState extends State<AgendaPage> {
                   day: dayStart, key: _todaySectionKey),
               _daySection(L10n.t("agenda.tomorrow"), _load.tomorrow, now,
                   day: DateTime(now.year, now.month, now.day + 1)),
-              _nextExamCard(context, vm, now),
               _cockpitCard(context, vm, now),
               // R34.5: one card under the cockpit answers "what am I
               // walking into this semester" over the 90-day horizon
               _ninetyDaysCard(context, vm, now),
               _iliasSection(context),
               if (needAction.isNotEmpty)
-                _examsSection(context, needAction)
-              else if (vm.campusManager.ready &&
-                  !vm.campusManager.examsLoaded &&
-                  !vm.campusManager.examsSurfaceBroken)
-                _pendingCard(context, L10n.t("agenda.examsLoading")),
+                _examsSection(context, needAction),
+              // R35.1 collapse FINISHED (R37): the exams-loading and
+              // sign-me-up-not-current pending cards used to render NEXT
+              // TO the cockpit whose unknown-rows fire under the identical
+              // conditions - every student saw the same state twice.
               if (smuRows.isNotEmpty)
-                _signMeUpSection(context, smuRows)
-              else if (!vm.signMeUpManager.loadedMine &&
-                  vm.signMeUpManager.procedures.isNotEmpty)
-                // procedures are anonymous data; without a PROVEN "mine" fetch
-                // every open one would scream "act now" at a student who long
-                // registered - say it is not current instead of lying
-                _pendingCard(context, L10n.t("agenda.signMeUpNotCurrent", [])),
+                _signMeUpSection(context, smuRows),
               // my registrations + outcomes directly below the open
               // procedures: offers and results belong together
               if (myRegs.isNotEmpty) SignMeUpMineCard(rows: myRegs, now: now),
@@ -1123,64 +1116,6 @@ class _AgendaPageState extends State<AgendaPage> {
     );
   }
 
-  /// Countdown to the nearest registered exam sitting (dates now parsed
-  /// from the term rows). Hidden if none within 45 days / none registered.
-  Widget _nextExamCard(BuildContext context, KITProvider vm, DateTime now) {
-    final scheme = Theme.of(context).colorScheme;
-    ExamEntry? best;
-    DateTime? bestAt;
-    ExamTerm? bestTerm;
-    for (final e in vm.campusManager.exams) {
-      final at = e.nextRegisteredTerm(now);
-      if (at != null && (bestAt == null || at.isBefore(bestAt))) {
-        best = e;
-        bestAt = at;
-        // two pool sittings can share a start; showing the first match's
-        // room would misattribute a sibling term — label only when the
-        // best start resolves to exactly one room
-        final atTerms = e.terms.where((t) => t.startAt == at).toList();
-        bestTerm = atTerms.map((t) => t.room).toSet().length == 1
-            ? atTerms.first
-            : null;
-      }
-    }
-    if (best == null || bestAt == null) return const SizedBox.shrink();
-    final days = L10n.daysFromNow(bestAt, now);
-    if (days > 45) return const SizedBox.shrink();
-    final when = L10n.dayOffset(bestAt, now);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Icon(Icons.event, color: scheme.tertiary),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("${L10n.t("agenda.nextExam")} · $when",
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Text(best.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 13, color: scheme.onSurfaceVariant)),
-                  Text(
-                      [
-                        L10n.stamp(bestAt),
-                        if ((bestTerm?.room.isNotEmpty ?? false)) bestTerm!.room
-                      ].join(" · "),
-                      style: TextStyle(fontSize: 12, color: scheme.outline)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   /// Wave C (R25): one merged timeline of every date the student can miss
   /// (ILIAS dues, exam sittings, exam + SignMeUp registration windows).
   /// Pure selection lives in [cockpitPlan]; alarms for these dates are
@@ -1194,6 +1129,13 @@ class _AgendaPageState extends State<AgendaPage> {
         procedures: vm.signMeUpManager.procedures,
         registeredProcedureIds: vm.signMeUpManager.registeredProcedureIds,
         smuProven: vm.signMeUpManager.loadedMine,
+        // R37: the flag existed, no production call site ever set it -
+        // the unknownExams row was reachable only from tests while the
+        // RUNBOOK claimed the switch arms landed. Same condition the
+        // deleted pending card used, one banner per state.
+        examsPending: vm.campusManager.ready &&
+            !vm.campusManager.examsLoaded &&
+            !vm.campusManager.examsSurfaceBroken,
         now: now);
     final scheme = Theme.of(context).colorScheme;
     String label(CockpitKind k) => switch (k) {
@@ -1307,46 +1249,89 @@ class _AgendaPageState extends State<AgendaPage> {
                     ),
                   ),
                 for (final it in items)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3),
-                    child: Row(
-                      children: [
-                        Icon(icon(it.kind),
-                            size: 16,
-                            color: it.urgent(now)
-                                ? scheme.error
-                                : scheme.onSurfaceVariant),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(it.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600)),
-                              Text(
-                                "${label(it.kind)} · ${L10n.dayOffset(it.when, now)} · ${L10n.stamp(it.when)}",
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: it.urgent(now)
-                                        ? scheme.error
-                                        : scheme.outline),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  // R35.1 link preservation LANDED here (R37): cockpitAction
+                  // mapped every kind to the deleted cards' targets but the
+                  // renderer ignored it - registration/dereg/sitting rows
+                  // opened nothing, silently dropping the deep links the
+                  // contract pins. Same targets, same idioms as the
+                  // deleted card builders (pushPageOnce / external launch).
+                  Builder(builder: (context) {
+                    final action = cockpitAction(it.kind);
+                    final onTap = switch (action) {
+                      CockpitAction.examsPage => () => pushPageOnce<void>(
+                          Navigator.of(context),
+                          routeName: ExamsPage.routeName,
+                          page: (_) => const ExamsPage()),
+                      CockpitAction.signMeUpPortal => () => _launchExternal(
+                          "https://plus.campus.kit.edu/signmeup"),
+                      CockpitAction.none => null,
+                    };
+                    return _cockpitRow(it, onTap, label, icon, now, scheme);
+                  }),
               ],
             ),
-          ),
+         ),
         );
       },
     );
+  }
+
+  /// One cockpit row; the tap target comes from [cockpitAction]'s mapping
+  /// (R35.1 link preservation: registration/dereg/sitting rows open
+  /// ExamsPage, SignMeUp rows launch the portal - exactly what the deleted
+  /// card builders did; a row without a target stays untappable, F12 rule).
+  /// Status unknowns render LABEL-ONLY: the generic template would print a
+  /// blank bold title line plus a "Heute · 14:03" appointment tail whose
+  /// clock ticks - a status line may not masquerade as an appointment.
+  Widget _cockpitRow(
+      CockpitItem it,
+      VoidCallback? onTap,
+      String Function(CockpitKind) label,
+      IconData Function(CockpitKind) icon,
+      DateTime now,
+      ColorScheme scheme) {
+    final statusOnly = it.kind == CockpitKind.unknownExams ||
+        it.kind == CockpitKind.unknownSmu;
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Icon(icon(it.kind),
+              size: 16,
+              color: it.urgent(now) ? scheme.error : scheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: statusOnly
+                ? Text(label(it.kind),
+                    maxLines: 2,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600))
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(it.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600)),
+                      Text(
+                        "${label(it.kind)} · ${L10n.dayOffset(it.when, now)} · ${L10n.stamp(it.when)}",
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: it.urgent(now)
+                                ? scheme.error
+                                : scheme.outline),
+                      ),
+                    ],
+                  ),
+          ),
+          if (onTap != null)
+            Icon(Icons.chevron_right, size: 16, color: scheme.outline),
+        ],
+      ),
+    );
+    if (onTap == null) return row;
+    return InkWell(onTap: onTap, child: row);
   }
 
   /// R34.5: "Nächste 90 Tage" — the semester-overview card under the

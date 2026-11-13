@@ -30,6 +30,17 @@ DateTime _at(int days, int hour, [int minute = 0]) {
   return DateTime(base.year, base.month, base.day, hour, minute);
 }
 
+/// Midnight-flake guard for fixtures feeding REAL-CLOCK code under test
+/// (fristenbuchUpcoming's default now, toWeeklyTemplate's week scope): the
+/// caller passes a now captured INSIDE the test body, so the fixture and
+/// the clock can never straddle different days because the library-load
+/// `_today` went stale when the suite crossed 00:00 mid-run.
+DateTime _midnight(DateTime base, int days) {
+  final d = DateTime(base.year, base.month, base.day)
+      .add(Duration(days: days));
+  return DateTime(d.year, d.month, d.day);
+}
+
 String _f(DateTime d) => [
       d.year.toString().padLeft(4, "0"),
       d.month.toString().padLeft(2, "0"),
@@ -292,12 +303,18 @@ void main() {
 
     test("fristenbuchUpcoming: today+future title/date records, past rows "
         "dropped, null date never produced", () async {
+      // fixtures anchored to a now captured HERE (not the library-load
+      // _today: a suite crossing 00:00 turned the "today" row into
+      // yesterday and the past filter dropped it), and the same now is
+      // injected - fristenbuchUpcoming has an injectable now, so the
+      // verdict never rides the wall clock at all
+      final now = DateTime.now();
       await saveFristenbuchEntries([
-        _entry(1, "future", 10),
-        FristenbuchEntry(id: 2, label: "past", due: _at(-3, 0)),
-        FristenbuchEntry(id: 3, label: "today", due: _at(0, 0)),
+        FristenbuchEntry(id: 1, label: "future", due: _midnight(now, 10)),
+        FristenbuchEntry(id: 2, label: "past", due: _midnight(now, -3)),
+        FristenbuchEntry(id: 3, label: "today", due: _midnight(now, 0)),
       ]);
-      final recs = await fristenbuchUpcoming();
+      final recs = await fristenbuchUpcoming(now: now);
       expect(recs.map((r) => r.title), ["today", "future"]);
       expect(recs.every((r) => r.date != null), isTrue,
           reason: "the editor enforces a date: null must never occur");
@@ -318,7 +335,19 @@ void main() {
 
     test("gridTemplate excludes kauni-frb occurrences (weekday-carousel "
         "repeat bug)", () {
-      final feed = mergedFeed([_entry(1, "Frist", inWeek)]);
+      // toWeeklyTemplate scopes URL-less one-shots to the REAL week (its
+      // own reference clock), so the fixture must be anchored to a now
+      // captured HERE: a library-load anchor is yesterday's week once the
+      // suite crosses 00:00 mid-run, and the scoped-out event would make
+      // this pin test the scoping accident instead of the frb exclusion
+      final now = DateTime.now();
+      final thisWeek = ((5 - now.weekday) % 5 + 5) % 5;
+      final feed = mergedFeed(
+          [
+            FristenbuchEntry(
+                id: 1, label: "Frist", due: _midnight(now, thisWeek))
+          ],
+          day: thisWeek);
       final grid = CampusManager.gridTemplate(feed);
       final titles = [
         for (final d in grid.days)

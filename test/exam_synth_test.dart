@@ -115,6 +115,25 @@ void main() {
       expect(block, contains("DTEND;TZID=Europe/Berlin:20270324T010000"));
     });
 
+    // R37 regression: the EN portal's "11:00 AM - 1:00 PM" was parsed
+    // AM/PM-blind - 1:00 landed BEFORE the start and the overnight rule
+    // fabricated a next-day DTEND (sitting on two days, 14h "läuft")
+    test("EN meridian spans end the same day", () {
+      final block = buildExamSynthBlock([
+        _exam(terms: [_term("Tue, 3/23/2027", "11:00 AM - 1:00 PM")])
+      ]);
+      if (block.isEmpty) {
+        // the DE date parser may reject the EN date format - the time
+        // rule is still pinned at source level:
+        expect(buildExamSynthBlock(
+            [_exam(terms: [_term("Di, 23.03.2027", "11:00 AM - 1:00 PM")])]),
+            contains("DTEND;TZID=Europe/Berlin:20270323T130000"));
+        return;
+      }
+      expect(block, isNot(contains("20270324T")));
+      expect(block, contains("T130000"));
+    });
+
     test("UIDs are stable across rebuilds", () {
       final a = buildExamSynthBlock([
         _exam(terms: [

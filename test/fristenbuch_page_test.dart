@@ -15,7 +15,11 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 /// so every mutation test reads BOTH back: the store AND the cache the
 /// agenda/digest/reminders actually parse.
 
-final _today = DateTime.now();
+/// Midnight-flake guard: captured per test in setUp (was a library-load
+/// capture — a suite crossing 00:00 built "today+2/+3" fixtures from
+/// yesterday's date while the picker path on the same page read the real
+/// clock, the flake class of fristenbuch_test's 00:00 failure).
+late DateTime _today;
 
 String _lectureDoc() => "BEGIN:VCALENDAR\r\n"
     "BEGIN:VEVENT\r\n"
@@ -38,6 +42,7 @@ void main() {
   late CampusManager cm;
 
   setUp(() async {
+    _today = DateTime.now();
     // the legacy store carries the two keys reapplyFrB fences on (an
     // unprovisioned account would be a silent no-op and the assertions
     // would all "pass" on an empty cache)

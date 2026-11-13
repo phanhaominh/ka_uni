@@ -45,6 +45,14 @@ const _accentFrom =
 const _accentTo =
     "aaaaaaaaccccdeeeeeeeeggiiiiiiiilnnnooooooorsssstuuuuuuuuyyzzz";
 
+// Hoisted: normalizePlaceText runs per title + per alias + per alias again
+// in the fuzzy tier over ~800 places per search settle, so rebuilding the
+// 69-char class and the \s+ program per call was hundreds of identical
+// compiles per keystroke behind the 16-22 ms measured rank (F3 note above).
+// RegExp matching never mutates the object, so sharing is exact.
+final _accentFold = RegExp("[$_accentFrom]", unicode: true);
+final _whitespace = RegExp(r"\s+");
+
 /// walk_hint's plain lower-casing plus a German umlaut fold, so a freshman
 /// typing "kit-cafe" still finds the "KIT-Café" alias.
 String normalizePlaceText(String s) {
@@ -58,9 +66,9 @@ String normalizePlaceText(String s) {
   // their base letters so "cafe" reaches "Café" symmetrically (queries
   // pass through here too).
   t = t.replaceAll("æ", "ae").replaceAll("œ", "oe");
-  t = t.replaceAllMapped(RegExp("[$_accentFrom]", unicode: true),
-      (m) => _accentTo[_accentFrom.indexOf(m[0]!)]);
-  return t.replaceAll(RegExp(r"\s+"), " ");
+  t = t.replaceAllMapped(
+      _accentFold, (m) => _accentTo[_accentFrom.indexOf(m[0]!)]);
+  return t.replaceAll(_whitespace, " ");
 }
 
 /// Below this weightedRatio a fuzzy hit is noise, not a candidate. The
@@ -94,6 +102,14 @@ List<PlaceMatch> rankPlaces(List<KITPlace> places, String query,
   final out = <PlaceMatch>[];
   for (final p in places) {
     final nt = normalizePlaceText(p.title);
+    // Normalize each place's aliases exactly ONCE per settle: the alias
+    // tier and the fuzzy tier below both consume this list (indexed in
+    // lockstep with p.aliasList); the old code ran normalizePlaceText
+    // twice per alias for every non-title hit, on top of the per-call
+    // regex compiles - pure double work inside the 16-22 ms rank.
+    List<String>? normAliases;
+    List<String> normalizedAliases() => normAliases ??=
+        [for (final a in p.aliasList) normalizePlaceText(a)];
     PlaceMatchTier? tier;
     var score = 0;
     String? matchedAlias;
@@ -108,8 +124,10 @@ List<PlaceMatch> rankPlaces(List<KITPlace> places, String query,
       score = 80;
     }
     if (tier == null) {
-      for (final a in p.aliasList) {
-        final na = normalizePlaceText(a);
+      final aliases = p.aliasList;
+      final norm = normalizedAliases();
+      for (var i = 0; i < aliases.length; i++) {
+        final na = norm[i];
         if (na.isEmpty) continue;
         final s = na == nq
             ? 75
@@ -126,20 +144,25 @@ List<PlaceMatch> rankPlaces(List<KITPlace> places, String query,
             s > score ||
             (s == score &&
                 matchedAlias != null &&
-                a.compareTo(matchedAlias) < 0)) {
+                aliases[i].compareTo(matchedAlias) < 0)) {
           tier = PlaceMatchTier.alias;
           score = s;
-          matchedAlias = a;
+          matchedAlias = aliases[i];
         }
       }
     }
     if (tier == null && nq.length >= _fuzzyMinQueryLength) {
       var best = weightedRatio(nq, nt);
-      for (final a in p.aliasList) {
-        final s = weightedRatio(nq, normalizePlaceText(a));
+      final aliases = p.aliasList;
+      // reaching here means the alias tier ran (same tier==null gate),
+      // so normalizedAliases() returns its memoized list - never a second
+      // normalize pass
+      final norm = normalizedAliases();
+      for (var i = 0; i < aliases.length; i++) {
+        final s = weightedRatio(nq, norm[i]);
         if (s > best) {
           best = s;
-          matchedAlias = a;
+          matchedAlias = aliases[i];
         }
       }
       if (best >= _fuzzyMinScore) {

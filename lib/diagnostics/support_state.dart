@@ -12,7 +12,7 @@ import 'support_bundle.dart';
 /// unit tests and platforms where the plugin cannot answer - a stale-but-
 /// shaped version still beats an empty field in a support thread. MUST be
 /// bumped together with the pubspec.
-const kAppVersion = "0.8.9+65";
+const kAppVersion = "0.12.0+70";
 
 /// The one CrashTail every error hook records into, plus its prefs mirror.
 ///

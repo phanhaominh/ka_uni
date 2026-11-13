@@ -28,6 +28,19 @@ class KITLoginManager {
   // through netGet/netPost below so it always terminates.
   static const netTimeout = Duration(seconds: 30);
 
+  /// R37: the login chains were the ONLY account-bound fetch path without a
+  /// teardown fence. KIT's documented socket stalls keep A's SSO chain
+  /// alive up to 30 s past logout; its late Set-Cookies land in the shared
+  /// jar and cookie_store replaces by (name,domain,path) - A's JSESSIONID
+  /// overwriting B's fresh one made B's next requests ride A's session.
+  /// Bumped whenever the shared jar is reset (KITProvider
+  /// clearCookiesAndCache: login-as-B AND logout); multi-hop chains capture
+  /// it at entry and abort on mismatch (ilias _authGen precedent). A single
+  /// already-issued hop can still land - B's own flow then overwrites the
+  /// same keys, the residual window is one response, not a chain.
+  static int netEpoch = 0;
+  static void invalidateNetwork() => netEpoch++;
+
   /// A dead socket is NOT a redesigned website. Fetch funnels classify on
   /// this: connection failures must never light the "KIT site changed?"
   /// surface-broken banner (a live offline spell pinned it for the whole
@@ -39,22 +52,71 @@ class KITLoginManager {
       e is http.ClientException ||
       e is TimeoutException;
 
+  /// R37 (CRIT): http_session's own follower re-POSTs method+body to ANY
+  /// Location before a caller can see the 302 - every kitHttps pin in this
+  /// file was unreachable for hops the library already followed (verified
+  /// against the pinned 0.2.2 source: _sendRequest recurses unconditionally
+  /// on isRedirect). The doctrine-correct replacement: follow ONLY KIT
+  /// https hops via kitHttps; an off-list Location is never fetched and
+  /// the 302 surfaces to the caller as-is (which KIT chains never hit in
+  /// the real world, and every manual hop loop already handles). 302/303
+  /// after POST continue as GET - the shape KIT's CAS/IdP flows actually
+  /// take (the manual hop loops in this file do the same). Cookies ride the
+  /// SAME shared jar: session.send() attaches the per-host Cookie header
+  /// and absorbs Set-Cookie exactly as _sendRequest did.
+  Future<http.Response> _guarded(
+      String method, Uri uri, Object? body, Map<String, String>? headers) async {
+    final jar = session;
+    var url = uri;
+    var m = method;
+    Object? b = body;
+    for (var hop = 0; hop < 16; hop++) {
+      final request = http.Request(m, url)..followRedirects = false;
+      if (headers != null) request.headers.addAll(headers);
+      if (b != null) {
+        if (b is String) {
+          request.body = b;
+        } else if (b is Map) {
+          request.bodyFields = b.cast<String, String>();
+        } else if (b is List) {
+          request.bodyBytes = b.cast<int>();
+        } else {
+          throw ArgumentError('Invalid request body "$b".');
+        }
+      }
+      final resp =
+          await http.Response.fromStream(await jar.send(request));
+      if (!resp.isRedirect) return fixUtf8Body(resp);
+      final loc = resp.headers[io.HttpHeaders.locationHeader];
+      if (loc == null) return fixUtf8Body(resp);
+      final next = kitHttps(url, loc);
+      if (next == null) {
+        // hostile/reshaped redirect: refuse to fetch it, hand the raw 302
+        // to the caller (its own pin or failure path decides)
+        if (kDebugMode) {
+          print("refused off-KIT redirect: $loc");
+        }
+        return fixUtf8Body(resp);
+      }
+      if (m == "POST") {
+        m = "GET";
+        b = null;
+      }
+      url = next;
+    }
+    throw http.ClientException("Too many redirects at $url");
+  }
+
   Future<http.Response> netGet(Uri uri,
       {Map<String, String>? headers, Duration? timeout}) {
-    final jar = session;
-    return jar
-        .get(uri, headers: headers)
-        .timeout(timeout ?? netTimeout)
-        .then(fixUtf8Body);
+    return _guarded("GET", uri, null, headers)
+        .timeout(timeout ?? netTimeout);
   }
 
   Future<http.Response> netPost(Uri uri,
       {Object? body, Map<String, String>? headers, Duration? timeout}) {
-    final jar = session;
-    return jar
-        .post(uri, body: body, headers: headers)
-        .timeout(timeout ?? netTimeout)
-        .then(fixUtf8Body);
+    return _guarded("POST", uri, body, headers)
+        .timeout(timeout ?? netTimeout);
   }
 
   /// package:http decodes a body as latin1 whenever the Content-Type carries
@@ -273,7 +335,9 @@ class KITLoginManager {
     }
     var uri = Uri.parse("https://campus.studium.kit.edu/redirect.php"
         "?system=cascampus&url=/campus/student/timetable.asp");
+    final epoch = netEpoch; // R37 fence: jar reset mid-chain kills this walk
     for (var hop = 0; hop < 12; hop++) {
+      if (epoch != netEpoch) return false;
       var response = await netGet(uri);
       if (kDebugMode) {
         print("boot hop $hop ${response.statusCode} $uri");
@@ -504,7 +568,20 @@ class KITLoginManager {
               sawCredentialForm |= credentialForm;
               continue;
             }
-            url = url.resolve(action);
+            // R37 (CRIT): this chain walked every form action and every
+            // Location with bare url.resolve - no kitHttps pin, unlike
+            // every other chain in this file. A reshaped Keycloak/IdP page
+            // could POST the OIDC chain material (and reuse the
+            // authenticated IdP cookie via headerFor) to any host, http://
+            // downgrade included. Same refuse-on-off-KIT rule now applies.
+            final guarded = kitHttps(url, action);
+            if (guarded == null) {
+              if (kDebugMode) {
+                print("plus chain action escapes KIT https: $action");
+              }
+              return false;
+            }
+            url = guarded;
             resp = await step("POST", url, fields);
             advanced = true;
             break;
@@ -512,7 +589,15 @@ class KITLoginManager {
           if (!advanced) break;
         } else if ((resp.statusCode == 302 || resp.statusCode == 303) &&
             resp.headers["location"] != null) {
-          url = url.resolve(resp.headers["location"]!);
+          final guarded = kitHttps(url, resp.headers["location"]!);
+          if (guarded == null) {
+            if (kDebugMode) {
+              print("plus chain redirect escapes KIT https: "
+                  "${resp.headers["location"]}");
+            }
+            return false;
+          }
+          url = guarded;
           resp = await step("GET", url, null);
         } else {
           break;

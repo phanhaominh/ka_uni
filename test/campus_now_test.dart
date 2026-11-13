@@ -65,6 +65,9 @@ void main() {
       String? mensaSub,
       List<String>? mensaSubs,
       bool mensaMeals = true,
+      // day of the cached plan relative to today: 0 = covers today,
+      // anything else leaves today UNcovered by the cached week
+      int mensaDayOffset = 0,
       String? annyCache}) async {
     SharedPreferences.setMockInitialValues(
         annyCache == null ? {} : {"ANN_rooms": annyCache});
@@ -75,7 +78,7 @@ void main() {
       final now = DateTime.now();
       vm.mensa.days = [
         MensaDay(
-            date: DateTime(now.year, now.month, now.day),
+            date: DateTime(now.year, now.month, now.day + mensaDayOffset),
             lines: [
               for (final e in (mensaSubs ?? <String?>[mensaSub]).indexed)
                 MensaLine(name: "Linie ${e.$1 + 1}", sub: e.$2, meals: [
@@ -155,6 +158,37 @@ void main() {
             "untrusted - the deleted card's footer word, same l10n key");
     // ...while still painting its last-known plan (the old card did)
     expect(find.textContaining("geöffnet 11:00–14:00"), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets("uncovered date over an aging cache: honest line, never the "
+      "stale word", (tester) async {
+    // the cached week covers day+7 only -> today has no MensaDay; the
+    // stamp sits past the 6 h TTL but inside the 24 h horizon (aging dot,
+    // the "untrusted mensa cache" test above pins the >horizon arm).
+    // Shipped card: mensa.closedDay for any uncovered date while hasData.
+    // The parent-side MensaManager.covers(now) change (in flight at pin
+    // time) flips this branch to valueNone - what must hold through BOTH
+    // branches: the footer's stale word belongs to the trust marker alone
+    // and never rides along because the WEEK does not cover the day.
+    await mountStrip(tester,
+        mensaData: true,
+        mensaSub: "11-14 Uhr",
+        mensaAge: const Duration(hours: 8),
+        mensaDayOffset: 7,
+        annyCache: cachedRooms(at: DateTime.now(), free: 42));
+
+    expect(find.textContaining("evtl. veraltet"), findsNothing,
+        reason: "aging marks with the dot; and uncovered-vs-covered is a "
+            "coverage fact, never a freshness claim");
+    // closedDay (shipped) OR valueNone (post covers()) - exactly one of
+    // the two honest strings, never a window from next week's plan
+    final closed =
+        find.textContaining("Heute keine Ausgabe.").evaluate().length;
+    final none = find.textContaining("—").evaluate().length;
+    expect(closed + none, 1,
+        reason: "covers() decides WHICH honest line, this pin holds that "
+            "there is one and only one");
     expect(tester.takeException(), isNull);
   });
 

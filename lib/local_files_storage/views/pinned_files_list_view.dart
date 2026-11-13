@@ -210,6 +210,10 @@ class _PinnedFilesListViewState extends State<PinnedFilesListView> {
     await manager.updatePinnedFileCustomName(
       semesterString: file.semesterString,
       urlString: file.urlString,
+      // the row holds the full entry: the path is what identifies pins
+      // without an ILIAS URL (cache-page pins), and only the path can hit
+      // the right one among several empty-url entries
+      fileSystemPath: file.fileSystemPath,
       customName: newName,
     );
   }
@@ -247,6 +251,10 @@ class _PinnedFilesListViewState extends State<PinnedFilesListView> {
     await manager.unpinFile(
       semesterString: file.semesterString,
       urlString: file.urlString,
+      // same as in _renameFile: without the path, an empty-url pin could
+      // not be removed at all (and used to remove every empty-url pin of
+      // the semester instead of just this one)
+      fileSystemPath: file.fileSystemPath,
     );
   }
 
