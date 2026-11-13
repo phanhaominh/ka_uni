@@ -63,6 +63,7 @@ void main() {
       {bool mensaData = false,
       Duration mensaAge = const Duration(hours: 1),
       String? mensaSub,
+      List<String>? mensaSubs,
       bool mensaMeals = true,
       String? annyCache}) async {
     SharedPreferences.setMockInitialValues(
@@ -76,14 +77,15 @@ void main() {
         MensaDay(
             date: DateTime(now.year, now.month, now.day),
             lines: [
-              MensaLine(name: "Linie 1", sub: mensaSub, meals: [
-                if (mensaMeals)
-                  MensaMeal(
-                      name: "Spaghetti Aglio e Olio",
-                      priceCents: 385,
-                      classifiers: const ["VEG"],
-                      additives: const []),
-              ]),
+              for (final e in (mensaSubs ?? <String?>[mensaSub]).indexed)
+                MensaLine(name: "Linie ${e.$1 + 1}", sub: e.$2, meals: [
+                  if (mensaMeals)
+                    MensaMeal(
+                        name: "Spaghetti Aglio e Olio",
+                        priceCents: 385,
+                        classifiers: const ["VEG"],
+                        additives: const []),
+                ]),
             ]),
       ];
       vm.mensa.fetchedAt = now.subtract(mensaAge);
@@ -120,6 +122,21 @@ void main() {
     expect(find.textContaining("42 Plätze frei"), findsOneWidget);
     // fresh rows stay silent (and an aging dot never appears)
     expect(find.textContaining("evtl. veraltet"), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets("three menu lines with the same 11-14 stamp print the "
+      "window exactly once", (tester) async {
+    await mountStrip(tester,
+        mensaData: true,
+        mensaSubs: const ["11-14 Uhr", "11-14 Uhr", "11-14 Uhr"],
+        annyCache: cachedRooms(at: DateTime.now(), free: 42));
+
+    // device finding: every kitchen line of one plan carries the same
+    // "11-14 Uhr" stamp - a glance repeats nothing
+    expect(find.textContaining("geöffnet 11:00–14:00, "), findsNothing,
+        reason: "windows must never comma-repeat per line");
+    expect(find.textContaining("geöffnet 11:00–14:00"), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

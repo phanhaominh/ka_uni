@@ -128,7 +128,12 @@ class _CampusNowCardState extends State<CampusNowCard> {
       for (final line in day.lines) ...servingWindows(line.sub, day.date)
     ];
     if (windows.isEmpty) return none; // no printed window = no claim
-    final sorted = [...windows]..sort((a, b) => a.from.compareTo(b.from));
+    // every menu line of one kitchen prints the SAME "11-14 Uhr" stamp —
+    // a glance repeats nothing; equal windows collapse to one entry
+    final sorted = ({for (final w in windows) (w.from, w.to)})
+        .map((p) => (from: p.$1, to: p.$2))
+        .toList()
+      ..sort((a, b) => a.from.compareTo(b.from));
     return L10n.t("home.campusNowOpen", [
       [
         for (final w in sorted) "${_hm(w.from)}–${_hm(w.to)}"
