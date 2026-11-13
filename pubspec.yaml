@@ -47,6 +47,7 @@ dependencies:
 #  fluttertoast: ^8.2.6
   url_launcher: ^6.3.0
   flutter_web_browser: ^0.17.1
+  package_info_plus: ^9.0.1
 
   http: any
   latlong2: any
