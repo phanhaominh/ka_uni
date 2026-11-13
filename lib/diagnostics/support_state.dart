@@ -91,7 +91,18 @@ class SupportState {
       {required bool credentialsStored,
       bool? notificationsPermission,
       DateTime? now}) async {
-    final prefs = SharedPreferencesAsync();
+    // BOTH views of the store, merged — each one alone lies:
+    //  * the legacy per-isolate snapshot can PREdate WorkManager writes
+    //    (R16f: doctor showing yesterday's stamp as today's = fabrication),
+    //  * the async live view can lag LEGACY writes the other way (R31 F-1
+    //    ghost-nulls: device proof — a feed loaded hours ago read "never
+    //    loaded" on-device while the legacy snapshot held its stamp).
+    // Merge: legacy as base, async overlays what it can see; a value only
+    // one view holds is still the truth for that key. Purges stay purged:
+    // the logout sweep runs through the legacy API in this isolate, so
+    // the base view is never resurrecting deleted DATA_* keys.
+    final legacy = await SharedPreferences.getInstance();
+    final live = SharedPreferencesAsync();
     final diag = <String, String>{};
     for (final key in const [
       WebcalKeys.diag,
@@ -102,18 +113,21 @@ class SupportState {
       "DATA_smuOpensFired",
       "ANN_rooms",
     ]) {
-      final value = await prefs.getString(key);
+      final value = legacy.getString(key) ?? await live.getString(key);
       if (value != null && value.isNotEmpty) diag[key] = value;
     }
-    final pollAt = await prefs.getInt(lastPollAtKey);
+    final pollAt =
+        await live.getInt(lastPollAtKey) ?? legacy.getInt(lastPollAtKey);
     if (pollAt != null) diag[lastPollAtKey] = pollAt.toString();
     // the grades stamp family is per-term (module_cache_<term>_last_fetch,
-    // owner: campus_manager) — feedHealth picks the newest from the scan
-    for (final key in await prefs.getKeys()) {
+    // owner: campus_manager) — feedHealth picks the newest from the scan;
+    // same both-views rule: a family member is taken from either store
+    final families = {...legacy.getKeys(), ...await live.getKeys()};
+    for (final key in families) {
       if (!key.startsWith("module_cache_") || !key.endsWith("_last_fetch")) {
         continue;
       }
-      final value = await prefs.getString(key);
+      final value = legacy.getString(key) ?? await live.getString(key);
       if (value != null && value.isNotEmpty) diag[key] = value;
     }
     return feedHealth(diag,
