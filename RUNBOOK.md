@@ -822,5 +822,15 @@ in 2 minutes.
   not a reason to keep warm — the strip test carries the contract); mensa_test's opt-out test
   migrated to the new key. TESTS: test/campus_now_test.dart (both fresh rows, untrusted word,
   0-seats line, stale-count never-a-number, tap-through + no-dead-chevron, empty double-dash).
-  DEAD-STRING FOOTNOTE: mensa.toggle + library.settingsToggle now have zero consumers — they
-  live in strings_mensa/strings_library (out of lane), sweep on next touch.
+  DEAD-STRING FOOTNOTE: CLOSED same wave — mensa.toggle + library.settingsToggle swept from
+  strings_mensa/strings_library (zero consumers proven, parity green).
+- R36 DEVICE FINDINGS (b70): (a) the doctor collector as written (async-ONLY) read a hours-old
+  legacy-written stamp as "never loaded" — the R31 F-1 ghost in its MIRROR direction (async
+  lags LEGACY writes; R16f was the other direction). feedStatuses now merges BOTH views per
+  key: legacy snapshot as base, async overlay; purges cannot resurrect (the logout sweep runs
+  through the base view in-isolate). Live after fix: 00:53 stamps resolved, and the doctor
+  caught a REAL mensa fetch failure minutes later ("degraded — failing: 11-13T01:02 start
+  kw=46") — told, not suspected, within one wave of shipping. (b) strip dedup: every menu line
+  of one kitchen prints the same "11-14 Uhr" stamp and the strip tripled the window (device
+  screenshot; regression test pins single print). (c) "Check now" busy state ran ~2 min against
+  the dead KIT session and RETURNED (spinner-in-flight doctrine holds; no permanent spinner).
