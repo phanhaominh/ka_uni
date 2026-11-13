@@ -19,8 +19,16 @@ class MainActivity : FlutterActivity() {
                         // Cold start: a kauni:// launch put the payload
                         // into the launch intent; Dart pulls it once at
                         // startup and feeds the notification deep-link queue.
-                        "takeLaunchPayload" ->
-                            result.success(intent.getStringExtra(EXTRA_DEEP_LINK))
+                        "takeLaunchPayload" -> {
+                            val payload =
+                                intent.getStringExtra(EXTRA_DEEP_LINK)
+                            // R37 (D4): CONSUME the extra - the launch
+                            // intent is sticky through process restarts,
+                            // leaving it re-fires the old notification's
+                            // payload on every later cold start
+                            intent.removeExtra(EXTRA_DEEP_LINK)
+                            result.success(payload)
+                        }
                         else -> result.notImplemented()
                     }
                 }

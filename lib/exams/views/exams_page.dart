@@ -220,7 +220,7 @@ class ExamsPage extends StatelessWidget {
       ...e.terms.map((t) => L10n.t("exams.detailExamTerm", [
             t.dayLabel,
             t.time,
-            t.room.isNotEmpty ? "  •  ${t.room}" : "",
+            t.roomLabel.isNotEmpty ? "  •  ${t.roomLabel}" : "",
           ])),
       if (e.windowStart != null && e.windowEnd != null)
         L10n.t("exams.detailWindow",

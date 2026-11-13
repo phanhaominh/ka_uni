@@ -929,3 +929,42 @@ DEVICE PROOF (audit/b71): home cold-boot with live hero at 04:36 ("starts in 3 h
 "Exam registration opens" row lands on Exam Registration (link preservation real,
 not just unit-pinned); legacy "Nächste Klausur" card and both duplicated pending
 banners gone from the agenda. 837 tests green, analyze 0 errors, installed v70 build.
+
+## Wave R37b (tail sweep of R37 leftovers): "the list has a tail"
+After the R37 commit, three findings had quietly NOT been applied (D3 startup
+cancelAll, D4 launch-payload consume, D5 cross-isolate alarm race - deferred by
+design) and slice G's report had been read only through its first finding before
+the archive truncated it. Recovering the full report from the pool backing file
+mattered: G[2] was a real HIGH the summary never surfaced. Fixed:
+- G2 alarms: the deadline-alarm filter dropped EVERY exam of a lecture not on
+  the current timetable - including a failed exam retaken without re-enrolling,
+  which then got no window-close alarm and no snapshot row. Registered exams now
+  always pass the filter (`|| e.registered`); unregistered catalogue offers stay
+  silent (the noise the filter exists for). Retakes that are NOT yet registered
+  remain indistinguishable from catalogue noise - accepted, documented.
+- G5: module page printed "0,0" for unpublished grades - the fake zero the R16a
+  wave deleted everywhere else; module.grade default is now "" and the view
+  prints "—".
+- G6: exam card detail line printed the raw room ("• -") while every sibling
+  follows roomLabel - now t.roomLabel.
+- G8 (LOW but real): one exam entry can carry several rooms for the SAME sitting
+  start (Mechanical Design A: six rooms) - the room-blind UID emitted
+  byte-identical UIDs for sibling VEVENTs (RFC 5545 violation; external clients
+  keep an arbitrary one). Only COLLIDING (examNumber,start) keys get a "-rN"
+  sequence tag - single-sitting UIDs stay byte-stable across the upgrade; N is a
+  per-key emission index (KIT assigns a new examNumber per separate sitting, so
+  index order within one entry is stable).
+- D3: resyncOnStartup's cancelAll is now try-wrapped like logout's (main.dart
+  awaits it - a MissingPlugin throw would have bricked boot).
+- D4: takeLaunchPayload now CONSUMES the intent extra (removeExtra) - the launch
+  intent is sticky through process restarts and re-fired the old notification's
+  payload on every later cold start.
+Still open on purpose: D5 cross-isolate alarm-band race (poll isolate vs
+foreground rebuilding overlapping id ranges - needs a claims-over-isolates
+design, not a one-liner), Kotlin TOKENS JVM tests (no Kotlin test infra in the
+repo yet), sopDeadline rotation (now a release-checklist item, red alarm deleted
+in R37). 838 green, one new test (multi-room UIDs).
+Durable rule: a pool item is not DONE until its full report has been read - the
+one-line summaries in the pool output cut off mid-report; slice G shipped with
+findings [2..8] unread. Recover big pool outputs from the pool backing file, not
+from the summary.

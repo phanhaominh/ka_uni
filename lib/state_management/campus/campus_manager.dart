@@ -3372,9 +3372,16 @@ class CampusManager extends KITLoginManager {
         await reapplyExamSynth(buildExamSynthBlock(parsed));
         notificationCallback();
         // deadline alarms only for exams of lectures actually on the
-        // timetable - catalogue offers of later semesters must stay silent
-        unawaited(MeiNotifications.scheduleExamReminders(
-            parsed.where((e) => isTakingThisSemester(e) != false).toList()));
+        // timetable - catalogue offers of later semesters must stay
+        // silent - EXCEPT registrations: a failed exam retaken without
+        // re-enrolling in the lecture is isTaking==false yet its
+        // register/deregistration deadlines are exactly what must not be
+        // missed (R37 G2; the R32.3 dereg ping already treats
+        // registered-and-not-taking as real)
+        unawaited(MeiNotifications.scheduleExamReminders(parsed
+            .where((e) =>
+                isTakingThisSemester(e) != false || e.registered)
+            .toList()));
         if (kDebugMode) {
           final open = parsed
               .where((e) =>

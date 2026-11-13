@@ -134,7 +134,28 @@ void main() {
       expect(block, contains("T130000"));
     });
 
-    test("UIDs are stable across rebuilds", () {
+    // R37 G8 regression: pool sittings in several rooms share one start -
+  // siblings must get distinct UIDs, a lone sitting keeps its old one
+  test("same-start multi-room sittings get distinct UIDs", () {
+    final block = buildExamSynthBlock([
+      _exam(num: "01-A-9001", terms: [
+        _term("Di, 23.03.2027", "17:30 - 19:00", "40.50 Hörsaal"),
+        _term("Di, 23.03.2027", "17:30 - 19:00", "30.95 Audimax"),
+      ])
+    ]);
+    final uids = RegExp(r"UID:(kauni-exam-[^\r\n]+)")
+        .allMatches(block)
+        .map((m) => m[1]!)
+        .toSet();
+    expect(uids.length, 2);
+    final solo = buildExamSynthBlock([
+      _exam(num: "01-A-9001",
+          terms: [_term("Di, 23.03.2027", "17:30 - 19:00", "40.50 Hörsaal")])
+    ]);
+    expect(solo, contains("UID:kauni-exam-01-A-9001-20270323T173000@ka_uni"));
+  });
+
+  test("UIDs are stable across rebuilds", () {
       final a = buildExamSynthBlock([
         _exam(terms: [
           _term("Di, 23.03.2027", "17:30 - 19:00"),

@@ -14,7 +14,7 @@ class KITModule {
   String examDateStr = "unbekannt";
   DateTime examDate = DateTime.now();
   bool examDateParsed = false;
-  String grade = "0,0";
+  String grade = ""; // unpublished until the portal says so (R37 G5)
   String pointsAcquired = "0,0";
   String pointsAvailable = "0,0";
   String hierarchicalTableRowId = "";

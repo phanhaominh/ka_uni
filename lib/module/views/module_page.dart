@@ -224,7 +224,7 @@ class _ModuleViewState extends State<ModuleView> {
                                 Text(
                                   moduleFormattedGrade.isNotEmpty
                                       ? moduleFormattedGrade
-                                      : "0,0",
+                                      : "—", // never the fake 0,0
                                 )
                               ],
                             ),

@@ -20,6 +20,24 @@ const examSynthUidPrefix = "kauni-exam-";
 String buildExamSynthBlock(List<ExamEntry> exams) {
   final out = StringBuffer();
   final now = DateTime.now();
+  // R37 G8: one exam entry can carry several rooms for the SAME sitting
+  // start (Mechanical Design A: six rooms + ILIAS). A room-blind UID then
+  // emits byte-identical UIDs for the sibling VEVENTs - RFC 5545 says
+  // uniqueness, external clients keep an arbitrary one and strict
+  // importers can reject the document. Only COLLIDING (examNumber,start)
+  // keys get a sequence tag, so single-sitting UIDs stay byte-stable
+  // across the upgrade.
+  final _startKey = <String, int>{};
+  for (final e in exams) {
+    if (!_kitExamNumber.hasMatch(e.examNumber)) continue;
+    for (final t in e.terms) {
+      final s = t.startAt;
+      if (s == null || s.isBefore(now)) continue;
+      final k = "${e.examNumber}@${_icsLocal(s)}";
+      _startKey[k] = (_startKey[k] ?? 0) + 1;
+    }
+  }
+  final _seq = <String, int>{};
   for (final e in exams) {
     // the catalogue also lists lectures of later semesters; only exams the
     // student actually registered for are real appointments
@@ -43,11 +61,13 @@ String buildExamSynthBlock(List<ExamEntry> exams) {
       if (start.isBefore(now)) continue;
       final room = t.roomLabel;
       final end = _endDate(start, t.time);
+      final key = "${e.examNumber}@${_icsLocal(start)}";
+      final tag = _startKey[key]! > 1 ? "-r${_seq[key] = (_seq[key] ?? 0) + 1}" : "";
       out.write("BEGIN:VEVENT\r\n"
           // UID keys the sitting, not the parser's term INDEX: the parser
           // sorts terms, so an index would flip when KIT adds a Nachtermin
           // and every exported calendar would duplicate instead of update
-          "UID:$examSynthUidPrefix${e.examNumber}-${_icsLocal(start)}@ka_uni\r\n"
+          "UID:$examSynthUidPrefix${e.examNumber}-${_icsLocal(start)}$tag@ka_uni\r\n"
           // DTSTAMP is derived from the sitting, not the wall clock: two
           // rebuilds of the same data emit byte-identical blocks, which is
           // what makes reapplyExamSynth's no-change early return real

@@ -1133,7 +1133,13 @@ class MeiNotifications {
   static Future<void> resyncOnStartup() async {
     if (!MeiNotifications.supported) return;
     if (!_ready) await init(requestPermissions: false);
-    await _plugin.cancelAll();
+    try {
+      await _plugin.cancelAll();
+    } on Object catch (e) {
+      // R37 (D3): the cold-start cancel is hygiene - a MissingPlugin-style
+      // throw must not take the whole boot down (main.dart awaits this)
+      if (kDebugMode) print("startup cancelAll failed: $e");
+    }
     // cold start into a logged-out state (post-logout, or a restore onto
     // a fresh install): rebuilding from leaked/raced leftovers would
     // resurrect the previous account's alarms; cancelling ghosts is all
