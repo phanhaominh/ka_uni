@@ -1,6 +1,8 @@
+import 'dart:async' show unawaited;
 import 'dart:convert' show utf8;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:kit_mobile/bureaucracy/papierkram.dart';
 import 'package:kit_mobile/bureaucracy/starter_pack.dart';
 import 'package:kit_mobile/docwatch/docwatch.dart';
@@ -25,7 +27,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../agenda/views/chronicle_page.dart';
 import '../../fristenbuch/fristenbuch_page.dart';
 import '../../credentials/data/credentials_provider.dart';
+import '../../diagnostics/feed_health.dart';
 import '../../diagnostics/support_state.dart';
+import '../../notifications/mei_notifications.dart';
 import '../../info/views/info_page.dart';
 import '../../l10n/l10n.dart';
 import '../../local_files_storage/views/pages/files_cache_page.dart';
@@ -102,19 +106,15 @@ class _SettingsPageState extends State<SettingsPage> {
                               value: settingsVM.legacyHome.value,
                               onChanged: settingsVM.legacyHome.set)),
                       SettingRow(
-                          title: L10n.t("mensa.toggle"),
-                          onTap: () => settingsVM.showMensa
-                              .set(!settingsVM.showMensa.value),
+                          title: L10n.t("settings.campusNow"),
+                          // R36.2: the "Mensa-Bereich" + "Bibliothek-Bereich"
+                          // rows collapsed into this one - same seat, one
+                          // gate for the merged campus-now strip
+                          onTap: () => settingsVM.showCampusNow
+                              .set(!settingsVM.showCampusNow.value),
                           trailing: CupertinoSwitch(
-                              value: settingsVM.showMensa.value,
-                              onChanged: settingsVM.showMensa.set)),
-                      SettingRow(
-                          title: L10n.t("library.settingsToggle"),
-                          onTap: () => settingsVM.showLibrary
-                              .set(!settingsVM.showLibrary.value),
-                          trailing: CupertinoSwitch(
-                              value: settingsVM.showLibrary.value,
-                              onChanged: settingsVM.showLibrary.set)),
+                              value: settingsVM.showCampusNow.value,
+                              onChanged: settingsVM.showCampusNow.set)),
                     ],
                   ),
                 ),
@@ -322,6 +322,15 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ),
                 ),
+
+                // R36.1: FEED DOCTOR - the on-device view of the same
+                // device state the bundle above carries away. When a
+                // scraper goes dark (R32.4 class), the owner is TOLD
+                // here; every row is a feedHealth verdict, so this
+                // table and a pasted bundle can never disagree.
+                SettingsSectionTitle(
+                    title: L10n.t("settings.doctorSection")),
+                const _FeedDoctorSection(),
 
                 // R29 (X4): the two silent opt-ins - personal ICS and Anny
                 // sign-in - used to have no visible state anywhere except
@@ -852,6 +861,208 @@ class SettingsSectionTitle extends StatelessWidget {
                 fontWeight: FontWeight.bold,
                 color: theme.colorScheme.onSurfaceVariant),
           )
+        ],
+      ),
+    );
+  }
+}
+
+/// R36.1 FEED DOCTOR: renders [feedHealth] verdicts, nothing else.
+///
+/// Every row on screen is a [FeedStatus] produced by the pure function
+/// in lib/diagnostics/feed_health.dart — no verdict, age or color
+/// decision lives in this widget beyond mapping [FeedState] to a color.
+/// The "check now" action runs the exact refresh the home pull-down
+/// uses (no bespoke per-source fetching) and re-reads the device state
+/// once it finishes, so the table repaints on the stamps the cascade
+/// actually wrote.
+class _FeedDoctorSection extends StatefulWidget {
+  const _FeedDoctorSection();
+
+  @override
+  State<_FeedDoctorSection> createState() => _FeedDoctorSectionState();
+}
+
+class _FeedDoctorSectionState extends State<_FeedDoctorSection> {
+  List<FeedStatus>? _rows;
+
+  /// covers the first load AND an in-flight "check now" alike
+  bool _busy = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  /// Live permission probe of the SAME plugin call
+  /// MeiNotifications.init() uses for the bundle's notificationsPermission
+  /// field: after the user returns from the system page, init() is
+  /// already _ready and would never re-probe, so the row would keep
+  /// showing the pre-visit verdict for the whole session. A plugin
+  /// that cannot answer (iOS, tests) falls back to the bundle source.
+  Future<bool> _notificationsPermission() async {
+    try {
+      final can = await FlutterLocalNotificationsPlugin()
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.canScheduleExactNotifications();
+      if (can != null) return can;
+    } on Object catch (_) {}
+    return MeiNotifications.canScheduleExact;
+  }
+
+  Future<void> _load() async {
+    final credsVM =
+        Provider.of<CredentialsProvider>(context, listen: false);
+    final rows = await SupportState.feedStatuses(
+        credentialsStored: credsVM.credentials.valid,
+        notificationsPermission: await _notificationsPermission());
+    if (!mounted) return;
+    setState(() {
+      _rows = rows;
+      _busy = false;
+    });
+  }
+
+  /// The pull-down's own cascade (KITProvider.forceRefetchEverything),
+  /// error toast exactly like home's onRefresh idiom; the table reloads
+  /// afterwards because the cascade's notifyListeners have moved the
+  /// very stamps the rows read.
+  void _checkNow() {
+    if (_busy) return;
+    final vm = Provider.of<KITProvider>(context, listen: false);
+    final toastsProvider =
+        Provider.of<ToastsProvider>(context, listen: false);
+    setState(() => _busy = true);
+    unawaited(vm.forceRefetchEverything().catchError((e) {
+      if (mounted) {
+        toastsProvider.showTextToast(L10n.t("common.refreshFailed"));
+      }
+    }).whenComplete(() {
+      if (!mounted) return;
+      unawaited(_load());
+    }));
+  }
+
+  /// The existing permission channel, reused: the exact-alarm settings
+  /// intent behind MeiNotifications' R23 prompt (no new MethodChannel,
+  /// no new notification channel).
+  Future<void> _openAlarmSettings() async {
+    try {
+      await FlutterLocalNotificationsPlugin()
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.requestExactAlarmsPermission();
+    } on Object catch (_) {}
+    await _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final rows = _rows;
+    return BlockContainer(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SettingRow(
+            title: L10n.t(
+                _busy ? "settings.doctorChecking" : "settings.doctorCheckNow"),
+            onTap: _checkNow,
+            trailing: Icon(CupertinoIcons.arrow_clockwise,
+                color: scheme.outline, size: 18),
+          ),
+          Text(
+            L10n.t("settings.doctorHint"),
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: scheme.outline),
+          ),
+          // the rows appear only once the device state has actually
+          // been read: a row list that flashes "all unknown" for one
+          // frame would be noise, not honesty
+          for (final s in rows ?? const <FeedStatus>[])
+            _doctorRow(context, s),
+        ],
+      ),
+    );
+  }
+
+  Widget _doctorRow(BuildContext context, FeedStatus s) {
+    final scheme = Theme.of(context).colorScheme;
+    final stateWord = L10n.t(switch (s.state) {
+      FeedState.ok => "doctor.stateOk",
+      FeedState.degraded => "doctor.stateDegraded",
+      FeedState.dead => "doctor.stateDead",
+      FeedState.unknown => "doctor.stateUnknown",
+    });
+    final color = switch (s.state) {
+      FeedState.ok => scheme.tertiary,
+      FeedState.degraded => Colors.orange.shade700,
+      FeedState.dead => scheme.error,
+      FeedState.unknown => scheme.outline,
+    };
+    // detail text = l10n template + the ALREADY-scrubbed argument from
+    // feedHealth; a raw stored value must never reach the screen here
+    final detail = s.detailKey == null
+        ? null
+        : (s.detailArg == null
+            ? L10n.t(s.detailKey!)
+            : L10n.t(s.detailKey!, [s.detailArg!]));
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SettingRow(
+            title: L10n.t(s.labelKey),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration:
+                      BoxDecoration(color: color, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
+                Text(stateWord,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(
+                            color: color, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+          if (detail != null)
+            Text(
+              detail,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: scheme.outline),
+            ),
+          // actionable only where action exists: the system page for a
+          // denied grant; unknown/never-loaded rows have nothing to
+          // open and honestly say nothing
+          if (s.source == "notifications" &&
+              s.state == FeedState.degraded)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: CupertinoButton(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 4, vertical: 14),
+                onPressed: _openAlarmSettings,
+                child: Text(L10n.t("doctor.openSystemSettings"),
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.primary)),
+              ),
+            ),
         ],
       ),
     );

@@ -1,22 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:kit_mobile/common_ui/kit_progress_indicator.dart';
-import 'package:kit_mobile/l10n/l10n.dart';
 import 'package:kit_mobile/mensa/mensa_html_parser.dart';
 import 'package:kit_mobile/mensa/mensa_manager.dart';
-import 'package:kit_mobile/mensa/mensa_translate.dart';
 import 'package:kit_mobile/mensa/models/mensa_models.dart';
-import 'package:kit_mobile/mensa/views/mensa_today_card.dart';
 import 'package:kit_mobile/settings/providers/settings_provider.dart'
-    show showingMensaKey;
-import 'package:kit_mobile/state_management/kit_provider.dart';
-import 'package:kit_mobile/toasts/models/toasts_provider.dart';
-import 'package:provider/provider.dart';
+    show showingCampusNowKey;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Fixture: live capture of the popup_plain week view,
@@ -299,7 +290,7 @@ void main() {
     });
 
     test("hidden-section opt-out also stops the traffic", () async {
-      SharedPreferences.setMockInitialValues({showingMensaKey: false});
+      SharedPreferences.setMockInitialValues({showingCampusNowKey: false});
       final m = build();
       await m.fetchWeek();
       expect(stub.calls, 0,
@@ -380,165 +371,6 @@ void main() {
       final callsBefore = gated.calls;
       expect(await m.fetchWeek(forDate: DateTime(2026, 11, 11)), isTrue);
       expect(gated.calls, callsBefore, reason: "TTL skip untouched");
-    });
-  });
-
-  group("home card", () {
-    // pumps the REAL card against a provider whose manager holds a
-    // restored week - the same state an offline boot paints
-    Future<void> pumpCard(WidgetTester tester,
-        {Duration? age,
-        withData = true,
-        Map<String, Object> extraPrefs = const {}}) async {
-      SharedPreferences.setMockInitialValues(extraPrefs);
-      final now = DateTime.now();
-      final vm = KITProvider();
-      vm.mensa.transport =
-          (u) async => http.Response("", 403); // card kick must stay offline
-      vm.mensa.translate.transport =
-          (u) async => http.Response("[]", 503); // no translate traffic either
-      if (withData) {
-        vm.mensa.days = [
-          MensaDay(date: DateTime(now.year, now.month, now.day), lines: [
-            MensaLine(name: "Linie 1", meals: [
-              MensaMeal(
-                  name: "Spaghetti Aglio e Olio",
-                  priceCents: 385,
-                  classifiers: const ["VEG"],
-                  additives: const []),
-              MensaMeal(
-                  name: "Seelachsfilet",
-                  priceCents: 390,
-                  classifiers: const ["MSC"],
-                  additives: const []),
-            ]),
-          ]),
-        ];
-        vm.mensa.fetchedAt =
-            now.subtract(age ?? const Duration(hours: 1));
-      }
-      await tester.pumpWidget(MaterialApp(
-        home: MultiProvider(
-          providers: [
-            ChangeNotifierProvider<KITProvider>.value(value: vm),
-            ChangeNotifierProvider(create: (_) => ToastsProvider()),
-          ],
-          child: Scaffold(
-            body: SingleChildScrollView(
-              child: SizedBox(width: 360, child: const MensaTodayCard()),
-            ),
-          ),
-        ),
-      ));
-      await tester.pump();
-    }
-
-    testWidgets("renders the cached day with prices and veg badges",
-        (tester) async {
-      await pumpCard(tester);
-      expect(find.text("Spaghetti Aglio e Olio"), findsOneWidget);
-      expect(find.text("3,85 €"), findsOneWidget);
-      expect(find.text("vegetarisch"), findsOneWidget);
-      expect(find.text("vegan"), findsNothing);
-      expect(find.textContaining("Stand:"), findsOneWidget);
-      // a fresh snapshot must NOT shout staleness
-      expect(find.textContaining("evtl. veraltet"), findsNothing);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets("EN UI shows translated names with the German a tap away",
-        (tester) async {
-      await L10n.reload(prefOverride: "en");
-      try {
-        await pumpCard(tester, extraPrefs: {
-          MensaTranslate.cacheKey: jsonEncode({
-            "Spaghetti Aglio e Olio": "Spaghetti with garlic and oil",
-            "Seelachsfilet": "Haddock fillet",
-            "Linie 1": "Line 1",
-          }),
-        });
-        await tester.pump(); // translation cache restore (async prefs)
-        expect(find.text("Spaghetti with garlic and oil"), findsOneWidget);
-        expect(find.text("Haddock fillet"), findsOneWidget);
-        expect(find.textContaining("Line 1"), findsOneWidget);
-        final tips = tester.widgetList<Tooltip>(find.byType(Tooltip));
-        expect(tips.map((t) => t.message),
-            containsAll(["Spaghetti Aglio e Olio", "Seelachsfilet"]),
-            reason: "long-press must still reveal the German original");
-      } finally {
-        await L10n.reload(prefOverride: "de");
-      }
-    });
-
-    testWidgets("a >6 h old cache says so in the footer", (tester) async {
-      await pumpCard(tester, age: const Duration(hours: 7));
-      expect(find.textContaining("evtl. veraltet"), findsOneWidget);
-    });
-
-    testWidgets("fresh install with a dead feed offers RETRY, not an "
-        "eternal spinner (D1: fetchedAt==null used to spin forever)",
-        (tester) async {
-      await pumpCard(tester, withData: false);
-      expect(find.text("Noch kein Speiseplan geladen."), findsOneWidget);
-      expect(find.text("Jetzt laden"), findsOneWidget);
-      expect(find.byType(KITProgressIndicator), findsNothing);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets("a day outside a STALE cache admits the cache is old",
-        (tester) async {
-      SharedPreferences.setMockInitialValues({});
-      final vm = KITProvider();
-      vm.mensa.transport = (u) async => http.Response("", 403);
-      vm.mensa.days = [MensaDay(date: DateTime(2020, 1, 2), lines: const [])];
-      vm.mensa.fetchedAt =
-          DateTime.now().subtract(const Duration(hours: 30));
-      await tester.pumpWidget(MaterialApp(
-        home: MultiProvider(
-          providers: [
-            ChangeNotifierProvider<KITProvider>.value(value: vm),
-            ChangeNotifierProvider(create: (_) => ToastsProvider()),
-          ],
-          child: Scaffold(
-            body: SingleChildScrollView(
-              child: SizedBox(width: 360, child: const MensaTodayCard()),
-            ),
-          ),
-        ),
-      ));
-      await tester.pump();
-      expect(find.text("Heute keine Ausgabe."), findsOneWidget);
-      expect(find.textContaining("evtl. veraltet"), findsOneWidget,
-          reason: "a Friday cache claiming 'closed' on a Monday must "
-              "admit it is stale, not pose as today's truth");
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets("weekend without plan data shows the closed line",
-        (tester) async {
-      SharedPreferences.setMockInitialValues({});
-      final vm = KITProvider();
-      vm.mensa.days = [
-        // cached, but NOT today: e.g. a Friday snapshot seen on Sunday
-        MensaDay(date: DateTime(2020, 1, 2), lines: const []),
-      ];
-      vm.mensa.fetchedAt = DateTime.now();
-      await tester.pumpWidget(MaterialApp(
-        home: MultiProvider(
-          providers: [
-            ChangeNotifierProvider<KITProvider>.value(value: vm),
-            ChangeNotifierProvider(create: (_) => ToastsProvider()),
-          ],
-          child: Scaffold(
-            body: SingleChildScrollView(
-              child: SizedBox(width: 360, child: const MensaTodayCard()),
-            ),
-          ),
-        ),
-      ));
-      await tester.pump();
-      expect(find.text("Heute keine Ausgabe."), findsOneWidget);
-      expect(tester.takeException(), isNull);
     });
   });
 }

@@ -7,10 +7,13 @@ import '../types/setting.dart';
 
 // R35.3: PREF_showingProfile and PREF_showingAvgMark were deleted WITH
 // their reads and writes (profile block demoted to the grades page).
-// The orphan keys in existing prefs are inert residue: like the deleted
+// R36.2: PREF_showingMensa + PREF_showingLibrary collapsed into the ONE
+// PREF_showCampusNow (the two home cards became the one "Campus now"
+// strip) - same rule: deleted WITH every read and write (both settings
+// rows, both managers' third-party-traffic opt-out gates). The orphan
+// keys in existing prefs are inert residue: like the deleted
 // liquidAssEverywhere (R16e) they are never read again - no purge shim.
-const showingMensaKey = "PREF_showingMensa";
-const showingLibraryKey = "PREF_showingLibrary";
+const showingCampusNowKey = "PREF_showCampusNow";
 
 /// R35.3 one-release revert switch (roadmap R35.1 "one-release revert
 /// switch", parent integration contract #3): true restores the previous
@@ -37,13 +40,11 @@ class SettingsProvider extends ChangeNotifier {
     prepare();
   }
 
-  BoolSetting showMensa = BoolSetting(
-      valueKey: showingMensaKey,
-      defaultValue: true,
-      notifyCallback: () => _instance?.notifyListeners());
-
-  BoolSetting showLibrary = BoolSetting(
-      valueKey: showingLibraryKey,
+  /// R36.2: one gate for the one campus-now strip (was showMensa +
+  /// showLibrary for the two deleted home cards); default ON like both
+  /// predecessors
+  BoolSetting showCampusNow = BoolSetting(
+      valueKey: showingCampusNowKey,
       defaultValue: true,
       notifyCallback: () => _instance?.notifyListeners());
 
@@ -82,8 +83,7 @@ class SettingsProvider extends ChangeNotifier {
 
   List<Setting> get settings => [
         legacyHome,
-        showMensa,
-        showLibrary,
+        showCampusNow,
         defaultIliasPage,
         language,
         theme

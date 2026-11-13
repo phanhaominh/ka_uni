@@ -9,7 +9,7 @@ import 'package:kit_mobile/mensa/mensa_html_parser.dart';
 import 'package:kit_mobile/mensa/mensa_translate.dart';
 import 'package:kit_mobile/mensa/models/mensa_models.dart';
 import 'package:kit_mobile/settings/providers/settings_provider.dart'
-    show showingMensaKey;
+    show showingCampusNowKey;
 import 'package:kit_mobile/state_management/kit_login_manager.dart'
     show KITLoginManager;
 
@@ -204,12 +204,13 @@ class MensaManager extends ChangeNotifier {
   }
 
   Future<bool> _fetch(DateTime now, bool force) async {
-    // opt-out honor: hiding the section in settings must ALSO stop the
-    // third-party traffic, not just the UI (prefs read per fetch: the
-    // toggle takes effect on the very next open, no restart needed)
+    // opt-out honor: hiding the campus-now strip in settings must ALSO
+    // stop the third-party traffic, not just the UI (prefs read per
+    // fetch: the toggle takes effect on the very next open, no restart
+    // needed; R36.2: gate key moved showingMensa -> showCampusNow)
     final SharedPreferences prefs0 =
         await SharedPreferences.getInstance();
-    if (prefs0.getBool(showingMensaKey) == false) return true;
+    if (prefs0.getBool(showingCampusNowKey) == false) return true;
     final int kw = isoWeek(now);
     final String source = "$defaultCanteen|$kw";
     if (!force && _source == source && isFresh) return true;

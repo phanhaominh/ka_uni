@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
@@ -13,6 +14,7 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:workmanager/workmanager.dart';
 
 import '../agenda/logic/day_decision.dart';
+import '../diagnostics/feed_health.dart';
 import '../exams/models/exam_list.dart';
 import '../student/student.dart';
 import '../l10n/l10n.dart';
@@ -1330,6 +1332,9 @@ Future<void> _gradesBackgroundDiff() async {
 @pragma('vm:entry-point')
 void meiBackgroundCallback() {
   Workmanager().executeTask((taskName, inputData) async {
+    // R36.1 heartbeat: ANY background task round proves the poll chain
+    // alive; the Feed Doctor degrades this row when it goes silent
+    unawaited(stampLastPollAt());
     // R33.3: the grade poll is its OWN task - a throw here can never
     // reach, and never cancels, the fast webcal-diff below
     if (taskName == "grades-diff") {

@@ -16,7 +16,6 @@ const Map<String, String> de_mensa = {
   "mensa.stale": "evtl. veraltet",
   "mensa.nextDay": "Morgen",
   "mensa.backToday": "Heute",
-  "mensa.toggle": "Mensa-Bereich",
 };
 
 const Map<String, String> en_mensa = {
@@ -33,5 +32,4 @@ const Map<String, String> en_mensa = {
   "mensa.stale": "possibly outdated",
   "mensa.nextDay": "Tomorrow",
   "mensa.backToday": "Today",
-  "mensa.toggle": "Canteen section",
 };

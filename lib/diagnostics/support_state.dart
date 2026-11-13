@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../notifications/mei_notifications.dart';
 import '../timetable/models/webcal.dart';
+import 'feed_health.dart';
 import 'support_bundle.dart';
 
 /// Fallback app version, mirroring pubspec.yaml `version:`. The bundle
@@ -75,5 +76,53 @@ class SupportState {
       crashTail: tail.lines,
       notificationsPermission: MeiNotifications.canScheduleExact,
     );
+  }
+
+  /// R36.1: the doctor's input map + verdicts, ready to render. Lives
+  /// here (next to [buildBundle]) so both surfaces provably read the
+  /// same device state; the verdict logic itself is the pure
+  /// [feedHealth] in feed_health.dart. LIVE platform API (not the
+  /// legacy getInstance() snapshot): the heartbeat and the webcal
+  /// stamps are written by the WorkManager isolate, and the R16f
+  /// lesson is that the per-isolate snapshot can predate those writes
+  /// — a doctor showing yesterday's stamp as today's is the exact
+  /// fabrication this whole lane exists to prevent.
+  static Future<List<FeedStatus>> feedStatuses(
+      {required bool credentialsStored,
+      bool? notificationsPermission,
+      DateTime? now}) async {
+    final prefs = SharedPreferencesAsync();
+    final diag = <String, String>{};
+    for (final key in const [
+      WebcalKeys.diag,
+      WebcalKeys.fetchedAt,
+      "MENSA_fetchedAt",
+      "MENSA_diag",
+      "DATA_iliasCardCache",
+      "DATA_smuOpensFired",
+      "ANN_rooms",
+    ]) {
+      final value = await prefs.getString(key);
+      if (value != null && value.isNotEmpty) diag[key] = value;
+    }
+    final pollAt = await prefs.getInt(lastPollAtKey);
+    if (pollAt != null) diag[lastPollAtKey] = pollAt.toString();
+    // the grades stamp family is per-term (module_cache_<term>_last_fetch,
+    // owner: campus_manager) — feedHealth picks the newest from the scan
+    for (final key in await prefs.getKeys()) {
+      if (!key.startsWith("module_cache_") || !key.endsWith("_last_fetch")) {
+        continue;
+      }
+      final value = await prefs.getString(key);
+      if (value != null && value.isNotEmpty) diag[key] = value;
+    }
+    return feedHealth(diag,
+        // the bundle's own source by default; the UI may hand in a live
+        // probe of the identical plugin call after the user returns
+        // from the system page (init() short-circuits once _ready)
+        notificationsPermission:
+            notificationsPermission ?? MeiNotifications.canScheduleExact,
+        credentialsStored: credentialsStored,
+        now: now);
   }
 }

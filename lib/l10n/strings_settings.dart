@@ -8,6 +8,9 @@ const Map<String, String> de_settings = {
   // one-release revert switch took their seat (temporary key - remove
   // it together with PREF_legacyHome next wave).
   "settings.legacyHome": "Alte Startseite anzeigen",
+  // R36.2: the one gate for the merged campus-now strip (reuses the old
+  // "…-Bereich" wording of the two deleted section toggles)
+  "settings.campusNow": "Campus-jetzt-Bereich",
   "settings.iliasStartPage": "Startseite",
   "settings.iliasPageDashboard": "Dashboard",
   "settings.iliasPageCourses": "Meine Kurse & Gruppen",
@@ -159,6 +162,7 @@ const Map<String, String> en_settings = {
   "settings.sectionHomepage": "Home",
   // R35.3 mirror of the de block (temporary one-release switch key)
   "settings.legacyHome": "Show previous home layout",
+  "settings.campusNow": "Campus now section",
   "settings.iliasStartPage": "Start page",
   "settings.iliasPageDashboard": "Dashboard",
   "settings.iliasPageCourses": "My Courses & Groups",

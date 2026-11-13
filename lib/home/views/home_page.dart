@@ -28,8 +28,7 @@ import 'package:kit_mobile/timetable/models/webcal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:kit_mobile/home/views/relevant_modules.dart';
 import 'package:kit_mobile/local_files_storage/views/pinned_files_list_view.dart';
-import 'package:kit_mobile/library/library_today_card.dart';
-import 'package:kit_mobile/mensa/views/mensa_today_card.dart';
+import 'package:kit_mobile/home/views/campus_now_card.dart';
 import 'package:kit_mobile/profile/views/profile_view.dart';
 import 'package:kit_mobile/settings/providers/settings_provider.dart';
 import 'package:kit_mobile/timetable/pages/timetable_edit_page.dart';
@@ -231,22 +230,18 @@ class _KITHomePageState extends State<KITHomePage> {
                             ],
                           )),
                       const SizedBox(height: spaceLg),
-                      // canteen section (settings-gated, profile-card
-                      // precedent): cached week paints instantly, the
-                      // pull-down above refreshes it via the cascade
-                      if (settingsVM.showMensa.value) ...[
+                      // R36.2 campus-now strip (settings-gated, at the
+                      // old mensa seat): TWO sections collapsed into ONE
+                      // compact card - mensa + library glance lines with
+                      // per-source trust markers; the library row opens
+                      // the library page (the old card's own tap target),
+                      // the mensa line has no route so it shows no
+                      // chevron. Shared by BOTH home branches, exactly
+                      // like the two card blocks it replaces were
+                      if (settingsVM.showCampusNow.value) ...[
                         Padding(
                           padding: const EdgeInsets.only(bottom: spaceMd),
-                          child: const MensaTodayCard(),
-                        ),
-                        const SizedBox(height: spaceLg),
-                      ],
-                      // library seat reservation (settings-gated, mensa
-                      // precedent): cached rooms + counts paint instantly
-                      if (settingsVM.showLibrary.value) ...[
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: spaceMd),
-                          child: const LibraryTodayCard(),
+                          child: const CampusNowCard(),
                         ),
                         const SizedBox(height: spaceLg),
                       ],

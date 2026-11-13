@@ -9,7 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'anny_api.dart';
 import '../notifications/library_notifications.dart';
 import '../notifications/mei_notifications.dart';
-import '../settings/providers/settings_provider.dart' show showingLibraryKey;
+import '../settings/providers/settings_provider.dart'
+    show showingCampusNowKey;
 import 'anny_auth.dart';
 import '../state_management/kit_login_manager.dart' show KITLoginManager;
 
@@ -243,12 +244,13 @@ class AnnyManager extends ChangeNotifier {
 
   Future<void> _refreshAnon(bool force) async {
     // R22 opt-out honor (mensa precedent, mensa_manager._fetch): hiding
-    // the library section in settings must ALSO stop the third-party
+    // the campus-now strip in settings must ALSO stop the third-party
     // traffic, not just unmount the card - boot() and every campus
     // pull-refresh used to contact b.anny.eu regardless of the toggle
+    // (R36.2: gate key moved showingLibrary -> showCampusNow)
     try {
       final SharedPreferences prefs0 = await SharedPreferences.getInstance();
-      if (prefs0.getBool(showingLibraryKey) == false) return;
+      if (prefs0.getBool(showingCampusNowKey) == false) return;
     } catch (_) {}
     final DateTime now = DateTime.now();
     final DateTime? at = _anonFetchedAt;

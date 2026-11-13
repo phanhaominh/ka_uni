@@ -774,3 +774,53 @@ CockpitKind.frb switch arms a mid-wave compile-blocker forced).
 Process note: the R34 enum lesson paid for itself immediately — the lane reported its
 CockpitKind widening BEFORE writing consumers could rot, parent landed the switch arms
 in 2 minutes.
+
+## Wave R36 (final): "visible health" (0.12.0+69)
+- R36.1 FEED DOCTOR (`lib/diagnostics/feed_health.dart` pure + `SupportState.feedStatuses`
+  collector + settings section after the R29 bundle row): every data source's health ON
+  DEVICE — one l10n table drives rows emitted ONLY by `feedHealth(diag, {notificationsPermission,
+  credentialsStored, now})`, so the screen and the exported bundle are the same verdict.
+  Per-source persisted keys (grepped, not guessed): webcal `DATA_webcalFetchedAt`+`DATA_webcalDiag`
+  (failure line caps a fresh stamp to degraded), ILIAS `DATA_iliasCardCache.fetchedAt`,
+  Anny rooms `ANN_rooms.at` (inside the JSON blob — decoded by the doctor, never by importing
+  the manager), mensa `MENSA_fetchedAt`+`MENSA_diag`, grades `module_cache_<TERM>_last_fetch`
+  (family scan, newest term wins; no credentials = unknown "not logged in"),
+  notifications `MeiNotifications.canScheduleExact` (live re-probe on visit-return).
+  SignMeUp: NO persisted fetch stamp exists (grep proof) — its row is honestly `unknown`
+  forever, the fired-window FSM carries no time. Missing key = unknown NEVER ok; future
+  stamp = never believed (DataTrust doctrine); every rendered detail passes `scrubDiag`
+  INSIDE the pure function (the token URL lives in DATA_webcalDiag — a test pins that it
+  cannot reach the screen unredacted). "Check now" = the pull-down's exact
+  `forceRefetchEverything()` + home's catchError toast idiom, then re-read.
+  Heartbeat: `DATA_lastPollAt` (epoch MINUTES, plain int) written ONLY by
+  `stampLastPollAt()` at the top of `meiBackgroundCallback`'s executeTask (Main's line, both
+  poll tasks pass it) — registration in main.dart is NOT a write site (registering ≠ running;
+  stamping there would fabricate freshness). Absent/stale = degraded "background refresh
+  not running — battery optimization?", exactly the R32.4 class the doctor exists to name.
+- R36.2 CAMPUS-NOW STRIP (NEW `lib/home/views/campus_now_card.dart`; DELETED `lib/mensa/views/`
+  [dir gone] + `lib/library/library_today_card.dart`): MensaTodayCard + LibraryTodayCard collapse
+  into ONE two-line glance card at the old mensa seat (shared by both home branches, like the
+  blocks were). Per-row DataTrust verdict with the sources' OWN thresholds re-declared, not
+  re-tuned (mensa 6h/24h from the deleted card, seats 15min = gap_plan_card's present-tense rule;
+  ttl==horizon for seats means aging never renders there). Markers: fresh = silence, aging =
+  subtle tertiary dot, untrusted = the mensa footer's own "evtl. veraltet" (mensa.stale key — the
+  deleted closedCard stamped never-fetched caches stale too, so "—" + word on empty rows is
+  precedent, not invention). Line values are a SUBSET of what the cards certified: mensa serving
+  windows re-parsed from the SW's own "11-14 Uhr" sub stamps via the gap planner's OWN
+  servingWindows() (no printed window = "—", never a claim), covered-empty/uncovered day =
+  mensa.closedDay verbatim; library fav-room count = the card's own fallback chain, 0 seats IS
+  news in a glance ("0 Plätze frei" muted, unlike the gap planner where zero plans nothing),
+  past 15 min the stale number NEVER renders — "—" + the word. F-12: library row chevron+tap ->
+  the deleted card's exact pushPageOnce target (LibraryPage.routeName); the mensa card never had
+  a detail route, so its row has NO chevron and no tap. PREF cutover (showingProfile precedent,
+  Main approved the foreign-file scope call): PREF_showingMensa + PREF_showingLibrary deleted
+  WITH all reads/writes — both settings rows -> one "Campus-jetzt-Bereich" row, both managers'
+  third-party-traffic opt-out gates (mensa_manager._fetch, anny_manager._refreshAnon) now read
+  PREF_showCampusNow (default true; a hidden legacy pref silently starving strip data would be
+  the dead control this wave exists to kill). Orphan PREF_* residue inert, no purge shim. Old
+  cards' widget test groups deleted WITH the cards (test-only importers are the last consumer,
+  not a reason to keep warm — the strip test carries the contract); mensa_test's opt-out test
+  migrated to the new key. TESTS: test/campus_now_test.dart (both fresh rows, untrusted word,
+  0-seats line, stale-count never-a-number, tap-through + no-dead-chevron, empty double-dash).
+  DEAD-STRING FOOTNOTE: mensa.toggle + library.settingsToggle now have zero consumers — they
+  live in strings_mensa/strings_library (out of lane), sweep on next touch.
